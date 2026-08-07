@@ -320,16 +320,19 @@ function applySizingMode(
   if (!("layoutSizingHorizontal" in node)) return;
   if (!("layoutMode" in parent) || parent.layoutMode === "NONE") return;
   if (source.layoutPosition === "absolute") return;
+  const canHug =
+    node.type === "TEXT" ||
+    ("layoutMode" in node && node.layoutMode !== "NONE");
   node.layoutSizingHorizontal =
     source.width.mode === "fill"
       ? "FILL"
-      : source.width.mode === "hug"
+      : source.width.mode === "hug" && canHug
         ? "HUG"
         : "FIXED";
   node.layoutSizingVertical =
     source.height.mode === "fill"
       ? "FILL"
-      : source.height.mode === "hug"
+      : source.height.mode === "hug" && canHug
         ? "HUG"
         : "FIXED";
 }
