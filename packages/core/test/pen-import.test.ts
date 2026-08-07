@@ -172,4 +172,20 @@ describe("importPenDocument", () => {
       width: { mode: "fill" },
     });
   });
+
+  it("uses Pencil's implicit horizontal flow for unpositioned children", () => {
+    const root: PenNode = {
+      id: "row",
+      type: "frame",
+      width: 100,
+      height: 40,
+      children: [
+        { id: "left", type: "rectangle", width: 20, height: 20 },
+        { id: "right", type: "rectangle", width: 20, height: 20 },
+      ],
+    };
+
+    const document = importPenDocument(root, { documentId: "test.pen" });
+    expect(document.root.layout?.mode).toBe("horizontal");
+  });
 });

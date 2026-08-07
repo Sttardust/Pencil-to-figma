@@ -225,7 +225,7 @@ function fixedValue(sizing: BridgeNode["width"]): number {
 function mapLayout(node: PenNode): NonNullable<BridgeNode["layout"]> {
   const [top, right, bottom, left] = expandPadding(node.padding);
   return {
-    mode: node.layout ?? "none",
+    mode: node.layout ?? inferImplicitLayout(node),
     gap: node.gap ?? 0,
     padding: { top, right, bottom, left },
     primaryAlign: mapEnum(
@@ -242,6 +242,16 @@ function mapLayout(node: PenNode): NonNullable<BridgeNode["layout"]> {
     counterAlign: node.alignItems ?? "start",
     includeStroke: node.layoutIncludeStroke ?? false,
   };
+}
+
+function inferImplicitLayout(node: PenNode): "none" | "horizontal" {
+  const hasPositionedChild = (node.children ?? []).some(
+    (child) =>
+      child.layoutPosition === "absolute" ||
+      (child.x ?? 0) !== 0 ||
+      (child.y ?? 0) !== 0,
+  );
+  return hasPositionedChild ? "none" : "horizontal";
 }
 
 function expandPadding(
