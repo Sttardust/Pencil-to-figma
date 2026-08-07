@@ -21,3 +21,5 @@ export {
 } from "./style.js";
 export type { Paint, Stroke, Effect, TextStyle } from "./style.js";
 export { rgbaSchema, rectSchema, sourceRefSchema } from "./primitives.js";
+export { bridgeManifestSchema, manifestMappingSchema } from "./manifest.js";
+export type { BridgeManifest, ManifestMapping } from "./manifest.js";

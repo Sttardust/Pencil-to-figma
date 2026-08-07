@@ -1,7 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { bridgeDocumentSchema, canonicalStringify } from "../src/index.js";
+import {
+  bridgeDocumentSchema,
+  bridgeManifestSchema,
+  canonicalStringify,
+} from "../src/index.js";
 
 const fixtureNames = [
   "signup-email",
@@ -62,6 +66,40 @@ describe("canonicalStringify", () => {
     const canonical = canonicalStringify(left);
     expect(canonical).toBe(canonicalStringify(right));
     expect(canonicalStringify(JSON.parse(canonical))).toBe(canonical);
+  });
+});
+
+describe("bridgeManifestSchema", () => {
+  const hash = "a".repeat(64);
+
+  it("accepts a versioned identity manifest", () => {
+    expect(
+      bridgeManifestSchema.parse({
+        version: 1,
+        penDocumentId: "/design/orchid.pen",
+        revision: 0,
+        updatedAt: "2026-08-08T00:00:00.000Z",
+        mappings: [
+          { bridgeId: "pen:root", penNodeId: "root", baselineHash: hash },
+        ],
+      }).version,
+    ).toBe(1);
+  });
+
+  it("rejects duplicate bridge identities", () => {
+    const result = bridgeManifestSchema.safeParse({
+      version: 1,
+      penDocumentId: "/design/orchid.pen",
+      revision: 0,
+      updatedAt: "2026-08-08T00:00:00.000Z",
+      mappings: [
+        { bridgeId: "pen:root", penNodeId: "one", baselineHash: hash },
+        { bridgeId: "pen:root", penNodeId: "two", baselineHash: hash },
+      ],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success)
+      expect(result.error.issues[0]?.path).toEqual(["mappings", 1, "bridgeId"]);
   });
 });
 
