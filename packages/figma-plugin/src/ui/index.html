@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      /* __STYLES__ */
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Pencil Bridge</h1>
+        <span id="status" class="badge disconnected">Disconnected</span>
+      </header>
+      <p id="detail">
+        Start the local bridge service, then enter its pairing code.
+      </p>
+      <form id="pair-form">
+        <label for="pair-code">Pairing code</label>
+        <div class="row">
+          <input
+            id="pair-code"
+            maxlength="6"
+            autocomplete="off"
+            placeholder="A1B2C3"
+          />
+          <button type="submit">Connect</button>
+        </div>
+      </form>
+      <section id="actions" hidden>
+        <div class="row">
+          <input id="screen-query" placeholder="Search or id:Frbpv" />
+          <button id="search-screens" type="button">Search</button>
+        </div>
+        <button id="screens" type="button">Read Pen screens</button>
+        <button id="selection" type="button" class="secondary">
+          Read Figma selection
+        </button>
+        <button id="write-test" type="button" class="secondary">
+          Test reversible write
+        </button>
+      </section>
+      <div id="screen-list" class="screen-list"></div>
+      <pre id="output" aria-live="polite"></pre>
+    </main>
+    <script>
+      /* __SCRIPT__ */
+    </script>
+  </body>
+</html>

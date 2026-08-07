@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "source": { "app": "pen", "documentId": "orchid.pen" },
+  "root": {
+    "bridgeId": "pen:DEFFF",
+    "kind": "frame",
+    "name": "Signup / Email",
+    "source": { "app": "pen", "documentId": "orchid.pen", "nodeId": "DEFFF" },
+    "bounds": { "x": 34993, "y": 15705, "width": 393, "height": 844 },
+    "width": { "mode": "fixed", "value": 393 },
+    "height": { "mode": "fixed", "value": 844 },
+    "rotation": 0,
+    "visible": true,
+    "opacity": 1,
+    "locked": false,
+    "clipsContent": true,
+    "layout": {
+      "mode": "vertical",
+      "gap": 0,
+      "padding": { "top": 0, "right": 0, "bottom": 0, "left": 0 },
+      "primaryAlign": "start",
+      "counterAlign": "start",
+      "includeStroke": false
+    },
+    "fills": [
+      {
+        "type": "solid",
+        "visible": true,
+        "opacity": 1,
+        "blendMode": "normal",
+        "color": { "r": 1, "g": 1, "b": 1, "a": 1 }
+      }
+    ],
+    "children": []
+  },
+  "assets": [],
+  "variables": [],
+  "warnings": []
+}

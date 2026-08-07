@@ -1,0 +1,28 @@
+{
+  "capturedAt": "2026-08-08T00:00:00Z",
+  "document": "/Users/semere/Workfiles/Tenacious/Orchid/orchid.pen",
+  "schemaVersion": "2.15",
+  "captureDepth": 2,
+  "nodes": [
+    {
+      "id": "DEFFF",
+      "name": "Signup / Email",
+      "bridgeFixture": "../bridge/signup-email.json"
+    },
+    {
+      "id": "Frbpv",
+      "name": "C1 · Ledger",
+      "bridgeFixture": "../bridge/c1-ledger.json"
+    },
+    {
+      "id": "Reg3K",
+      "name": "v4 · 01 Introduction",
+      "bridgeFixture": "../bridge/introduction.json"
+    },
+    {
+      "id": "GPTTm",
+      "name": "N3 · Atelier",
+      "bridgeFixture": "../bridge/n3-atelier.json"
+    }
+  ]
+}

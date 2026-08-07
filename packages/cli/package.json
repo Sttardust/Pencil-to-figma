@@ -1,0 +1,14 @@
+{
+  "name": "@pen-fig/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "doctor": "tsx src/main.ts doctor",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@pen-fig/service": "0.0.0"
+  }
+}

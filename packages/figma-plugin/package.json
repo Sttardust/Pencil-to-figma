@@ -1,0 +1,16 @@
+{
+  "name": "@pen-fig/figma-plugin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsx scripts/build.ts",
+    "dev": "tsx scripts/build.ts --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@pen-fig/bridge-schema": "0.0.0",
+    "@figma/plugin-typings": "^1.117.0",
+    "esbuild": "^0.25.9"
+  }
+}

@@ -1,0 +1,104 @@
+:root {
+  font-family: Inter, system-ui, sans-serif;
+  color: var(--figma-color-text);
+  background: var(--figma-color-bg);
+}
+body {
+  margin: 0;
+}
+main {
+  padding: 16px;
+}
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+h1 {
+  font-size: 16px;
+  margin: 0;
+}
+p {
+  color: var(--figma-color-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.row {
+  display: flex;
+  gap: 8px;
+}
+input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--figma-color-border);
+  border-radius: 6px;
+  padding: 8px;
+  color: inherit;
+  background: var(--figma-color-bg);
+  text-transform: uppercase;
+}
+button {
+  border: 0;
+  border-radius: 6px;
+  padding: 8px 12px;
+  background: var(--figma-color-bg-brand);
+  color: var(--figma-color-text-onbrand);
+  cursor: pointer;
+}
+button.secondary {
+  background: var(--figma-color-bg-secondary);
+  color: var(--figma-color-text);
+}
+section {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+.badge {
+  border-radius: 99px;
+  padding: 3px 7px;
+  font-size: 10px;
+}
+.connected {
+  color: var(--figma-color-text-success);
+  background: var(--figma-color-bg-success-tertiary);
+}
+.disconnected {
+  color: var(--figma-color-text-danger);
+  background: var(--figma-color-bg-danger-tertiary);
+}
+pre {
+  min-height: 90px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font:
+    11px/1.45 ui-monospace,
+    monospace;
+  color: var(--figma-color-text-secondary);
+}
+.screen-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  max-height: 190px;
+  overflow: auto;
+}
+.screen-list button {
+  display: flex;
+  justify-content: space-between;
+  background: var(--figma-color-bg-secondary);
+  color: var(--figma-color-text);
+  text-align: left;
+}
+.screen-list button::after {
+  content: "Import";
+  color: var(--figma-color-text-brand);
+  font-size: 10px;
+}

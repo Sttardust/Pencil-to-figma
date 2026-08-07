@@ -1,0 +1,13 @@
+{
+  "name": "Pencil Bridge (Development)",
+  "id": "pen-fig-bridge-development",
+  "api": "1.0.0",
+  "editorType": ["figma"],
+  "main": "dist/code.js",
+  "ui": "dist/ui.html",
+  "documentAccess": "dynamic-page",
+  "networkAccess": {
+    "allowedDomains": ["none"],
+    "devAllowedDomains": ["http://localhost:32145"]
+  }
+}

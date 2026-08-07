@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "source": { "app": "pen", "documentId": "orchid.pen" },
+  "root": {
+    "bridgeId": "pen:GPTTm",
+    "kind": "frame",
+    "name": "N3 · Atelier",
+    "source": { "app": "pen", "documentId": "orchid.pen", "nodeId": "GPTTm" },
+    "bounds": { "x": 39419, "y": 28040, "width": 393, "height": 844 },
+    "width": { "mode": "fixed", "value": 393 },
+    "height": { "mode": "fixed", "value": 844 },
+    "rotation": 0,
+    "visible": true,
+    "opacity": 1,
+    "locked": false,
+    "clipsContent": true,
+    "layout": {
+      "mode": "vertical",
+      "gap": 0,
+      "padding": { "top": 0, "right": 0, "bottom": 0, "left": 0 },
+      "primaryAlign": "start",
+      "counterAlign": "start",
+      "includeStroke": false
+    },
+    "fills": [
+      {
+        "type": "solid",
+        "visible": true,
+        "opacity": 1,
+        "blendMode": "normal",
+        "color": { "r": 0.984314, "g": 0.972549, "b": 0.94902, "a": 1 }
+      }
+    ],
+    "children": []
+  },
+  "assets": [],
+  "variables": [],
+  "warnings": []
+}

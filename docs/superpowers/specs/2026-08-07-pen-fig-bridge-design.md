@@ -30,7 +30,7 @@ destroying edits.
    `~/.claude.json`. Its auth is bound to the Claude session and cannot be reused by an
    external process.
 3. **The Pencil MCP is a local binary**
-   (`/Applications/Pen.app/…/mcp-server-darwin-x64 --app desktop`) that drives the *running*
+   (`/Applications/Pen.app/…/mcp-server-darwin-x64 --app desktop`) that drives the _running_
    Pencil desktop app. Locally spawnable, but Pencil must be open.
 4. **`setPluginData` is forbidden** by the Figma MCP, so per-node provenance cannot be stamped
    into the Figma file. Identity must live in an external sidecar manifest.
@@ -114,16 +114,20 @@ rolls back one section rather than a whole screen.
       "lastSync": "2026-08-07T00:00:00Z",
       "direction": "pen->fig",
       "nodes": {
-        "uDc62": { "figmaId": "8:23", "penHash": "a1b2c3", "figHash": "d4e5f6" }
-      }
-    }
-  }
+        "uDc62": {
+          "figmaId": "8:23",
+          "penHash": "a1b2c3",
+          "figHash": "d4e5f6",
+        },
+      },
+    },
+  },
 }
 ```
 
 `penHash` / `figHash` hash only **authored** properties, so that layout recomputation does not
 read as a user edit. Concretely the hash covers: type, name, text content and type styling,
-fills, strokes, effects, corner radii, layout mode/gap/padding/alignment, sizing *mode*
+fills, strokes, effects, corner radii, layout mode/gap/padding/alignment, sizing _mode_
 (`fit_content` / `fill_container` / fixed), and explicit `x`/`y` for absolutely positioned
 nodes. It excludes: generated ids, and computed width/height wherever sizing is
 `fit_content` or `fill_container`.
@@ -132,12 +136,12 @@ nodes. It excludes: generated ids, and computed width/height wherever sizing is
 
 Three-way compare of stored hash vs current Pencil vs current Figma:
 
-| Stored vs Pencil | Stored vs Figma | Action |
-|---|---|---|
-| same | same | skip |
-| differs | same | push that node |
-| same | differs | pull that node |
-| differs | differs | **stop** — report the diverged nodes per side, change nothing |
+| Stored vs Pencil | Stored vs Figma | Action                                                        |
+| ---------------- | --------------- | ------------------------------------------------------------- |
+| same             | same            | skip                                                          |
+| differs          | same            | push that node                                                |
+| same             | differs         | pull that node                                                |
+| differs          | differs         | **stop** — report the diverged nodes per side, change nothing |
 
 On conflict the tool writes nothing and prints a per-node table naming what changed on each
 side. Resolution is the user's call; there is no automatic merge in v1.
@@ -150,40 +154,40 @@ Warnings are always surfaced; degradation is never silent.
 
 **Pencil → Figma**
 
-| Construct | Action |
-|---|---|
-| `shader` fill, `mesh_gradient` fill | rasterize via `export_nodes` → `upload_assets` |
-| `script` node | rasterize (bake generated children) |
-| `icon` node | resolve from upstream SVG packages → real vectors |
-| `note` / `prompt` / `context` | port to a side annotation layer as text |
+| Construct                           | Action                                            |
+| ----------------------------------- | ------------------------------------------------- |
+| `shader` fill, `mesh_gradient` fill | rasterize via `export_nodes` → `upload_assets`    |
+| `script` node                       | rasterize (bake generated children)               |
+| `icon` node                         | resolve from upstream SVG packages → real vectors |
+| `note` / `prompt` / `context`       | port to a side annotation layer as text           |
 
 **Figma → Pencil**
 
-| Construct | Action |
-|---|---|
-| Component variants / `COMPONENT_SET` | flatten — one Pencil component per variant |
-| Auto-layout wrap, grid layout | expand into explicit row frames |
-| Boolean operations | flatten to baked path geometry |
-| Per-character text styling | split into multiple text nodes |
-| Masks, constraints, dash patterns, corner smoothing, diamond gradients | skip + warn |
-| Shared text / effect styles | inline |
+| Construct                                                              | Action                                     |
+| ---------------------------------------------------------------------- | ------------------------------------------ |
+| Component variants / `COMPONENT_SET`                                   | flatten — one Pencil component per variant |
+| Auto-layout wrap, grid layout                                          | expand into explicit row frames            |
+| Boolean operations                                                     | flatten to baked path geometry             |
+| Per-character text styling                                             | split into multiple text nodes             |
+| Masks, constraints, dash patterns, corner smoothing, diamond gradients | skip + warn                                |
+| Shared text / effect styles                                            | inline                                     |
 
 ## Validated mapping (from the pilot — becomes the test suite)
 
-| Pencil | Figma |
-|---|---|
-| `variables` / `themes` | Variable collection + modes |
-| `reusable: true` frame | Component |
-| `ref` + `descendants` | Instance + overrides |
-| `layout` / `gap` / `padding` / `justifyContent` | Auto layout |
-| `fit_content` / `fill_container` | HUG / FILL |
-| `textGrowth: fixed-width` | `textAutoResize = "HEIGHT"` + FILL |
-| `strokeWidth: {top,bottom}` | `strokeTopWeight` / `strokeBottomWeight` |
-| `path` + `viewBox` | `createNodeFromSvg` |
-| gradient fill | `GRADIENT_LINEAR` + `gradientTransform` |
-| negative `gap` | negative `itemSpacing` |
-| `lineHeight` multiplier | `{unit: "PERCENT", value: n*100}` |
-| `letterSpacing` number | `{unit: "PIXELS", value: n}` |
+| Pencil                                          | Figma                                    |
+| ----------------------------------------------- | ---------------------------------------- |
+| `variables` / `themes`                          | Variable collection + modes              |
+| `reusable: true` frame                          | Component                                |
+| `ref` + `descendants`                           | Instance + overrides                     |
+| `layout` / `gap` / `padding` / `justifyContent` | Auto layout                              |
+| `fit_content` / `fill_container`                | HUG / FILL                               |
+| `textGrowth: fixed-width`                       | `textAutoResize = "HEIGHT"` + FILL       |
+| `strokeWidth: {top,bottom}`                     | `strokeTopWeight` / `strokeBottomWeight` |
+| `path` + `viewBox`                              | `createNodeFromSvg`                      |
+| gradient fill                                   | `GRADIENT_LINEAR` + `gradientTransform`  |
+| negative `gap`                                  | negative `itemSpacing`                   |
+| `lineHeight` multiplier                         | `{unit: "PERCENT", value: n*100}`        |
+| `letterSpacing` number                          | `{unit: "PIXELS", value: n}`             |
 
 Font weight mapping: `700` → Bold, `600` → SemiBold, `500` → Medium, `400`/`normal` →
 Regular, `300` → Light. Note family-dependent style naming — Stack Sans uses `SemiBold`,
