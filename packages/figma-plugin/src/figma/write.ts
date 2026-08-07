@@ -290,6 +290,11 @@ function applyLayout(
     return;
   }
   node.layoutMode = layout.mode === "horizontal" ? "HORIZONTAL" : "VERTICAL";
+  const horizontal = layout.mode === "horizontal";
+  const primarySizing = horizontal ? source.width : source.height;
+  const counterSizing = horizontal ? source.height : source.width;
+  node.primaryAxisSizingMode = primarySizing.mode === "hug" ? "AUTO" : "FIXED";
+  node.counterAxisSizingMode = counterSizing.mode === "hug" ? "AUTO" : "FIXED";
   node.itemSpacing = layout.gap;
   node.paddingTop = layout.padding.top;
   node.paddingRight = layout.padding.right;
