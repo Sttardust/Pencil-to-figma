@@ -42,6 +42,10 @@ required("search-screens").addEventListener("click", () => {
 required("selection").addEventListener("click", () =>
   parent.postMessage({ pluginMessage: { type: "selection-summary" } }, "*"),
 );
+required("preview-export").addEventListener("click", () => {
+  setStatus("Reading Figma…", true);
+  parent.postMessage({ pluginMessage: { type: "preview-figma-export" } }, "*");
+});
 required("write-test").addEventListener("click", () =>
   parent.postMessage({ pluginMessage: { type: "reversible-write-test" } }, "*"),
 );
@@ -121,6 +125,13 @@ window.onmessage = (event) => {
         },
         "*",
       );
+    }
+    if (message.type === "figma-export-preview") {
+      setStatus(
+        message.ok ? "Export preview ready" : "Export preview failed",
+        message.ok,
+      );
+      if (!message.ok) detail.textContent = message.message;
     }
   }
 };

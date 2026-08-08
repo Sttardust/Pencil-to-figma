@@ -1,4 +1,5 @@
 import { previewBridgeDocument, writeBridgeDocument } from "./figma/write.js";
+import { readSelectedFigmaDocument } from "./figma/read.js";
 
 figma.showUI(__html__, { width: 360, height: 520, themeColors: true });
 
@@ -22,6 +23,23 @@ figma.ui.onmessage = async (message: { type: string }) => {
     const id = rectangle.id;
     rectangle.remove();
     figma.ui.postMessage({ type: "write-test-result", ok: true, id });
+  }
+
+  if (message.type === "preview-figma-export") {
+    try {
+      const result = await readSelectedFigmaDocument();
+      figma.ui.postMessage({
+        type: "figma-export-preview",
+        ok: true,
+        ...result,
+      });
+    } catch (error) {
+      figma.ui.postMessage({
+        type: "figma-export-preview",
+        ok: false,
+        message: error instanceof Error ? error.message : "Figma read failed",
+      });
+    }
   }
 
   if (message.type === "apply-document" && "document" in message) {
