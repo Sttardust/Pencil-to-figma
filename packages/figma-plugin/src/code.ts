@@ -1,4 +1,4 @@
-import { writeBridgeDocument } from "./figma/write.js";
+import { previewBridgeDocument, writeBridgeDocument } from "./figma/write.js";
 
 figma.showUI(__html__, { width: 360, height: 520, themeColors: true });
 
@@ -40,6 +40,19 @@ figma.ui.onmessage = async (message: { type: string }) => {
         type: "import-result",
         ok: false,
         message: error instanceof Error ? error.message : "Figma import failed",
+      });
+    }
+  }
+
+  if (message.type === "preview-document" && "document" in message) {
+    try {
+      const result = await previewBridgeDocument(message.document);
+      figma.ui.postMessage({ type: "import-preview", ok: true, ...result });
+    } catch (error) {
+      figma.ui.postMessage({
+        type: "import-preview",
+        ok: false,
+        message: error instanceof Error ? error.message : "Preview failed",
       });
     }
   }

@@ -7,6 +7,8 @@ const output = required<HTMLElement>("output");
 const screenList = required<HTMLElement>("screen-list");
 const screenQuery = required<HTMLInputElement>("screen-query");
 let token: string | undefined;
+let pendingImport:
+  { document: any; assetData: Record<string, string> } | undefined;
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -46,6 +48,42 @@ window.onmessage = (event) => {
     if (message.type === "import-result") {
       setStatus(message.ok ? "Imported" : "Import failed", message.ok);
       if (!message.ok) detail.textContent = message.message;
+      if (message.ok) pendingImport = undefined;
+    }
+    if (message.type === "import-preview") {
+      if (!message.ok) {
+        setStatus("Preview failed", false);
+        detail.textContent = message.message;
+        return;
+      }
+      const pending = pendingImport;
+      if (!pending) return;
+      const counts = message.operations;
+      const summary =
+        message.operation === "created"
+          ? `Create ${counts.create} editable nodes?`
+          : message.operation === "unchanged"
+            ? "No authored changes were found. Select the existing import?"
+            : `Apply ${message.nodeCount} operations to the existing import?\n\nCreate: ${counts.create}\nUpdate: ${counts.update}\nMove/reorder: ${counts.move}\nDelete: ${counts.delete}`;
+      const warningText = message.warnings.length
+        ? `\n\nWarnings:\n${message.warnings.map((warning: string) => `• ${warning}`).join("\n")}`
+        : "";
+      if (!confirm(`${summary}${warningText}`)) {
+        pendingImport = undefined;
+        setStatus("Connected — cancelled", true);
+        return;
+      }
+      setStatus("Writing Figma…", true);
+      parent.postMessage(
+        {
+          pluginMessage: {
+            type: "apply-document",
+            document: pending.document,
+            assetData: pending.assetData,
+          },
+        },
+        "*",
+      );
     }
   }
 };
@@ -70,25 +108,13 @@ async function importScreen(nodeId: string): Promise<void> {
     setStatus("Reading Pen…", true);
     const message = await request(`/pen/nodes/${nodeId}`, { method: "GET" });
     const document = message.document;
-    const nodeCount = countNodes(document.root);
-    const warningText = document.warnings.length
-      ? `\n\nWarnings:\n${document.warnings.map((warning: any) => `• ${warning.message}`).join("\n")}`
-      : "";
-    if (
-      !confirm(
-        `Import “${document.root.name}” with ${nodeCount} editable nodes?${warningText}`,
-      )
-    ) {
-      setStatus("Connected", true);
-      return;
-    }
-    setStatus("Writing Figma…", true);
+    pendingImport = { document, assetData: message.assetData ?? {} };
+    setStatus("Planning changes…", true);
     parent.postMessage(
       {
         pluginMessage: {
-          type: "apply-document",
+          type: "preview-document",
           document,
-          assetData: message.assetData ?? {},
         },
       },
       "*",
@@ -96,16 +122,6 @@ async function importScreen(nodeId: string): Promise<void> {
   } catch (error) {
     showError(error);
   }
-}
-
-function countNodes(node: any): number {
-  return (
-    1 +
-    (node.children ?? []).reduce(
-      (total: number, child: any) => total + countNodes(child),
-      0,
-    )
-  );
 }
 
 async function connect(code: string): Promise<void> {

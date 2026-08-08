@@ -24,6 +24,45 @@ export interface WriteResult {
   warnings: string[];
 }
 
+export interface PreviewResult {
+  rootId?: string;
+  nodeCount: number;
+  operation: "created" | "unchanged" | "updated";
+  operations: SyncPlan["counts"];
+  warnings: string[];
+}
+
+export async function previewBridgeDocument(
+  input: unknown,
+): Promise<PreviewResult> {
+  const document = bridgeDocumentSchema.parse(input);
+  await figma.currentPage.loadAsync();
+  const mappedRoots = findMappedRoots(
+    figma.currentPage,
+    document.root.bridgeId,
+  );
+  if (mappedRoots.length > 1)
+    throw new Error(
+      `Duplicate bridge identities require remapping: ${document.root.bridgeId} (${mappedRoots.map((root) => root.id).join(", ")})`,
+    );
+  const mappedRoot = mappedRoots[0];
+  const plan = planPenToFigmaSync(
+    document,
+    mappedRoot ? readMappedSubtree(mappedRoot).records : [],
+  );
+  return {
+    ...(mappedRoot ? { rootId: mappedRoot.id } : {}),
+    nodeCount: plan.operations.length,
+    operation: mappedRoot
+      ? plan.operations.length
+        ? "updated"
+        : "unchanged"
+      : "created",
+    operations: plan.counts,
+    warnings: document.warnings.map((warning) => warning.message),
+  };
+}
+
 export async function writeBridgeDocument(
   input: unknown,
   assetData: Record<string, string> = {},
