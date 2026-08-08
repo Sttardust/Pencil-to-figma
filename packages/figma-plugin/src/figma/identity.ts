@@ -2,6 +2,7 @@ export const BRIDGE_ID_KEY = "penFigBridgeId";
 export const AUTHORED_HASH_KEY = "penFigAuthoredHash";
 export const BRIDGE_KIND_KEY = "penFigBridgeKind";
 export const SVG_ASSET_KEY = "penFigSvgAssetId";
+export const INSTANCE_OVERRIDE_MAP_KEY = "penFigInstanceOverrideMap";
 
 export interface IdentityRecord {
   bridgeId: string;
@@ -89,12 +90,13 @@ export function findMappedRoots(page: PageNode, bridgeId: string): SceneNode[] {
 }
 
 export function readMappedSubtree(root: SceneNode): MappedSubtree {
-  const sceneNodes = [
-    root,
-    ...("findAll" in root
-      ? root.findAll((node) => node.getPluginData(BRIDGE_ID_KEY) !== "")
-      : []),
-  ];
+  const sceneNodes: SceneNode[] = [];
+  const collect = (node: SceneNode) => {
+    if (node.getPluginData(BRIDGE_ID_KEY) !== "") sceneNodes.push(node);
+    if (node.type === "INSTANCE" || !("children" in node)) return;
+    for (const child of node.children) collect(child);
+  };
+  collect(root);
   const nodes = new Map<string, SceneNode>();
   const records: MappedSubtree["records"] = [];
   for (const node of sceneNodes) {

@@ -13,11 +13,14 @@ import {
   AUTHORED_HASH_KEY,
   BRIDGE_ID_KEY,
   BRIDGE_KIND_KEY,
+  INSTANCE_OVERRIDE_MAP_KEY,
   SVG_ASSET_KEY,
   findMappedRoots,
   readMappedSubtree,
 } from "./identity.js";
 import { directFontCandidates, fontKey } from "./fonts.js";
+
+const WRITE_SCHEMA_VERSION = "2";
 
 export interface WriteResult {
   rootId: string;
@@ -58,9 +61,10 @@ export async function previewBridgeDocument(
       `Duplicate bridge identities require remapping: ${document.root.bridgeId} (${mappedRoots.map((root) => root.id).join(", ")})`,
     );
   const mappedRoot = mappedRoots[0];
+  const mapped = mappedRoot ? readMappedSubtree(mappedRoot) : undefined;
   const plan = planPenToFigmaSync(
     document,
-    mappedRoot ? readMappedSubtree(mappedRoot).records : [],
+    mapped ? recordsForWriter(document, mapped) : [],
   );
   return {
     ...(mappedRoot ? { rootId: mappedRoot.id } : {}),
@@ -97,7 +101,10 @@ export async function writeBridgeDocument(
   const mappedRoot = mappedRoots[0];
   if (mappedRoot) {
     const mapped = readMappedSubtree(mappedRoot);
-    const plan = planPenToFigmaSync(document, mapped.records);
+    const plan = planPenToFigmaSync(
+      document,
+      recordsForWriter(document, mapped),
+    );
     if (plan.operations.length === 0) {
       figma.currentPage.selection = [mappedRoot];
       figma.viewport.scrollAndZoomIntoView([mappedRoot]);
@@ -251,6 +258,23 @@ function rootBridgeIds(document: BridgeDocument): Set<string> {
   const bridgeIds = new Set<string>();
   visit(document.root, (node) => bridgeIds.add(node.bridgeId));
   return bridgeIds;
+}
+
+function recordsForWriter(
+  document: BridgeDocument,
+  mapped: ReturnType<typeof readMappedSubtree>,
+): ReturnType<typeof readMappedSubtree>["records"] {
+  const instanceIds = new Set<string>();
+  visit(document.root, (node) => {
+    if (node.kind === "instance") instanceIds.add(node.bridgeId);
+  });
+  return mapped.records.map((record) => {
+    const node = mapped.nodes.get(record.bridgeId);
+    return instanceIds.has(record.bridgeId) &&
+      node?.getPluginData("penFigSchema") !== WRITE_SCHEMA_VERSION
+      ? { ...record, authoredHash: "" }
+      : record;
+  });
 }
 
 interface WriteContext {
@@ -487,6 +511,8 @@ function applyNodeProperties(
   context: WriteContext,
 ): void {
   assertCompatibleNode(node, source);
+  if (node.type === "INSTANCE" && source.source.app === "pen")
+    node.removeOverrides();
   node.name = source.name;
   node.visible = source.visible;
   if ("opacity" in node) node.opacity = source.opacity;
@@ -496,12 +522,14 @@ function applyNodeProperties(
   node.setPluginData(BRIDGE_KIND_KEY, source.kind);
   node.setPluginData(SVG_ASSET_KEY, source.icon?.assetId ?? "");
   node.setPluginData(AUTHORED_HASH_KEY, context.hashes[source.bridgeId] ?? "");
-  node.setPluginData("penFigSchema", "1");
+  node.setPluginData("penFigSchema", WRITE_SCHEMA_VERSION);
   applyLayoutPosition(node, source, parent);
   applySize(node, source);
   node.x = source.bounds.x;
   node.y = source.bounds.y;
   applyGeometry(node, source, context);
+  if (node.type === "INSTANCE" && source.kind === "instance")
+    applyInstanceOverrides(node, source, context);
   if (node.type === "FRAME" || node.type === "COMPONENT")
     applyLayout(node, source);
   applySizingMode(node, source, parent);
@@ -633,30 +661,7 @@ function createNativeNode(
         ? context.nodes.get(source.instance.componentBridgeId)
         : undefined;
       if (component?.type === "COMPONENT") {
-        const instance = component.createInstance();
-        const overrides = source.instance?.overrides ?? {};
-        if (Object.keys(overrides).length > 0) {
-          if (source.source.app === "figma") {
-            const properties = Object.fromEntries(
-              Object.entries(overrides).filter(
-                (entry): entry is [string, string | boolean] =>
-                  typeof entry[1] === "string" || typeof entry[1] === "boolean",
-              ),
-            );
-            try {
-              instance.setProperties(properties);
-            } catch {
-              context.warnings.push(
-                `INSTANCE_OVERRIDES_SKIPPED: ${source.name} has incompatible component properties`,
-              );
-            }
-          } else {
-            context.warnings.push(
-              `INSTANCE_OVERRIDES_SKIPPED: ${source.name} keeps its component defaults`,
-            );
-          }
-        }
-        return instance;
+        return component.createInstance();
       }
       context.warnings.push(
         `INSTANCE_COMPONENT_UNRESOLVED: Flattened ${source.name}`,
@@ -688,12 +693,18 @@ function applyGeometry(
   if (source.icon) {
     const tint = source.fills?.find((paint) => paint.type === "solid");
     if (tint?.type === "solid") tintSvg(node, tint);
-  } else if ("fills" in node) {
+  } else if (
+    "fills" in node &&
+    (source.fills !== undefined || node.type !== "INSTANCE")
+  ) {
     node.fills = (source.fills ?? []).map((paint) =>
       toFigmaPaint(paint, context),
     );
   }
-  if ("strokes" in node) {
+  if (
+    "strokes" in node &&
+    (source.stroke !== undefined || node.type !== "INSTANCE")
+  ) {
     node.strokes = (source.stroke?.paints ?? []).map((paint) =>
       toFigmaPaint(paint, context),
     );
@@ -719,7 +730,10 @@ function applyGeometry(
       node.strokeLeftWeight = weights.left;
     } else context.warnings.push(`Flattened per-side stroke on ${source.name}`);
   }
-  if ("effects" in node) {
+  if (
+    "effects" in node &&
+    (source.effects !== undefined || node.type !== "INSTANCE")
+  ) {
     node.effects = (source.effects ?? []).map((effect): Effect => {
       if (!("color" in effect)) {
         return {
@@ -747,13 +761,110 @@ function applyGeometry(
       node.bottomRightRadius,
       node.bottomLeftRadius,
     ] = source.cornerRadii;
-  } else if ("topLeftRadius" in node) {
+  } else if ("topLeftRadius" in node && node.type !== "INSTANCE") {
     node.topLeftRadius = 0;
     node.topRightRadius = 0;
     node.bottomRightRadius = 0;
     node.bottomLeftRadius = 0;
   }
   if (node.type === "TEXT" && source.text) applyText(node, source);
+}
+
+function applyInstanceOverrides(
+  instance: InstanceNode,
+  source: BridgeNode,
+  context: WriteContext,
+): void {
+  const overrides = source.instance?.overrides ?? {};
+  if (source.source.app === "figma") {
+    const properties = Object.fromEntries(
+      Object.entries(overrides).filter(
+        (entry): entry is [string, string | boolean] =>
+          typeof entry[1] === "string" || typeof entry[1] === "boolean",
+      ),
+    );
+    if (!Object.keys(properties).length) return;
+    try {
+      instance.setProperties(properties);
+    } catch {
+      context.warnings.push(
+        `INSTANCE_OVERRIDES_SKIPPED: ${source.name} has incompatible component properties`,
+      );
+    }
+    return;
+  }
+
+  const component = source.instance
+    ? context.nodes.get(source.instance.componentBridgeId)
+    : undefined;
+  if (component?.type !== "COMPONENT") {
+    if (Object.keys(overrides).length)
+      context.warnings.push(
+        `INSTANCE_OVERRIDES_SKIPPED: ${source.name} has no editable component definition`,
+      );
+    return;
+  }
+
+  const propertyValues: Record<string, string | boolean> = {};
+  const propertyMap: Record<string, { bridgeId: string; property: "content" }> =
+    {};
+  for (const [bridgeId, rawOverride] of Object.entries(overrides)) {
+    if (!rawOverride || typeof rawOverride !== "object") {
+      context.warnings.push(
+        `INSTANCE_OVERRIDE_UNSUPPORTED: ${source.name} has an invalid override for ${bridgeId}`,
+      );
+      continue;
+    }
+    const override = rawOverride as Record<string, unknown>;
+    const target = component.findOne(
+      (node) => node.getPluginData(BRIDGE_ID_KEY) === bridgeId,
+    );
+    if (!target) {
+      context.warnings.push(
+        `INSTANCE_OVERRIDE_TARGET_MISSING: ${source.name} cannot find ${bridgeId}`,
+      );
+      continue;
+    }
+    if (typeof override.content === "string" && target.type === "TEXT") {
+      let propertyName = target.componentPropertyReferences?.characters;
+      if (!propertyName) {
+        propertyName = component.addComponentProperty(
+          `Pen ${target.name}`.slice(0, 80),
+          "TEXT",
+          target.characters,
+        );
+        target.componentPropertyReferences = {
+          ...(target.componentPropertyReferences ?? {}),
+          characters: propertyName,
+        };
+      }
+      propertyValues[propertyName] = override.content;
+      propertyMap[propertyName] = { bridgeId, property: "content" };
+    } else if (override.content !== undefined) {
+      context.warnings.push(
+        `INSTANCE_OVERRIDE_UNSUPPORTED: ${source.name} content override does not target text`,
+      );
+    }
+    const unsupported = Object.keys(override).filter(
+      (property) => property !== "content",
+    );
+    if (unsupported.length)
+      context.warnings.push(
+        `INSTANCE_OVERRIDE_UNSUPPORTED: ${source.name} skipped ${unsupported.join(", ")} on ${bridgeId}`,
+      );
+  }
+  try {
+    if (Object.keys(propertyValues).length)
+      instance.setProperties(propertyValues);
+    instance.setPluginData(
+      INSTANCE_OVERRIDE_MAP_KEY,
+      JSON.stringify(propertyMap),
+    );
+  } catch {
+    context.warnings.push(
+      `INSTANCE_OVERRIDES_SKIPPED: ${source.name} could not apply component properties`,
+    );
+  }
 }
 
 function applyText(node: TextNode, source: BridgeNode): void {

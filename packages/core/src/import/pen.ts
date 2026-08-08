@@ -32,12 +32,17 @@ export function importPenDocument(
     [root, ...componentNodes],
     options,
   );
+  const nodeBridgeIds = collectNodeBridgeIds(
+    [root, ...componentNodes],
+    options,
+  );
   const importedRoot = importNode(
     root,
     options,
     warnings,
     assets,
     componentBridgeIds,
+    nodeBridgeIds,
     variables,
   );
   removeDerivedInstanceChildren(
@@ -51,6 +56,7 @@ export function importPenDocument(
       warnings,
       assets,
       componentBridgeIds,
+      nodeBridgeIds,
       variables,
     ),
   );
@@ -77,6 +83,7 @@ function importNode(
   warnings: TransferWarning[],
   assets: BridgeAsset[],
   componentBridgeIds: ReadonlyMap<string, string>,
+  nodeBridgeIds: ReadonlyMap<string, string>,
   variables: PenVariableDefinitions,
 ): BridgeNode {
   if (!node.id || !node.type) throw new Error("Pen node is missing id or type");
@@ -96,6 +103,7 @@ function importNode(
               warnings,
               assets,
               componentBridgeIds,
+              nodeBridgeIds,
               variables,
             ),
           );
@@ -209,17 +217,13 @@ function importNode(
     const ref = node.ref ?? "unknown";
     result.instance = {
       componentBridgeId: componentBridgeIds.get(ref) ?? `pen:${ref}`,
-      overrides: node.descendants ?? {},
+      overrides: Object.fromEntries(
+        Object.entries(node.descendants ?? {}).map(([nodeId, value]) => [
+          nodeBridgeIds.get(nodeId) ?? `pen:${nodeId}`,
+          value,
+        ]),
+      ),
     };
-    if (Object.keys(node.descendants ?? {}).length)
-      warnings.push(
-        warning(
-          bridgeId,
-          "instance overrides",
-          "skip",
-          `Instance ${node.name ?? node.id} keeps its component defaults until Pencil descendant overrides are mapped`,
-        ),
-      );
   } else if (node.type === "icon" && node.icon) {
     const assetId = `pen-icon:${node.id}`;
     assets.push({
@@ -245,6 +249,19 @@ function collectComponentBridgeIds(
   };
   for (const root of roots) visit(root);
   return componentBridgeIds;
+}
+
+function collectNodeBridgeIds(
+  roots: PenNode[],
+  options: PenImportOptions,
+): Map<string, string> {
+  const nodeBridgeIds = new Map<string, string>();
+  const visit = (node: PenNode) => {
+    nodeBridgeIds.set(node.id, bridgeIdForPenNode(node, options));
+    for (const child of node.children ?? []) visit(child);
+  };
+  for (const root of roots) visit(root);
+  return nodeBridgeIds;
 }
 
 function bridgeIdForPenNode(node: PenNode, options: PenImportOptions): string {

@@ -56,8 +56,9 @@ not enabled yet.
 
 Pencil → Figma imports also resolve local Pencil `ref` dependencies by native identity. Reusable
 frames become Figma components and resolvable refs become instances; dependency components are
-kept outside the screen's sync manifest. Pencil descendant overrides currently preserve the
-component default and return an explicit warning until override mapping is enabled.
+kept outside the screen's sync manifest. Pencil descendant text overrides become native Figma text
+component properties, keeping both the reusable component relationship and the instance-specific
+copy editable. Unsupported descendant property types return an explicit warning.
 
 Saved Pencil variables are retained in the bridge document and their current values are inlined
 for colors, font families, and corner radii so Figma receives the same appearance. Imports report

@@ -7,7 +7,12 @@ import {
   type Paint,
   type TransferWarning,
 } from "@pen-fig/bridge-schema";
-import { BRIDGE_ID_KEY, BRIDGE_KIND_KEY, SVG_ASSET_KEY } from "./identity.js";
+import {
+  BRIDGE_ID_KEY,
+  BRIDGE_KIND_KEY,
+  INSTANCE_OVERRIDE_MAP_KEY,
+  SVG_ASSET_KEY,
+} from "./identity.js";
 
 export interface FigmaReadResult {
   document: BridgeDocument;
@@ -165,7 +170,7 @@ function readNode(
         : "auto",
     children: [],
   };
-  if ("children" in node && !generatedSvgWrapper) {
+  if ("children" in node && !generatedSvgWrapper && node.type !== "INSTANCE") {
     for (const child of node.children) {
       if (!isSupportedSceneNode(child)) {
         warnings.push(
@@ -199,13 +204,20 @@ function readNode(
     result.clipsContent = node.clipsContent;
     result.layout = mapLayout(node);
   }
-  const fills = readPaints(node, bridgeId, assets, warnings);
+  const fills =
+    node.type === "INSTANCE"
+      ? []
+      : readPaints(node, bridgeId, assets, warnings);
   if (fills.length) result.fills = fills;
-  const stroke = readStroke(node, bridgeId, assets, warnings);
+  const stroke =
+    node.type === "INSTANCE"
+      ? undefined
+      : readStroke(node, bridgeId, assets, warnings);
   if (stroke) result.stroke = stroke;
-  const effects = readEffects(node, bridgeId, warnings);
+  const effects =
+    node.type === "INSTANCE" ? [] : readEffects(node, bridgeId, warnings);
   if (effects.length) result.effects = effects;
-  const radii = readCornerRadii(node);
+  const radii = node.type === "INSTANCE" ? undefined : readCornerRadii(node);
   if (radii) result.cornerRadii = radii;
 
   if (node.type === "TEXT") {
@@ -281,15 +293,54 @@ function readNode(
       componentBridgeId:
         component?.getPluginData(BRIDGE_ID_KEY) ||
         `figma:${component?.id ?? "unresolved"}`,
-      overrides: Object.fromEntries(
-        Object.entries(node.componentProperties).map(([name, property]) => [
-          name,
-          property.value,
-        ]),
-      ),
+      overrides: readInstanceOverrides(node, bridgeId, warnings),
     };
   }
   return result;
+}
+
+function readInstanceOverrides(
+  node: InstanceNode,
+  bridgeId: string,
+  warnings: TransferWarning[],
+): Record<string, unknown> {
+  const stored = node.getPluginData(INSTANCE_OVERRIDE_MAP_KEY);
+  if (!stored)
+    return Object.fromEntries(
+      Object.entries(node.componentProperties).map(([name, property]) => [
+        name,
+        property.value,
+      ]),
+    );
+  try {
+    const mapping = JSON.parse(stored) as Record<
+      string,
+      { bridgeId?: unknown; property?: unknown }
+    >;
+    const overrides: Record<string, unknown> = {};
+    for (const [propertyName, target] of Object.entries(mapping)) {
+      const property = node.componentProperties[propertyName];
+      if (
+        typeof target.bridgeId !== "string" ||
+        target.property !== "content" ||
+        !property ||
+        typeof property.value !== "string"
+      )
+        continue;
+      overrides[target.bridgeId] = { content: property.value };
+    }
+    return overrides;
+  } catch {
+    warnings.push(
+      warning(
+        bridgeId,
+        "instance override metadata",
+        "skip",
+        `Ignored invalid instance override metadata on ${node.name}`,
+      ),
+    );
+    return {};
+  }
 }
 
 function removeDerivedInstanceChildren(root: BridgeNode): void {

@@ -227,7 +227,7 @@ describe("importPenDocument", () => {
             type: "ref",
             name: "Primary button",
             ref: "nativeComponent",
-            descendants: { label: { content: "Continue" } },
+            descendants: { componentLabel: { content: "Continue" } },
             children: [
               { id: "derivedLabel", type: "text", content: "Continue" },
             ],
@@ -242,7 +242,15 @@ describe("importPenDocument", () => {
               bridgeId: "figma:component:button",
             },
             children: [
-              { id: "componentLabel", type: "text", content: "Button" },
+              {
+                id: "componentLabel",
+                type: "text",
+                content: "Button",
+                metadata: {
+                  type: "pen-fig-bridge",
+                  bridgeId: "figma:component:label",
+                },
+              },
             ],
           },
         ],
@@ -254,7 +262,9 @@ describe("importPenDocument", () => {
       kind: "instance",
       instance: {
         componentBridgeId: "figma:component:button",
-        overrides: { label: { content: "Continue" } },
+        overrides: {
+          "figma:component:label": { content: "Continue" },
+        },
       },
       children: [],
     });
@@ -263,11 +273,8 @@ describe("importPenDocument", () => {
       kind: "component",
       component: { key: "nativeComponent" },
     });
-    expect(document.warnings).toContainEqual(
-      expect.objectContaining({
-        code: "PEN_INSTANCE_OVERRIDES",
-        action: "skip",
-      }),
+    expect(document.warnings).not.toContainEqual(
+      expect.objectContaining({ code: "PEN_INSTANCE_OVERRIDES" }),
     );
   });
 
