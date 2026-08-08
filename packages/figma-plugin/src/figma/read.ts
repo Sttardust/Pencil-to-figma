@@ -27,7 +27,9 @@ export interface FigmaAssetData {
   byteLength: number;
 }
 
-export async function readSelectedFigmaDocument(): Promise<FigmaReadResult> {
+export async function readSelectedFigmaDocument(
+  options: { collectAssetData?: boolean } = {},
+): Promise<FigmaReadResult> {
   await figma.currentPage.loadAsync();
   const selection = figma.currentPage.selection;
   if (selection.length !== 1)
@@ -67,7 +69,10 @@ export async function readSelectedFigmaDocument(): Promise<FigmaReadResult> {
     document,
     nodeCount,
     fonts: [...fonts].sort(),
-    assetData: await collectAssetData(document.assets),
+    assetData:
+      options.collectAssetData === false
+        ? {}
+        : await collectAssetData(document.assets),
   };
 }
 

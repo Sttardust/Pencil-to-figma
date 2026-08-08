@@ -7,7 +7,7 @@ import {
   readSelectedFigmaDocument,
   type FigmaReadResult,
 } from "./figma/read.js";
-import { planFigmaToPenCreate } from "@pen-fig/core";
+import { authoredDocumentHashes, planFigmaToPenCreate } from "@pen-fig/core";
 
 let pendingFigmaExport: FigmaReadResult | undefined;
 
@@ -327,10 +327,18 @@ figma.ui.onmessage = async (message: {
           ? (message.assetData as Record<string, string>)
           : {},
       );
+      const verified = await readSelectedFigmaDocument({
+        collectAssetData: false,
+      });
+      const figmaBaselineHashes = verifiedFigmaBaselineHashes(
+        result.mappings,
+        verified,
+      );
       figma.ui.postMessage({
         type: "import-result",
         ok: true,
         ...result,
+        figmaBaselineHashes,
         ...(figma.fileKey ? { figmaDocumentId: figma.fileKey } : {}),
       });
     } catch (error) {
@@ -355,6 +363,27 @@ figma.ui.onmessage = async (message: {
     }
   }
 };
+
+function verifiedFigmaBaselineHashes(
+  mappings: Array<{ bridgeId: string; figmaNodeId: string }>,
+  verified: FigmaReadResult,
+): Record<string, string> {
+  const hashes = authoredDocumentHashes(verified.document);
+  const expectedBridgeIds = new Set(
+    mappings.map((mapping) => mapping.bridgeId),
+  );
+  const missing = [...expectedBridgeIds].filter(
+    (bridgeId) => !Object.hasOwn(hashes, bridgeId),
+  );
+  const unexpected = Object.keys(hashes).filter(
+    (bridgeId) => !expectedBridgeIds.has(bridgeId),
+  );
+  if (missing.length || unexpected.length)
+    throw new Error(
+      `Figma read-back identity mismatch (missing: ${missing.join(", ") || "none"}; unexpected: ${unexpected.join(", ") || "none"})`,
+    );
+  return hashes;
+}
 
 async function completePreparedFigmaUpdate(
   prepared: Record<string, unknown>,
