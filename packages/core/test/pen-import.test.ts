@@ -227,6 +227,7 @@ describe("importPenDocument", () => {
             type: "ref",
             name: "Primary button",
             ref: "nativeComponent",
+            width: "fill_container",
             descendants: { componentLabel: { content: "Continue" } },
             children: [
               { id: "derivedLabel", type: "text", content: "Continue" },
@@ -237,6 +238,8 @@ describe("importPenDocument", () => {
             type: "frame",
             name: "A completely different name",
             reusable: true,
+            width: 353,
+            height: 54,
             metadata: {
               type: "pen-fig-bridge",
               bridgeId: "figma:component:button",
@@ -260,6 +263,9 @@ describe("importPenDocument", () => {
 
     expect(document.root.children[0]).toMatchObject({
       kind: "instance",
+      width: { mode: "fill" },
+      height: { mode: "fixed", value: 54 },
+      bounds: expect.objectContaining({ height: 54 }),
       instance: {
         componentBridgeId: "figma:component:button",
         overrides: {

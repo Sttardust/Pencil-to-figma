@@ -36,6 +36,10 @@ export function importPenDocument(
     [root, ...componentNodes],
     options,
   );
+  const componentDefinitions = collectComponentDefinitions([
+    root,
+    ...componentNodes,
+  ]);
   const importedRoot = importNode(
     root,
     options,
@@ -43,6 +47,7 @@ export function importPenDocument(
     assets,
     componentBridgeIds,
     nodeBridgeIds,
+    componentDefinitions,
     variables,
   );
   removeDerivedInstanceChildren(
@@ -57,6 +62,7 @@ export function importPenDocument(
       assets,
       componentBridgeIds,
       nodeBridgeIds,
+      componentDefinitions,
       variables,
     ),
   );
@@ -84,13 +90,17 @@ function importNode(
   assets: BridgeAsset[],
   componentBridgeIds: ReadonlyMap<string, string>,
   nodeBridgeIds: ReadonlyMap<string, string>,
+  componentDefinitions: ReadonlyMap<string, PenNode>,
   variables: PenVariableDefinitions,
 ): BridgeNode {
   if (!node.id || !node.type) throw new Error("Pen node is missing id or type");
   const bridgeId = bridgeIdForPenNode(node, options);
   const kind = mapKind(node, bridgeId, warnings);
-  const width = mapSizing(node.width);
-  const height = mapSizing(node.height);
+  const referencedComponent = node.ref
+    ? componentDefinitions.get(node.ref)
+    : undefined;
+  const width = mapSizing(node.width ?? referencedComponent?.width);
+  const height = mapSizing(node.height ?? referencedComponent?.height);
   const children =
     node.enabled === false
       ? []
@@ -104,6 +114,7 @@ function importNode(
               assets,
               componentBridgeIds,
               nodeBridgeIds,
+              componentDefinitions,
               variables,
             ),
           );
@@ -262,6 +273,16 @@ function collectNodeBridgeIds(
   };
   for (const root of roots) visit(root);
   return nodeBridgeIds;
+}
+
+function collectComponentDefinitions(roots: PenNode[]): Map<string, PenNode> {
+  const definitions = new Map<string, PenNode>();
+  const visit = (node: PenNode) => {
+    if (node.type === "frame" && node.reusable) definitions.set(node.id, node);
+    for (const child of node.children ?? []) visit(child);
+  };
+  for (const root of roots) visit(root);
+  return definitions;
 }
 
 function bridgeIdForPenNode(node: PenNode, options: PenImportOptions): string {
