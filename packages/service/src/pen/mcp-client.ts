@@ -14,6 +14,11 @@ export interface PenBounds {
   height: number;
 }
 
+export interface PenPosition {
+  x: number;
+  y: number;
+}
+
 export class PenMcpClient {
   readonly #executablePath: string;
   #client: Client | undefined;
@@ -123,6 +128,48 @@ export class PenMcpClient {
       width: values[2]!,
       height: values[3]!,
     };
+  }
+
+  async findEmptySpace(
+    width: number,
+    height: number,
+    anchorId?: string,
+    padding = 120,
+  ): Promise<PenPosition> {
+    if (
+      !Number.isFinite(width) ||
+      width <= 0 ||
+      !Number.isFinite(height) ||
+      height <= 0 ||
+      !Number.isFinite(padding) ||
+      padding < 0
+    )
+      throw new Error("Invalid Pencil empty-space dimensions");
+    if (anchorId && !/^[A-Za-z0-9]+$/.test(anchorId))
+      throw new Error(`Invalid Pen node id '${anchorId}'`);
+    const options = {
+      width,
+      height,
+      direction: "right",
+      padding,
+      ...(anchorId ? { nodeId: anchorId } : {}),
+    };
+    const result = await this.#callWithReconnect(
+      "execute",
+      {
+        input: `const p=FindEmptySpace(${JSON.stringify(options)});Print("EMPTY","|",p.x,"|",p.y)`,
+      },
+      30_000,
+    );
+    const match = /EMPTY\s*\|\s*(-?[\d.]+)\s*\|\s*(-?[\d.]+)/.exec(
+      extractText(result),
+    );
+    if (!match) throw new Error("Pencil returned no empty-space position");
+    const x = Number(match[1]);
+    const y = Number(match[2]);
+    if (!Number.isFinite(x) || !Number.isFinite(y))
+      throw new Error("Pencil returned an invalid empty-space position");
+    return { x, y };
   }
 
   async findExportRoot(transferId: string): Promise<string | undefined> {

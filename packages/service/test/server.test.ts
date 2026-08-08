@@ -865,6 +865,7 @@ describe("BridgeServer", () => {
         text: `- Currently active canvas editor: \`${penPath}\``,
       }),
       getTopLevelBounds: async () => undefined,
+      findEmptySpace: async () => ({ x: 0, y: 0 }),
       executeWrite: async (input: string) =>
         [...input.matchAll(/Print\("MAP","\|","([^"]+)"/g)]
           .map((match) => `MAP | ${match[1]} | ${nativeIds[match[1]!]}`)

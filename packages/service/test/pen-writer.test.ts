@@ -40,6 +40,9 @@ describe("writeFigmaCopyToPen", () => {
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     let nextId = 1;
     const calls: string[] = [];
+    let emptySpaceRequest:
+      | { width: number; height: number; anchorId?: string; padding: number }
+      | undefined;
     const pen = {
       getTopLevelBounds: async () => ({
         x: 100,
@@ -47,6 +50,15 @@ describe("writeFigmaCopyToPen", () => {
         width: 393,
         height: 844,
       }),
+      findEmptySpace: async (
+        width: number,
+        height: number,
+        anchorId?: string,
+        padding = 120,
+      ) => {
+        emptySpaceRequest = { width, height, anchorId, padding };
+        return { x: 700, y: 200 };
+      },
       executeWrite: async (input: string) => {
         calls.push(input);
         const lines: string[] = [];
@@ -80,7 +92,13 @@ describe("writeFigmaCopyToPen", () => {
         { bridgeId: "pen:card", penNodeId: "p2" },
       ],
     });
-    expect(calls.join("\n")).toContain('"x":613');
+    expect(emptySpaceRequest).toEqual({
+      width: 393,
+      height: 844,
+      anchorId: "root",
+      padding: 120,
+    });
+    expect(calls.join("\n")).toContain('"x":700');
     expect(calls.join("\n")).toContain(".pen-fig-assets/");
     expect(await readdir(path.join(directory, ".pen-fig-assets"))).toHaveLength(
       1,
@@ -93,6 +111,7 @@ describe("writeFigmaCopyToPen", () => {
     const calls: string[] = [];
     const pen = {
       getTopLevelBounds: async () => undefined,
+      findEmptySpace: async () => ({ x: 700, y: 200 }),
       findExportRoot: async () => "partial1",
       executeWrite: async (input: string) => {
         calls.push(input);
@@ -169,6 +188,10 @@ describe("writeFigmaCopyToPen", () => {
     const calls: string[] = [];
     const pen = {
       getTopLevelBounds: async () => undefined,
+      findEmptySpace: async (width: number, height: number) => {
+        expect({ width, height }).toEqual({ width: 613, height: 844 });
+        return { x: 700, y: 200 };
+      },
       executeWrite: async (input: string) => {
         calls.push(input);
         const mappings = [

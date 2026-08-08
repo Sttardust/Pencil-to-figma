@@ -19,8 +19,11 @@ import {
   readMappedSubtree,
 } from "./identity.js";
 import { directFontCandidates, fontKey } from "./fonts.js";
+import { findCleanRightSidePosition } from "./placement.js";
 
 const WRITE_SCHEMA_VERSION = "2";
+const ROOT_GAP = 120;
+const COMPONENT_GAP = 40;
 
 export interface WriteResult {
   rootId: string;
@@ -163,9 +166,7 @@ export async function writeBridgeDocument(
     await materializeComponentDependencies(document, context);
     root = await createNode(document.root, figma.currentPage, context);
     discardUnusedPreparedComponents(context);
-    const center = figma.viewport.center;
-    root.x = center.x - root.width / 2;
-    root.y = center.y - root.height / 2;
+    placeCreatedDocumentRoots(root, document, context);
     figma.currentPage.selection = [root];
     figma.viewport.scrollAndZoomIntoView([root]);
     return {
@@ -375,6 +376,48 @@ function discardUnusedPreparedComponents(context: WriteContext): void {
       `COMPONENT_DEFINITION_SKIPPED: ${bridgeId} was nested inside a derived instance`,
     );
   removePreparedComponents(context);
+}
+
+function placeCreatedDocumentRoots(
+  root: SceneNode,
+  document: BridgeDocument,
+  context: WriteContext,
+): void {
+  const componentRoots = (document.components ?? [])
+    .map((component) => context.nodes.get(component.bridgeId))
+    .filter(
+      (node): node is ComponentNode =>
+        node?.type === "COMPONENT" &&
+        node.parent === figma.currentPage &&
+        context.createdComponents.has(node),
+    );
+  const createdRoots = new Set<SceneNode>([root, ...componentRoots]);
+  const occupied = figma.currentPage.children
+    .filter(
+      (node): node is SceneNode =>
+        "x" in node && "width" in node && !createdRoots.has(node),
+    )
+    .map((node) => ({
+      x: node.x,
+      y: node.y,
+      width: node.width,
+      height: node.height,
+    }));
+  const position = findCleanRightSidePosition(
+    root.width,
+    root.height,
+    occupied,
+    figma.viewport.center,
+    ROOT_GAP,
+  );
+  root.x = position.x;
+  root.y = position.y;
+  let componentY = root.y;
+  for (const component of componentRoots) {
+    component.x = root.x + root.width + ROOT_GAP;
+    component.y = componentY;
+    componentY += component.height + COMPONENT_GAP;
+  }
 }
 
 async function prepareAssets(

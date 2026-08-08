@@ -7,6 +7,8 @@ import type { PenMcpClient } from "../pen/mcp-client.js";
 
 const MAX_ASSET_BYTES = 10 * 1024 * 1024;
 const MAX_TOTAL_ASSET_BYTES = 32 * 1024 * 1024;
+const ROOT_GAP = 120;
+const COMPONENT_GAP = 40;
 
 export interface FigmaExportAssetData {
   base64: string;
@@ -39,12 +41,13 @@ export async function writeFigmaCopyToPen(
   const sourceBounds = sourceId
     ? await pen.getTopLevelBounds(sourceId)
     : undefined;
-  const rootPosition = sourceBounds
-    ? { x: sourceBounds.x + sourceBounds.width + 120, y: sourceBounds.y }
-    : {
-        x: document.root.bounds.x + document.root.bounds.width + 120,
-        y: document.root.bounds.y,
-      };
+  const footprint = exportFootprint(document);
+  const rootPosition = await pen.findEmptySpace(
+    footprint.width,
+    footprint.height,
+    sourceBounds ? sourceId : undefined,
+    ROOT_GAP,
+  );
   let rootId: string | undefined;
   const variablePrefix = `n${transferId.replaceAll("-", "").slice(0, 8)}`;
 
@@ -168,12 +171,15 @@ function preparePayload(
     );
     if (componentIndex >= 0) {
       const component = document.components![componentIndex]!;
-      payload.x = rootPosition.x + document.root.bounds.width + 120;
+      payload.x = rootPosition.x + document.root.bounds.width + ROOT_GAP;
       payload.y =
         rootPosition.y +
         document
           .components!.slice(0, componentIndex)
-          .reduce((offset, item) => offset + item.bounds.height + 40, 0);
+          .reduce(
+            (offset, item) => offset + item.bounds.height + COMPONENT_GAP,
+            0,
+          );
       payload.name = `${component.name} · Component`;
       payload.metadata = {
         type: "pen-fig-export-component",
@@ -204,6 +210,31 @@ function preparePayload(
     );
   }
   return payload;
+}
+
+function exportFootprint(document: BridgeDocument): {
+  width: number;
+  height: number;
+} {
+  const components = document.components ?? [];
+  if (!components.length)
+    return {
+      width: document.root.bounds.width,
+      height: document.root.bounds.height,
+    };
+  const componentWidth = Math.max(
+    ...components.map((component) => component.bounds.width),
+  );
+  const componentHeight =
+    components.reduce(
+      (height, component) => height + component.bounds.height,
+      0,
+    ) +
+    COMPONENT_GAP * Math.max(0, components.length - 1);
+  return {
+    width: document.root.bounds.width + ROOT_GAP + componentWidth,
+    height: Math.max(document.root.bounds.height, componentHeight),
+  };
 }
 
 function quoteNativeId(value: string | undefined): string {
