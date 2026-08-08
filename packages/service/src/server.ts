@@ -24,6 +24,7 @@ import {
 import { resolveAssets } from "./assets/resolve.js";
 import { ManifestRepository } from "./manifest/repository.js";
 import { writeFigmaCopyToPen } from "./export/pen-writer.js";
+import { writeFigmaUpdatesToPen } from "./export/pen-updater.js";
 import {
   buildFigmaExportManifest,
   collectPenBridgeMappings,
@@ -471,6 +472,129 @@ export class BridgeServer {
               side: entry.side,
               reason: entry.reason,
             })),
+        });
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/figma/sync/apply"
+      ) {
+        const syncRequest = figmaExportRequestSchema.parse(
+          await readJsonBody(request, 50 * 1024 * 1024),
+        );
+        const penPath = await this.#requireActivePenPath();
+        const manifestPath = sidecarPath(penPath);
+        const manifest = await this.#manifests.read(manifestPath);
+        if (!manifest) throw new Error("No sync manifest exists for this file");
+        if (manifest.penDocumentId !== penPath)
+          throw new Error("Sync manifest belongs to a different Pencil file");
+        const rootMapping = manifest.mappings.find(
+          (mapping) => mapping.bridgeId === syncRequest.document.root.bridgeId,
+        );
+        if (!rootMapping?.penNodeId || !rootMapping.figmaNodeId)
+          throw new Error("The selected Figma root is not fully mapped");
+        if (rootMapping.figmaNodeId !== syncRequest.document.root.source.nodeId)
+          throw new Error("The selected Figma root does not own this mapping");
+        const penRoot = await this.#pen.getNode(rootMapping.penNodeId);
+        const penDocument = importPenDocument(penRoot, {
+          documentId: penPath,
+          useBridgeMetadata: true,
+        });
+        if (penDocument.root.bridgeId !== syncRequest.document.root.bridgeId)
+          throw new Error("Mapped Pencil root bridge identity does not match");
+        const penSnapshots = snapshotBridgeDocument(penDocument);
+        const figmaSnapshots = snapshotBridgeDocument(syncRequest.document);
+        const relevantBridgeIds = new Set([
+          ...penSnapshots.map((snapshot) => snapshot.bridgeId),
+          ...figmaSnapshots.map((snapshot) => snapshot.bridgeId),
+        ]);
+        const baseline = manifest.mappings.filter((mapping) =>
+          relevantBridgeIds.has(mapping.bridgeId),
+        );
+        if (
+          baseline.some(
+            (mapping) => !mapping.penBaselineHash || !mapping.figmaBaselineHash,
+          )
+        )
+          throw new Error(
+            "Adopt this Pencil root again to upgrade its baseline",
+          );
+        const diff = classifyThreeWayDiff(
+          baseline,
+          penSnapshots,
+          figmaSnapshots,
+        );
+        const actions = countSyncDirections(diff.entries);
+        if (actions.conflicts || actions.unmapped)
+          throw new Error(
+            "Sync has conflicts or unmapped nodes; no writes applied",
+          );
+        if (actions.toFigma)
+          throw new Error(
+            "Pencil also has changes; apply or resolve those before writing Pencil",
+          );
+        const unsupportedStructural = diff.entries.filter(
+          (entry) =>
+            entry.classification === "added" ||
+            entry.classification === "deleted",
+        );
+        if (unsupportedStructural.length)
+          throw new Error(
+            `Structural sync is not enabled yet: ${unsupportedStructural[0]!.bridgeId}`,
+          );
+        const changedBridgeIds = diff.entries
+          .filter((entry) => entry.classification === "figma-only")
+          .map((entry) => entry.bridgeId);
+        if (actions.toPencil !== changedBridgeIds.length)
+          throw new Error("Sync contains unsupported Pencil operations");
+        if (!changedBridgeIds.length) {
+          json(response, 200, {
+            type: "figma-sync-result",
+            ok: true,
+            operation: "unchanged",
+            updatedNodeCount: 0,
+            manifestRevision: manifest.revision,
+          });
+          return;
+        }
+        const penMappings: PenBridgeMapping[] = baseline.map((mapping) => {
+          if (!mapping.penNodeId)
+            throw new Error(`Pencil mapping missing ${mapping.bridgeId}`);
+          return {
+            bridgeId: mapping.bridgeId,
+            penNodeId: mapping.penNodeId,
+          };
+        });
+        const update = await writeFigmaUpdatesToPen(
+          syncRequest.document,
+          changedBridgeIds,
+          penMappings,
+          penRoot,
+          syncRequest.assetData,
+          penPath,
+          this.#pen,
+        );
+        const verifiedRoot = await this.#pen.getNode(rootMapping.penNodeId);
+        const verifiedMappings = collectPenBridgeMappings(verifiedRoot);
+        if (verifiedMappings.length !== figmaSnapshots.length)
+          throw new Error("Pencil verification found a mapping count mismatch");
+        const verifiedPenDocument = importPenDocument(verifiedRoot, {
+          documentId: penPath,
+          useBridgeMetadata: true,
+        });
+        const committed = await this.#commitFigmaExportManifest(
+          syncRequest.document,
+          verifiedMappings,
+          penPath,
+          verifiedPenDocument,
+        );
+        json(response, 200, {
+          type: "figma-sync-result",
+          ok: true,
+          operation: "updated-pen",
+          updatedNodeCount: update.updatedNodeCount,
+          updatedBridgeIds: update.updatedBridgeIds,
+          manifest: committed,
         });
         return;
       }

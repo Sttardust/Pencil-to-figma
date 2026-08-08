@@ -10,8 +10,10 @@ const exportCopy = required<HTMLButtonElement>("export-copy");
 const adoptRootId = required<HTMLInputElement>("adopt-root-id");
 const adoptCopy = required<HTMLButtonElement>("adopt-copy");
 const previewSync = required<HTMLButtonElement>("preview-sync");
+const applySync = required<HTMLButtonElement>("apply-sync");
 let token: string | undefined;
 let pendingExportPlan: any;
+let pendingSyncPreview: any;
 let pendingImport:
   | {
       document: any;
@@ -52,6 +54,8 @@ required("preview-export").addEventListener("click", () => {
   exportCopy.disabled = true;
   adoptCopy.disabled = true;
   previewSync.disabled = true;
+  applySync.disabled = true;
+  pendingSyncPreview = undefined;
   setStatus("Reading Figma…", true);
   parent.postMessage({ pluginMessage: { type: "preview-figma-export" } }, "*");
 });
@@ -109,6 +113,22 @@ previewSync.addEventListener("click", () => {
   setStatus("Comparing both editors…", true);
   parent.postMessage(
     { pluginMessage: { type: "preview-mapped-sync", token } },
+    "*",
+  );
+});
+applySync.addEventListener("click", () => {
+  if (!token || !pendingSyncPreview) return;
+  const count = pendingSyncPreview.actions.toPencil;
+  if (
+    !confirm(
+      `Apply ${count} Figma-only node update${count === 1 ? "" : "s"} to the mapped Pencil copy?\n\nThe updates run in one atomic Pencil transaction.`,
+    )
+  )
+    return;
+  applySync.disabled = true;
+  setStatus("Updating Pencil…", true);
+  parent.postMessage(
+    { pluginMessage: { type: "apply-mapped-sync", token } },
     "*",
   );
 });
@@ -244,12 +264,42 @@ window.onmessage = (event) => {
           : "Sync preview failed",
         Boolean(message.ok),
       );
+      pendingSyncPreview = message.ok ? message : undefined;
+      applySync.disabled = !(
+        message.ok &&
+        !message.baselineUpgradeRequired &&
+        message.actions.toPencil > 0 &&
+        message.actions.toFigma === 0 &&
+        message.actions.conflicts === 0 &&
+        message.actions.unmapped === 0 &&
+        message.counts.added === 0 &&
+        message.counts.deleted === 0
+      );
       if (!message.ok) detail.textContent = message.message;
       else if (message.baselineUpgradeRequired)
         detail.textContent =
           "This mapping predates dual baselines. Adopt the same Pencil root once more, then preview again.";
       else
         detail.textContent = `To Pencil: ${message.actions.toPencil}. To Figma: ${message.actions.toFigma}. Conflicts: ${message.actions.conflicts}.`;
+    }
+    if (message.type === "figma-sync-result") {
+      setStatus(
+        message.ok
+          ? message.operation === "unchanged"
+            ? "Already synchronized"
+            : "Pencil updated"
+          : "Sync apply failed",
+        message.ok,
+      );
+      if (!message.ok) detail.textContent = message.message;
+      else {
+        pendingSyncPreview = undefined;
+        applySync.disabled = true;
+        detail.textContent =
+          message.operation === "unchanged"
+            ? "No Pencil updates were required."
+            : `Updated ${message.updatedNodeCount} Pencil node${message.updatedNodeCount === 1 ? "" : "s"}; manifest revision ${message.manifest.revision}.`;
+      }
     }
   }
 };

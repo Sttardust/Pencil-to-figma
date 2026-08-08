@@ -30,7 +30,7 @@ export async function writeFigmaCopyToPen(
   pen: PenMcpClient,
 ): Promise<PenExportResult> {
   const transferId = randomUUID();
-  const assetPaths = await stageAssets(document, assetData, penPath);
+  const assetPaths = await stageFigmaAssets(document, assetData, penPath);
   const plan = planFigmaToPenCreate(document, { assetPaths });
   const nativeIds = new Map<string, string>();
   const sourceId = document.root.bridgeId.startsWith("pen:")
@@ -173,7 +173,7 @@ function parseMappings(
   return mappings;
 }
 
-async function stageAssets(
+export async function stageFigmaAssets(
   document: BridgeDocument,
   assetData: Record<string, FigmaExportAssetData>,
   penPath: string,

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { BridgeServer } from "../src/server.js";
 import type { PenMcpClient } from "../src/pen/mcp-client.js";
-import { importPenDocument } from "@pen-fig/core";
+import { importPenDocument, type PenNode } from "@pen-fig/core";
 import type { BridgeDocument } from "@pen-fig/bridge-schema";
 
 const servers: BridgeServer[] = [];
@@ -140,22 +140,29 @@ describe("BridgeServer", () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "pen-fig-adopt-"));
     temporaryDirectories.push(directory);
     const penPath = path.join(directory, "test.pen");
+    const adoptedRoot: PenNode = {
+      id: "adoptedRoot",
+      type: "frame",
+      metadata: { type: "pen-fig-export", bridgeId: "pen:root" },
+      children: [
+        {
+          id: "adoptedTitle",
+          type: "text",
+          content: "Hello",
+          metadata: { type: "pen-fig-bridge", bridgeId: "pen:title" },
+        },
+      ],
+    };
     const pen = {
       getAppState: async () => ({
         text: `- Currently active canvas editor: \`${penPath}\``,
       }),
-      getNode: async () => ({
-        id: "adoptedRoot",
-        type: "frame",
-        metadata: { type: "pen-fig-export", bridgeId: "pen:root" },
-        children: [
-          {
-            id: "adoptedTitle",
-            type: "text",
-            metadata: { type: "pen-fig-bridge", bridgeId: "pen:title" },
-          },
-        ],
-      }),
+      getNode: async () => structuredClone(adoptedRoot),
+      executeWrite: async (input: string) => {
+        const content = /"content":"([^"]+)"/.exec(input)?.[1];
+        if (content) adoptedRoot.children![0]!.content = content;
+        return "OK\n\n## Print output\nUPDATED | pen:title | adoptedTitle";
+      },
     } as PenMcpClient;
     const server = new BridgeServer({ host: "127.0.0.1", port: 0, pen });
     servers.push(server);
@@ -235,6 +242,40 @@ describe("BridgeServer", () => {
       canApplyWithoutResolution: true,
       baselineUpgradeRequired: false,
     });
+
+    const editedDocument = figmaExportDocument();
+    editedDocument.root.children[0]!.text!.characters = "Updated in Figma";
+    const changedPreview = await fetch(
+      `${origin}/figma/sync/preview?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ document: editedDocument }),
+      },
+    );
+    expect(await changedPreview.json()).toMatchObject({
+      counts: { "figma-only": 1, conflicted: 0 },
+      actions: { toPencil: 1, toFigma: 0 },
+    });
+
+    const applyResponse = await fetch(
+      `${origin}/figma/sync/apply?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ document: editedDocument, assetData: {} }),
+      },
+    );
+    expect(applyResponse.status).toBe(200);
+    expect(await applyResponse.json()).toMatchObject({
+      type: "figma-sync-result",
+      ok: true,
+      operation: "updated-pen",
+      updatedNodeCount: 1,
+      updatedBridgeIds: ["pen:title"],
+      manifest: { revision: 1, mappingCount: 2 },
+    });
+    expect(adoptedRoot.children?.[0]?.content).toBe("Updated in Figma");
   });
 
   it("rejects requests before authentication", async () => {

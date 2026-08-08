@@ -220,6 +220,43 @@ figma.ui.onmessage = async (message: {
     }
   }
 
+  if (message.type === "apply-mapped-sync") {
+    try {
+      if (!pendingFigmaExport)
+        throw new Error("Preview the selected Figma frame first");
+      if (typeof message.token !== "string" || !message.token)
+        throw new Error("Pair and authenticate first");
+      const response = await fetch(
+        `http://localhost:32145/figma/sync/apply?token=${encodeURIComponent(message.token)}`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-pen-fig-token": message.token,
+          },
+          body: JSON.stringify({
+            document: pendingFigmaExport.document,
+            assetData: pendingFigmaExport.assetData,
+          }),
+        },
+      );
+      const result = (await response.json()) as Record<string, unknown>;
+      if (!response.ok)
+        throw new Error(
+          typeof result.message === "string"
+            ? result.message
+            : `Bridge error ${response.status}`,
+        );
+      figma.ui.postMessage(result);
+    } catch (error) {
+      figma.ui.postMessage({
+        type: "figma-sync-result",
+        ok: false,
+        message: error instanceof Error ? error.message : "Sync apply failed",
+      });
+    }
+  }
+
   if (message.type === "apply-document" && "document" in message) {
     try {
       const result = await writeBridgeDocument(
