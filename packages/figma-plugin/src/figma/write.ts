@@ -17,6 +17,7 @@ import {
   findMappedRoots,
   readMappedSubtree,
 } from "./identity.js";
+import { fontKey, rankFontFallbacks } from "./fonts.js";
 
 export interface WriteResult {
   rootId: string;
@@ -24,6 +25,7 @@ export interface WriteResult {
   operation: "created" | "unchanged" | "updated";
   operations?: SyncPlan["counts"];
   mappings: Array<{ bridgeId: string; figmaNodeId: string }>;
+  figmaBaselineHashes: Record<string, string>;
   warnings: string[];
 }
 
@@ -46,6 +48,7 @@ export async function previewBridgeDocument(
 ): Promise<PreviewResult> {
   const document = bridgeDocumentSchema.parse(input);
   await figma.currentPage.loadAsync();
+  const fontWarnings = await preflightFonts(document);
   const mappedRoots = findMappedRoots(
     figma.currentPage,
     document.root.bridgeId,
@@ -68,7 +71,10 @@ export async function previewBridgeDocument(
         : "unchanged"
       : "created",
     operations: plan.counts,
-    warnings: document.warnings.map((warning) => warning.message),
+    warnings: [
+      ...document.warnings.map((warning) => warning.message),
+      ...fontWarnings,
+    ],
   };
 }
 
@@ -78,6 +84,7 @@ export async function writeBridgeDocument(
 ): Promise<WriteResult> {
   const document = bridgeDocumentSchema.parse(input);
   await figma.currentPage.loadAsync();
+  const fontWarnings = await preflightFonts(document);
   const hashes = authoredDocumentHashes(document);
   const mappedRoots = findMappedRoots(
     figma.currentPage,
@@ -100,11 +107,15 @@ export async function writeBridgeDocument(
         operation: "unchanged",
         operations: plan.counts,
         mappings: mappingsFromNodes(mapped.nodes, rootBridgeIds(document)),
-        warnings: document.warnings.map((warning) => warning.message),
+        figmaBaselineHashes: hashes,
+        warnings: [
+          ...document.warnings.map((warning) => warning.message),
+          ...fontWarnings,
+        ],
       };
     }
-    await preflightFonts(document);
     const context = prepareContext(document, assetData, hashes);
+    context.warnings.push(...fontWarnings);
     for (const [bridgeId, node] of mapped.nodes)
       context.nodes.set(bridgeId, node);
     await prepareAssets(document, context);
@@ -129,14 +140,15 @@ export async function writeBridgeDocument(
       operation: "updated",
       operations: plan.counts,
       mappings: mappingsFromNodes(context.nodes, rootBridgeIds(document)),
+      figmaBaselineHashes: hashes,
       warnings: [
         ...document.warnings.map((warning) => warning.message),
         ...context.warnings,
       ],
     };
   }
-  await preflightFonts(document);
   const context = prepareContext(document, assetData, hashes);
+  context.warnings.push(...fontWarnings);
   await prepareAssets(document, context);
   let root: SceneNode | undefined;
   try {
@@ -154,6 +166,7 @@ export async function writeBridgeDocument(
       nodeCount: rootBridgeIds(document).size,
       operation: "created",
       mappings: mappingsFromNodes(context.nodes, rootBridgeIds(document)),
+      figmaBaselineHashes: hashes,
       warnings: [
         ...document.warnings.map((warning) => warning.message),
         ...context.warnings,
@@ -355,15 +368,18 @@ async function prepareAssets(
   }
 }
 
-async function preflightFonts(document: BridgeDocument): Promise<void> {
-  const fonts = new Map<string, FontName>();
+async function preflightFonts(document: BridgeDocument): Promise<string[]> {
+  const fonts = new Map<string, { font: FontName; nodes: BridgeNode[] }>();
   visit(document.root, (node) => {
     if (node.text) {
       const font = {
         family: node.text.style.family,
         style: node.text.style.style,
       };
-      fonts.set(`${font.family}\0${font.style}`, font);
+      const key = fontKey(font);
+      const entry = fonts.get(key) ?? { font, nodes: [] };
+      entry.nodes.push(node);
+      fonts.set(key, entry);
     }
   });
   for (const component of document.components ?? [])
@@ -373,21 +389,48 @@ async function preflightFonts(document: BridgeDocument): Promise<void> {
           family: node.text.style.family,
           style: node.text.style.style,
         };
-        fonts.set(`${font.family}\0${font.style}`, font);
+        const key = fontKey(font);
+        const entry = fonts.get(key) ?? { font, nodes: [] };
+        entry.nodes.push(node);
+        fonts.set(key, entry);
       }
     });
-  const failures: string[] = [];
-  await Promise.all(
-    [...fonts.values()].map(async (font) => {
-      try {
-        await figma.loadFontAsync(font);
-      } catch {
-        failures.push(`${font.family} ${font.style}`);
-      }
-    }),
+  if (!fonts.size) return [];
+  const available = (await figma.listAvailableFontsAsync()).map(
+    (entry) => entry.fontName,
   );
-  if (failures.length)
-    throw new Error(`Missing Figma fonts: ${failures.sort().join(", ")}`);
+  const warnings: string[] = [];
+  const loaded = new Set<string>();
+  for (const { font, nodes } of fonts.values()) {
+    let selected: FontName | undefined;
+    for (const candidate of rankFontFallbacks(font, available)) {
+      const key = fontKey(candidate);
+      try {
+        if (!loaded.has(key)) {
+          await figma.loadFontAsync(candidate);
+          loaded.add(key);
+        }
+        selected = candidate;
+        break;
+      } catch {
+        // Try the next available face if Figma cannot materialize this one.
+      }
+    }
+    if (!selected)
+      throw new Error(
+        `No loadable Figma font for ${font.family} ${font.style}`,
+      );
+    if (fontKey(selected) === fontKey(font)) continue;
+    for (const node of nodes) {
+      if (!node.text) continue;
+      node.text.style.family = selected.family;
+      node.text.style.style = selected.style;
+    }
+    warnings.push(
+      `FONT_SUBSTITUTED: ${font.family} ${font.style} → ${selected.family} ${selected.style} (${nodes.length} text ${nodes.length === 1 ? "node" : "nodes"})`,
+    );
+  }
+  return warnings;
 }
 
 async function createNode(

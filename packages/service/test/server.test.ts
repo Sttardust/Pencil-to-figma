@@ -86,6 +86,7 @@ describe("BridgeServer", () => {
       body: JSON.stringify({
         transferId: transferred.transferId,
         mappings: [{ bridgeId: "pen:abc", figmaNodeId: "1:2" }],
+        figmaBaselineHashes: { "pen:abc": "a".repeat(64) },
       }),
     });
     expect(await completed.json()).toMatchObject({
@@ -101,7 +102,14 @@ describe("BridgeServer", () => {
     ).toMatchObject({
       version: 1,
       revision: 0,
-      mappings: [{ bridgeId: "pen:abc", figmaNodeId: "1:2" }],
+      mappings: [
+        {
+          bridgeId: "pen:abc",
+          figmaNodeId: "1:2",
+          penBaselineHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          figmaBaselineHash: "a".repeat(64),
+        },
+      ],
     });
   });
 

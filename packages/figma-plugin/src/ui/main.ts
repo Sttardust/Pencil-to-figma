@@ -188,6 +188,10 @@ window.onmessage = (event) => {
           body: JSON.stringify({
             transferId: completedImport.transferId,
             mappings: message.mappings,
+            ...(message.figmaBaselineHashes &&
+            typeof message.figmaBaselineHashes === "object"
+              ? { figmaBaselineHashes: message.figmaBaselineHashes }
+              : {}),
             ...(message.figmaDocumentId
               ? { figmaDocumentId: message.figmaDocumentId }
               : {}),

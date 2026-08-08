@@ -64,6 +64,10 @@ for colors, font families, and corner radii so Figma receives the same appearanc
 this flattening explicitly until native Figma variable binding is enabled. Pencil icons from
 Lucide, Material Symbols Rounded, and Phosphor are packaged as SVG assets.
 
+If an authored font is unavailable to Figma, the plugin selects the closest loadable family and
+weight (for example, Fraunces falls back to Georgia), reports the substitution, and stores separate
+Pencil and Figma baseline hashes so the fallback does not appear as a user edit during sync.
+
 When modifying the plugin, run its watch build in another terminal:
 
 ```sh

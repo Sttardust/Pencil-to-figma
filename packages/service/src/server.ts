@@ -312,6 +312,16 @@ export class BridgeServer {
         if (!transfer)
           throw new Error("Transfer expired; read the Pen screen again");
         const expectedHashes = authoredDocumentHashes(transfer.document);
+        const figmaBaselineHashes = completion.figmaBaselineHashes;
+        if (
+          figmaBaselineHashes &&
+          (Object.keys(figmaBaselineHashes).length !==
+            Object.keys(expectedHashes).length ||
+            Object.keys(figmaBaselineHashes).some(
+              (bridgeId) => !expectedHashes[bridgeId],
+            ))
+        )
+          throw new Error("Figma baseline hashes do not match the transfer");
         const returned = new Map(
           completion.mappings.map((mapping) => [mapping.bridgeId, mapping]),
         );
@@ -330,6 +340,12 @@ export class BridgeServer {
             penNodeId: node.source.nodeId,
             figmaNodeId: mapping.figmaNodeId,
             baselineHash: expectedHashes[node.bridgeId]!,
+            ...(figmaBaselineHashes
+              ? {
+                  penBaselineHash: expectedHashes[node.bridgeId]!,
+                  figmaBaselineHash: figmaBaselineHashes[node.bridgeId]!,
+                }
+              : {}),
           });
         });
         const manifestPath = sidecarPath(transfer.penPath);
@@ -1082,6 +1098,9 @@ const syncCompletionSchema = z
   .object({
     transferId: z.string().uuid(),
     figmaDocumentId: z.string().min(1).max(500).optional(),
+    figmaBaselineHashes: z
+      .record(z.string().min(1).max(200), z.string().regex(/^[a-f0-9]{64}$/))
+      .optional(),
     mappings: z
       .array(
         z
