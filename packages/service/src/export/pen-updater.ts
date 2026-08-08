@@ -81,6 +81,7 @@ export async function writeFigmaUpdatesToPen(
         document.root.name,
       ),
       penByBridgeId,
+      current.type === "ref" ? current.ref : undefined,
     );
     statements.push(
       `Update(${JSON.stringify(penNodeId)},${JSON.stringify(payload)})`,
@@ -211,6 +212,7 @@ export async function writeFigmaStructureToPen(
         document.root.name,
       ),
       nativeByBridgeId,
+      currentEntry.node.type === "ref" ? currentEntry.node.ref : undefined,
     );
     statements.push(
       `Update(${nodeReference(bridgeId, nativeByBridgeId, variableByBridgeId)},${JSON.stringify(payload)})`,
@@ -432,12 +434,19 @@ function collectPenNativeIds(document: BridgeDocument): Map<string, string> {
 function resolvePenReferences(
   source: Record<string, unknown>,
   nativeByBridgeId: ReadonlyMap<string, string>,
+  existingRef?: string,
 ): Record<string, unknown> {
   const payload = { ...source };
   if (typeof payload.ref === "string") {
     const mapped = nativeByBridgeId.get(payload.ref);
     if (!mapped) throw new Error(`Unresolved Figma component ${payload.ref}`);
-    payload.ref = mapped;
+    if (existingRef !== undefined) {
+      if (mapped !== existingRef)
+        throw new Error(
+          `Changing a mapped Pencil instance component is not supported (${existingRef} → ${mapped})`,
+        );
+      delete payload.ref;
+    } else payload.ref = mapped;
   }
   if (
     payload.descendants &&

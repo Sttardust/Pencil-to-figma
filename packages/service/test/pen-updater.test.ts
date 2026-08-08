@@ -154,7 +154,7 @@ describe("writeFigmaUpdatesToPen", () => {
 
     expect(result.updatedBridgeIds).toEqual(["pen:instance"]);
     expect(calls[0]).toContain('Update("nativeInstance"');
-    expect(calls[0]).toContain('"ref":"nativeComponent"');
+    expect(calls[0]).not.toContain('"ref":"nativeComponent"');
     expect(calls[0]).toContain(
       '"descendants":{"nativeLabel":{"content":"After"}}',
     );
