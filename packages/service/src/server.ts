@@ -726,17 +726,20 @@ export class BridgeServer {
           resolutionRequest.bridgeId,
         );
         const subtree = new Set(bridgeIds);
-        const structural = state.diff.entries.filter(
-          (entry) =>
-            subtree.has(entry.bridgeId) &&
-            (entry.classification === "added" ||
-              entry.classification === "deleted" ||
-              entry.classification === "unmapped"),
+        const subtreeEntries = state.diff.entries.filter((entry) =>
+          subtree.has(entry.bridgeId),
         );
-        if (structural.length)
+        const unsupportedStructural = subtreeEntries.filter(
+          (entry) =>
+            entry.classification === "added" ||
+            entry.classification === "deleted" ||
+            entry.classification === "unmapped",
+        );
+        if (unsupportedStructural.length)
           throw new Error(
-            `Structural conflict resolution is not enabled yet: ${structural[0]!.bridgeId}`,
+            `Create/delete conflict resolution is not enabled yet: ${unsupportedStructural[0]!.bridgeId}`,
           );
+        const structural = hasStructuralDifference(subtreeEntries);
         if (bridgeIds.length > 40)
           throw new Error(
             `Conflict subtree has ${bridgeIds.length} nodes; the atomic limit is 40`,
@@ -759,21 +762,34 @@ export class BridgeServer {
               penNodeId: mapping.penNodeId,
             };
           });
-          const update = await writeFigmaUpdatesToPen(
-            resolutionRequest.document,
-            bridgeIds,
-            penMappings,
-            state.penRoot,
-            resolutionRequest.assetData,
-            penPath,
-            this.#pen,
-          );
+          const structuralUpdate = structural
+            ? await writeFigmaStructureToPen(
+                resolutionRequest.document,
+                bridgeIds,
+                penMappings,
+                state.penRoot,
+                resolutionRequest.assetData,
+                penPath,
+                this.#pen,
+              )
+            : undefined;
+          const update =
+            structuralUpdate ??
+            (await writeFigmaUpdatesToPen(
+              resolutionRequest.document,
+              bridgeIds,
+              penMappings,
+              state.penRoot,
+              resolutionRequest.assetData,
+              penPath,
+              this.#pen,
+            ));
           const verifiedRoot = await this.#pen.getNode(
             state.rootMapping.penNodeId,
           );
           const verifiedMappings = collectMappedPenBridgeMappings(
             verifiedRoot,
-            penMappings,
+            structuralUpdate?.mappings ?? penMappings,
           );
           const verifiedPenDocument =
             await this.#importPenDocumentWithComponents(
@@ -787,14 +803,21 @@ export class BridgeServer {
               throw new Error(
                 `Pencil verification found no resolved change for ${bridgeId}`,
               );
-          const manifest = await this.#commitPartialFigmaExportManifest(
-            resolutionRequest.document,
-            verifiedMappings,
-            penPath,
-            verifiedPenDocument,
-            state.manifest,
-            bridgeIds,
-          );
+          const manifest = structural
+            ? await this.#commitFigmaExportManifest(
+                resolutionRequest.document,
+                verifiedMappings,
+                penPath,
+                verifiedPenDocument,
+              )
+            : await this.#commitPartialFigmaExportManifest(
+                resolutionRequest.document,
+                verifiedMappings,
+                penPath,
+                verifiedPenDocument,
+                state.manifest,
+                bridgeIds,
+              );
           json(response, 200, {
             type: "figma-sync-result",
             ok: true,
@@ -819,7 +842,7 @@ export class BridgeServer {
             resolutionRequest.document,
           ),
           preparedPenHashes: authoredDocumentHashes(state.penDocument),
-          structural: false,
+          structural,
           manifestRevision: state.manifest.revision,
           operation: "resolved-keep-pen",
           resolvedBridgeId: resolutionRequest.bridgeId,
@@ -829,6 +852,7 @@ export class BridgeServer {
           type: "figma-sync-resolution-prepared",
           ok: true,
           direction: "pen",
+          structural,
           resolutionId,
           bridgeIds,
           document: resolved.document,

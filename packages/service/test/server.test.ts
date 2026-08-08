@@ -807,6 +807,163 @@ describe("BridgeServer", () => {
     expect(executeWriteCount).toBe(3);
   });
 
+  it("resolves reorder conflicts by keeping either editor", async () => {
+    const directory = await mkdtemp(
+      path.join(os.tmpdir(), "pen-fig-reorder-conflict-"),
+    );
+    temporaryDirectories.push(directory);
+    const penPath = path.join(directory, "test.pen");
+    await writeFile(
+      penPath,
+      JSON.stringify({ version: "2.15", children: [] }),
+      "utf8",
+    );
+    const nodes: Record<string, PenNode> = {
+      a: {
+        id: "nativeA",
+        type: "text",
+        content: "A",
+        metadata: { type: "pen-fig-bridge", bridgeId: "pen:a" },
+      },
+      b: {
+        id: "nativeB",
+        type: "text",
+        content: "B",
+        metadata: { type: "pen-fig-bridge", bridgeId: "pen:b" },
+      },
+      c: {
+        id: "nativeC",
+        type: "text",
+        content: "C",
+        metadata: { type: "pen-fig-bridge", bridgeId: "pen:c" },
+      },
+    };
+    const penRoot: PenNode = {
+      id: "nativeRoot",
+      type: "frame",
+      name: "Reorder conflict",
+      metadata: { type: "pen-fig-export", bridgeId: "pen:root" },
+      children: [nodes.a!, nodes.b!, nodes.c!],
+    };
+    const pen = {
+      getAppState: async () => ({
+        text: `- Currently active canvas editor: \`${penPath}\``,
+      }),
+      getNode: async () => structuredClone(penRoot),
+      executeWrite: async (input: string) => {
+        const moves = input.matchAll(/Move\("([^"]+)","nativeRoot",(\d+)\)/g);
+        for (const match of moves) {
+          const oldIndex = penRoot.children!.findIndex(
+            (child) => child.id === match[1],
+          );
+          const [node] = penRoot.children!.splice(oldIndex, 1);
+          penRoot.children!.splice(Number(match[2]), 0, node!);
+        }
+        return "OK\n\n## Print output\nSTRUCTURE_UPDATED | pen:root";
+      },
+    } as PenMcpClient;
+    const server = new BridgeServer({ host: "127.0.0.1", port: 0, pen });
+    servers.push(server);
+    const port = await server.start();
+    const origin = `http://localhost:${port}`;
+    const paired = await fetch(`${origin}/pair`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        type: "pair",
+        protocol: 1,
+        code: server.pairingCode,
+      }),
+    }).then((response) => response.json());
+    const token = encodeURIComponent(String(paired.token));
+    await fetch(`${origin}/hello?token=${token}`, { method: "POST" });
+
+    const baseline = figmaReorderDocument(["a", "b", "c"]);
+    const adopt = await fetch(`${origin}/figma/export/adopt?token=${token}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ document: baseline, penRootId: "nativeRoot" }),
+    });
+    expect(adopt.status).toBe(200);
+
+    penRoot.children = [nodes.b!, nodes.a!, nodes.c!];
+    const figmaWins = figmaReorderDocument(["a", "c", "b"]);
+    const preview = await fetch(`${origin}/figma/sync/preview?token=${token}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ document: figmaWins }),
+    }).then((response) => response.json());
+    expect(preview).toMatchObject({
+      counts: { conflicted: 1 },
+      structural: true,
+      conflictRoots: [{ bridgeId: "pen:root" }],
+    });
+    const keepFigma = await fetch(
+      `${origin}/figma/sync/resolve?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          document: figmaWins,
+          assetData: {},
+          direction: "figma",
+          bridgeId: "pen:root",
+        }),
+      },
+    );
+    expect(keepFigma.status).toBe(200);
+    expect(await keepFigma.json()).toMatchObject({
+      operation: "resolved-keep-figma",
+      resolvedBridgeId: "pen:root",
+      manifest: { revision: 1, mappingCount: 4 },
+    });
+    expect(penRoot.children!.map((node) => node.content)).toEqual([
+      "A",
+      "C",
+      "B",
+    ]);
+
+    penRoot.children = [nodes.c!, nodes.a!, nodes.b!];
+    const changedFigma = figmaReorderDocument(["b", "a", "c"]);
+    const prepareKeepPen = await fetch(
+      `${origin}/figma/sync/resolve?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          document: changedFigma,
+          assetData: {},
+          direction: "pen",
+          bridgeId: "pen:root",
+        }),
+      },
+    );
+    expect(prepareKeepPen.status).toBe(200);
+    const prepared = await prepareKeepPen.json();
+    expect(prepared).toMatchObject({
+      type: "figma-sync-resolution-prepared",
+      structural: true,
+      direction: "pen",
+    });
+    const completed = await fetch(
+      `${origin}/figma/sync/resolve/complete?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          resolutionId: prepared.resolutionId,
+          document: figmaReorderDocument(["c", "a", "b"]),
+        }),
+      },
+    );
+    expect(completed.status).toBe(200);
+    expect(await completed.json()).toMatchObject({
+      operation: "resolved-keep-pen",
+      resolvedBridgeId: "pen:root",
+      manifest: { revision: 2, mappingCount: 4 },
+    });
+  });
+
   it("rejects requests before authentication", async () => {
     const pen = {} as PenMcpClient;
     const server = new BridgeServer({ host: "127.0.0.1", port: 0, pen });
@@ -852,6 +1009,33 @@ function figmaExportDocument(): BridgeDocument {
       app: "figma",
       documentId: "figma-file",
       nodeId: node.bridgeId === "pen:root" ? "figma-root" : "figma-title",
+    };
+    for (const child of node.children) visit(child);
+  };
+  visit(document.root);
+  return document;
+}
+
+function figmaReorderDocument(order: string[]): BridgeDocument {
+  const document = importPenDocument(
+    {
+      id: "root",
+      type: "frame",
+      name: "Reorder conflict",
+      children: order.map((id) => ({
+        id,
+        type: "text",
+        content: id.toUpperCase(),
+      })),
+    },
+    { documentId: "/tmp/test.pen" },
+  );
+  document.source = { app: "figma", documentId: "figma-file" };
+  const visit = (node: BridgeDocument["root"]) => {
+    node.source = {
+      app: "figma",
+      documentId: "figma-file",
+      nodeId: `figma-${node.bridgeId.slice(4)}`,
     };
     for (const child of node.children) visit(child);
   };
