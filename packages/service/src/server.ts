@@ -385,10 +385,11 @@ export class BridgeServer {
         );
         const { mappings, ...summary } = result;
         const writtenRoot = await this.#pen.getNode(result.rootId);
-        const penDocument = importPenDocument(writtenRoot, {
-          documentId: penPath,
-          useBridgeMetadata: true,
-        });
+        const penDocument = await this.#importPenDocumentWithComponents(
+          writtenRoot,
+          penPath,
+          true,
+        );
         const manifest = await this.#commitFigmaExportManifest(
           exportRequest.document,
           mappings,
@@ -418,10 +419,11 @@ export class BridgeServer {
             `Pencil root ${root.id} does not match ${adoptRequest.document.root.bridgeId}`,
           );
         const mappings = collectPenBridgeMappings(root);
-        const penDocument = importPenDocument(root, {
-          documentId: penPath,
-          useBridgeMetadata: true,
-        });
+        const penDocument = await this.#importPenDocumentWithComponents(
+          root,
+          penPath,
+          true,
+        );
         const manifest = await this.#commitFigmaExportManifest(
           adoptRequest.document,
           mappings,
@@ -461,10 +463,11 @@ export class BridgeServer {
             `Figma root mapping points to ${rootMapping.figmaNodeId}, not ${syncRequest.document.root.source.nodeId}`,
           );
         const penRoot = await this.#pen.getNode(rootMapping.penNodeId);
-        const penDocument = importPenDocument(penRoot, {
-          documentId: penPath,
-          useBridgeMetadata: true,
-        });
+        const penDocument = await this.#importPenDocumentWithComponents(
+          penRoot,
+          penPath,
+          true,
+        );
         if (penDocument.root.bridgeId !== syncRequest.document.root.bridgeId)
           throw new Error("Mapped Pencil root bridge identity does not match");
         const penSnapshots = snapshotBridgeDocument(penDocument);
@@ -629,10 +632,11 @@ export class BridgeServer {
         const verifiedMappings = collectPenBridgeMappings(verifiedRoot);
         if (verifiedMappings.length !== state.baseline.length)
           throw new Error("Pencil verification found a mapping count mismatch");
-        const verifiedPenDocument = importPenDocument(verifiedRoot, {
-          documentId: penPath,
-          useBridgeMetadata: true,
-        });
+        const verifiedPenDocument = await this.#importPenDocumentWithComponents(
+          verifiedRoot,
+          penPath,
+          true,
+        );
         const committed = await this.#commitPartialFigmaExportManifest(
           syncRequest.document,
           verifiedMappings,
@@ -729,10 +733,12 @@ export class BridgeServer {
             state.rootMapping.penNodeId,
           );
           const verifiedMappings = collectPenBridgeMappings(verifiedRoot);
-          const verifiedPenDocument = importPenDocument(verifiedRoot, {
-            documentId: penPath,
-            useBridgeMetadata: true,
-          });
+          const verifiedPenDocument =
+            await this.#importPenDocumentWithComponents(
+              verifiedRoot,
+              penPath,
+              true,
+            );
           const verifiedHashes = authoredDocumentHashes(verifiedPenDocument);
           for (const bridgeId of requiredChangeIds)
             if (verifiedHashes[bridgeId] === initialPenHashes[bridgeId])
@@ -818,10 +824,11 @@ export class BridgeServer {
           throw new Error("Resolved Figma root mapping does not match");
         const penRoot = await this.#pen.getNode(pending.penRootId);
         const penMappings = collectPenBridgeMappings(penRoot);
-        const penDocument = importPenDocument(penRoot, {
-          documentId: penPath,
-          useBridgeMetadata: true,
-        });
+        const penDocument = await this.#importPenDocumentWithComponents(
+          penRoot,
+          penPath,
+          true,
+        );
         const penHashes = authoredDocumentHashes(penDocument);
         const figmaHashes = authoredDocumentHashes(completion.document);
         const resolutionIds = new Set(pending.bridgeIds);
@@ -1022,10 +1029,11 @@ export class BridgeServer {
     if (rootMapping.figmaNodeId !== document.root.source.nodeId)
       throw new Error("The selected Figma root does not own this mapping");
     const penRoot = await this.#pen.getNode(rootMapping.penNodeId);
-    const penDocument = importPenDocument(penRoot, {
-      documentId: penPath,
-      useBridgeMetadata: true,
-    });
+    const penDocument = await this.#importPenDocumentWithComponents(
+      penRoot,
+      penPath,
+      true,
+    );
     if (penDocument.root.bridgeId !== document.root.bridgeId)
       throw new Error("Mapped Pencil root bridge identity does not match");
     const penSnapshots = snapshotBridgeDocument(penDocument);

@@ -278,9 +278,19 @@ describe("BridgeServer", () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "pen-fig-adopt-"));
     temporaryDirectories.push(directory);
     const penPath = path.join(directory, "test.pen");
+    await writeFile(
+      penPath,
+      JSON.stringify({
+        version: "2.15",
+        children: [],
+        variables: { bg: { type: "color", value: "#F8F5EF" } },
+      }),
+      "utf8",
+    );
     const adoptedRoot: PenNode = {
       id: "adoptedRoot",
       type: "frame",
+      fill: "$bg",
       metadata: { type: "pen-fig-export", bridgeId: "pen:root" },
       children: [
         {
@@ -608,6 +618,7 @@ function figmaExportDocument(): BridgeDocument {
       name: "Screen",
       width: 393,
       height: 844,
+      fill: "#F8F5EF",
       children: [{ id: "title", type: "text", content: "Hello", fontSize: 20 }],
     },
     { documentId: "/tmp/test.pen" },
