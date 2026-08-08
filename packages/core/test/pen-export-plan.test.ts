@@ -128,6 +128,44 @@ describe("planFigmaToPenCreate", () => {
     });
   });
 
+  it("uses staged asset paths supplied by the writer", () => {
+    const document = fixture();
+    document.root.children[0]!.fills = [
+      {
+        type: "image",
+        visible: true,
+        opacity: 1,
+        blendMode: "normal",
+        assetId: "figma-image:abc",
+        scaleMode: "fill",
+      },
+    ];
+    document.assets.push({
+      status: "pending",
+      id: "figma-image:abc",
+      kind: "image",
+      sourceUri: "figma-image://abc",
+    });
+
+    const plan = planFigmaToPenCreate(document, {
+      assetPaths: {
+        "figma-image:abc": "./.pen-fig-assets/deadbeef.jpg",
+      },
+    });
+    const title = plan.operations.find(
+      (operation) =>
+        operation.type === "insert" && operation.bridgeId === "pen:title",
+    );
+    expect(title?.type === "insert" ? title.payload : undefined).toMatchObject({
+      fill: [
+        expect.objectContaining({
+          type: "image",
+          url: "./.pen-fig-assets/deadbeef.jpg",
+        }),
+      ],
+    });
+  });
+
   it("rejects an operation larger than the byte ceiling", () => {
     const document = fixture();
     document.root.children[0]!.text!.characters = "x".repeat(1000);

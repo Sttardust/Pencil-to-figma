@@ -3,7 +3,11 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import { z } from "zod";
-import type { BridgeDocument, BridgeManifest } from "@pen-fig/bridge-schema";
+import {
+  bridgeDocumentSchema,
+  type BridgeDocument,
+  type BridgeManifest,
+} from "@pen-fig/bridge-schema";
 import {
   clientMessageSchema,
   type ClientMessage,
@@ -14,6 +18,7 @@ import type { PenMcpClient } from "./pen/mcp-client.js";
 import { authoredDocumentHashes, importPenDocument } from "@pen-fig/core";
 import { resolveAssets } from "./assets/resolve.js";
 import { ManifestRepository } from "./manifest/repository.js";
+import { writeFigmaCopyToPen } from "./export/pen-writer.js";
 
 export interface BridgeServerOptions {
   host: string;
@@ -316,6 +321,28 @@ export class BridgeServer {
         });
         return;
       }
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/figma/export"
+      ) {
+        const exportRequest = figmaExportRequestSchema.parse(
+          await readJsonBody(request, 50 * 1024 * 1024),
+        );
+        const penPath = await this.#requireActivePenPath();
+        const result = await writeFigmaCopyToPen(
+          exportRequest.document,
+          exportRequest.assetData,
+          penPath,
+          this.#pen,
+        );
+        json(response, 200, {
+          type: "figma-export-result",
+          ok: true,
+          operation: "created-copy",
+          ...result,
+        });
+        return;
+      }
       json(response, 404, {
         type: "failed",
         code: "NOT_FOUND",
@@ -399,6 +426,31 @@ const syncCompletionSchema = z
   })
   .strict();
 
+const figmaExportRequestSchema = z
+  .object({
+    document: bridgeDocumentSchema,
+    assetData: z.record(
+      z.string().min(1).max(500),
+      z
+        .object({
+          base64: z.string().max(14 * 1024 * 1024),
+          mimeType: z.enum([
+            "image/png",
+            "image/jpeg",
+            "image/gif",
+            "image/webp",
+          ]),
+          byteLength: z
+            .number()
+            .int()
+            .nonnegative()
+            .max(10 * 1024 * 1024),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
 function extractActivePenPath(text: string): string | undefined {
   return /Currently active canvas editor:\s*`([^`]+\.pen)`/.exec(text)?.[1];
 }
@@ -445,13 +497,14 @@ function json(
 
 async function readJsonBody(
   request: import("node:http").IncomingMessage,
+  maxBytes = 64 * 1024,
 ): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.length;
-    if (size > 64 * 1024) throw new Error("Request body too large");
+    if (size > maxBytes) throw new Error("Request body too large");
     chunks.push(buffer);
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));

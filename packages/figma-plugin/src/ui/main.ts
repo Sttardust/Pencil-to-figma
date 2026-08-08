@@ -6,7 +6,9 @@ const actions = required<HTMLElement>("actions");
 const output = required<HTMLElement>("output");
 const screenList = required<HTMLElement>("screen-list");
 const screenQuery = required<HTMLInputElement>("screen-query");
+const exportCopy = required<HTMLButtonElement>("export-copy");
 let token: string | undefined;
+let pendingExportPlan: any;
 let pendingImport:
   | {
       document: any;
@@ -43,12 +45,34 @@ required("selection").addEventListener("click", () =>
   parent.postMessage({ pluginMessage: { type: "selection-summary" } }, "*"),
 );
 required("preview-export").addEventListener("click", () => {
+  pendingExportPlan = undefined;
+  exportCopy.disabled = true;
   setStatus("Reading Figma…", true);
   parent.postMessage({ pluginMessage: { type: "preview-figma-export" } }, "*");
 });
 required("plan-export").addEventListener("click", () => {
   setStatus("Planning Pencil export…", true);
   parent.postMessage({ pluginMessage: { type: "plan-figma-export" } }, "*");
+});
+exportCopy.addEventListener("click", () => {
+  if (!pendingExportPlan || !token) return;
+  const counts = pendingExportPlan.counts;
+  const warningCount = pendingExportPlan.warnings?.length ?? 0;
+  const confirmed = confirm(
+    `Create a new Pencil copy with ${counts.inserts} editable nodes and ${counts.assets} assets?\n\nThis will run ${pendingExportPlan.chunks.length} validated chunks.${warningCount ? `\n\n${warningCount} conversion warnings are listed in the plan.` : ""}`,
+  );
+  if (!confirmed) return;
+  exportCopy.disabled = true;
+  setStatus("Writing Pencil copy…", true);
+  parent.postMessage(
+    {
+      pluginMessage: {
+        type: "execute-figma-export",
+        token,
+      },
+    },
+    "*",
+  );
 });
 required("write-test").addEventListener("click", () =>
   parent.postMessage({ pluginMessage: { type: "reversible-write-test" } }, "*"),
@@ -142,7 +166,24 @@ window.onmessage = (event) => {
         message.ok ? "Pencil export plan ready" : "Export planning failed",
         message.ok,
       );
+      if (!message.ok) {
+        pendingExportPlan = undefined;
+        exportCopy.disabled = true;
+        detail.textContent = message.message;
+      } else {
+        pendingExportPlan = message;
+        exportCopy.disabled = false;
+      }
+    }
+    if (message.type === "figma-export-result") {
+      setStatus(
+        message.ok ? "Pencil copy created" : "Pencil export failed",
+        message.ok,
+      );
+      exportCopy.disabled = !pendingExportPlan;
       if (!message.ok) detail.textContent = message.message;
+      else
+        detail.textContent = `Created ${message.nodeCount} editable nodes in Pencil as ${message.rootId}.`;
     }
   }
 };

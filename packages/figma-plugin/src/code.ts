@@ -9,7 +9,7 @@ let pendingFigmaExport: FigmaReadResult | undefined;
 
 figma.showUI(__html__, { width: 360, height: 520, themeColors: true });
 
-figma.ui.onmessage = async (message: { type: string }) => {
+figma.ui.onmessage = async (message: { type: string; token?: unknown }) => {
   if (message.type === "selection-summary") {
     await figma.currentPage.loadAsync();
     figma.ui.postMessage({
@@ -97,6 +97,44 @@ figma.ui.onmessage = async (message: { type: string }) => {
         ok: false,
         message:
           error instanceof Error ? error.message : "Export planning failed",
+      });
+    }
+  }
+
+  if (message.type === "execute-figma-export") {
+    try {
+      if (!pendingFigmaExport)
+        throw new Error("Preview the selected Figma frame first");
+      if (typeof message.token !== "string" || !message.token)
+        throw new Error("Pair and authenticate first");
+      const response = await fetch(
+        `http://localhost:32145/figma/export?token=${encodeURIComponent(message.token)}`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-pen-fig-token": message.token,
+          },
+          body: JSON.stringify({
+            document: pendingFigmaExport.document,
+            assetData: pendingFigmaExport.assetData,
+          }),
+        },
+      );
+      const result = (await response.json()) as Record<string, unknown>;
+      if (!response.ok)
+        throw new Error(
+          typeof result.message === "string"
+            ? result.message
+            : `Bridge error ${response.status}`,
+        );
+      figma.ui.postMessage(result);
+    } catch (error) {
+      figma.ui.postMessage({
+        type: "figma-export-result",
+        ok: false,
+        message:
+          error instanceof Error ? error.message : "Pencil export failed",
       });
     }
   }

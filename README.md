@@ -37,9 +37,16 @@ Load the development plugin in Figma Desktop:
 3. Run **Pencil Bridge (Development)**.
 4. Enter the pairing code printed by the service.
 
-The Milestone 0 plugin can read Pen screen summaries, inspect the current Figma selection,
-and create/remove a temporary Figma rectangle to verify write permission. It does not transfer
-designs yet.
+The development plugin currently supports both directions:
+
+- **Pencil → Figma:** search for a Pencil root, preview the sync, and create or update editable
+  Figma nodes while preserving the bridge mapping.
+- **Figma → Pencil:** select one Figma frame, preview it, build the chunk plan, then confirm
+  **Export copy to Pencil…**. The bridge writes a new editable root beside the source frame and
+  stages image assets in a `.pen-fig-assets` folder beside the active `.pen` file.
+
+Figma → Pencil exports are create-copy only at this milestone. The original Pencil root is not
+modified. Each copy is created behind a placeholder and removed automatically if a chunk fails.
 
 When modifying the plugin, run its watch build in another terminal:
 

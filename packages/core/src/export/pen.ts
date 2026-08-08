@@ -40,6 +40,7 @@ export interface PenCreatePlan {
 export interface PenPlanOptions {
   maxOperationsPerChunk?: number;
   maxBytesPerChunk?: number;
+  assetPaths?: Readonly<Record<string, string>>;
 }
 
 export function planFigmaToPenCreate(
@@ -57,7 +58,7 @@ export function planFigmaToPenCreate(
       type: "insert",
       bridgeId: node.bridgeId,
       parentBridgeId,
-      payload: toPenPayload(node, document, warnings),
+      payload: toPenPayload(node, document, warnings, options.assetPaths),
     });
   });
   operations.push({ type: "finalize-root", bridgeId: document.root.bridgeId });
@@ -86,6 +87,7 @@ function toPenPayload(
   node: BridgeNode,
   document: BridgeDocument,
   warnings: TransferWarning[],
+  assetPaths: Readonly<Record<string, string>> | undefined,
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     type: penType(node),
@@ -106,7 +108,11 @@ function toPenPayload(
     payload.ref = nativePenId(node.instance.componentBridgeId);
     payload.descendants = node.instance.overrides;
   }
-  if (node.kind === "frame" || node.kind === "component") {
+  if (
+    node.kind === "frame" ||
+    node.kind === "component" ||
+    (node.kind === "instance" && !node.instance)
+  ) {
     payload.clip = node.clipsContent ?? false;
     if (node.layout) {
       payload.layout = node.layout.mode;
@@ -123,9 +129,11 @@ function toPenPayload(
     }
   }
   if (node.fills?.length)
-    payload.fill = node.fills.map((paint) => penPaint(paint));
+    payload.fill = node.fills.map((paint) => penPaint(paint, assetPaths));
   if (node.stroke) {
-    payload.stroke = node.stroke.paints.map((paint) => penPaint(paint));
+    payload.stroke = node.stroke.paints.map((paint) =>
+      penPaint(paint, assetPaths),
+    );
     const weights = node.stroke.weights;
     payload.strokeWidth =
       weights.top === weights.right &&
@@ -183,7 +191,9 @@ function toPenPayload(
     payload.fill = [
       {
         type: "image",
-        url: assetRelativePath(node.icon.assetId, "svg"),
+        url:
+          assetPaths?.[node.icon.assetId] ??
+          assetRelativePath(node.icon.assetId, "svg"),
         mode: "fit",
       },
     ];
@@ -203,7 +213,7 @@ function penType(node: BridgeNode): string {
     case "component":
       return "frame";
     case "instance":
-      return "ref";
+      return node.instance ? "ref" : "frame";
     default:
       return node.kind;
   }
@@ -215,7 +225,10 @@ function penSizing(sizing: BridgeNode["width"]): number | string {
   return sizing.fallback === undefined ? name : `${name}(${sizing.fallback})`;
 }
 
-function penPaint(paint: Paint): unknown {
+function penPaint(
+  paint: Paint,
+  assetPaths: Readonly<Record<string, string>> | undefined,
+): unknown {
   if (paint.type === "solid")
     return {
       type: "color",
@@ -241,7 +254,8 @@ function penPaint(paint: Paint): unknown {
     enabled: paint.visible,
     blendMode: penBlendMode(paint.blendMode),
     opacity: paint.opacity,
-    url: assetRelativePath(paint.assetId, "image"),
+    url:
+      assetPaths?.[paint.assetId] ?? assetRelativePath(paint.assetId, "image"),
     mode:
       paint.scaleMode === "stretch"
         ? "stretch"

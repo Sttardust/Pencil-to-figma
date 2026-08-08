@@ -7,6 +7,13 @@ export interface PenAppStateSummary {
   text: string;
 }
 
+export interface PenBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export class PenMcpClient {
   readonly #executablePath: string;
   #client: Client | undefined;
@@ -91,6 +98,59 @@ export class PenMcpClient {
     if (node.id !== nodeId)
       throw new Error(`Pen returned node ${node.id} for requested ${nodeId}`);
     return node;
+  }
+
+  async getTopLevelBounds(nodeId: string): Promise<PenBounds | undefined> {
+    if (!/^[A-Za-z0-9]+$/.test(nodeId))
+      throw new Error(`Invalid Pen node id '${nodeId}'`);
+    const result = await this.#callWithReconnect(
+      "execute",
+      {
+        input: `Get((n,c)=>{c.skipChildren();if(n.id===${JSON.stringify(nodeId)}){Print("BOUNDS","|",c.bounds.x,"|",c.bounds.y,"|",c.bounds.width,"|",c.bounds.height)}})`,
+      },
+      30_000,
+    );
+    const match =
+      /BOUNDS\s*\|\s*(-?[\d.]+)\s*\|\s*(-?[\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)/.exec(
+        extractText(result),
+      );
+    if (!match) return undefined;
+    const values = match.slice(1).map(Number);
+    if (values.some((value) => !Number.isFinite(value))) return undefined;
+    return {
+      x: values[0]!,
+      y: values[1]!,
+      width: values[2]!,
+      height: values[3]!,
+    };
+  }
+
+  async findExportRoot(transferId: string): Promise<string | undefined> {
+    const result = await this.#callWithReconnect(
+      "execute",
+      {
+        input: `Get((n,c)=>{c.skipChildren();if(n.metadata?.type==="pen-fig-export"&&n.metadata?.transferId===${JSON.stringify(transferId)}){Print("EXPORT_ROOT","|",n.id)}})`,
+      },
+      30_000,
+    );
+    return /EXPORT_ROOT\s*\|\s*([A-Za-z0-9]+)/.exec(extractText(result))?.[1];
+  }
+
+  async executeWrite(input: string, timeout = 60_000): Promise<string> {
+    try {
+      await this.connect();
+      const result = (await this.#client!.callTool(
+        { name: "execute", arguments: { input } },
+        undefined,
+        { timeout },
+      )) as CallToolResult;
+      if (result.isError)
+        throw new Error(extractText(result) || "Pen execute failed");
+      return extractText(result);
+    } catch (error) {
+      await this.close();
+      throw error;
+    }
   }
 
   async close(): Promise<void> {
