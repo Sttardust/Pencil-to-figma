@@ -46,6 +46,10 @@ required("preview-export").addEventListener("click", () => {
   setStatus("Reading Figma…", true);
   parent.postMessage({ pluginMessage: { type: "preview-figma-export" } }, "*");
 });
+required("plan-export").addEventListener("click", () => {
+  setStatus("Planning Pencil export…", true);
+  parent.postMessage({ pluginMessage: { type: "plan-figma-export" } }, "*");
+});
 required("write-test").addEventListener("click", () =>
   parent.postMessage({ pluginMessage: { type: "reversible-write-test" } }, "*"),
 );
@@ -129,6 +133,13 @@ window.onmessage = (event) => {
     if (message.type === "figma-export-preview") {
       setStatus(
         message.ok ? "Export preview ready" : "Export preview failed",
+        message.ok,
+      );
+      if (!message.ok) detail.textContent = message.message;
+    }
+    if (message.type === "figma-export-plan") {
+      setStatus(
+        message.ok ? "Pencil export plan ready" : "Export planning failed",
         message.ok,
       );
       if (!message.ok) detail.textContent = message.message;

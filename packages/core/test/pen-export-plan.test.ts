@@ -1,0 +1,141 @@
+import { describe, expect, it } from "vitest";
+import { importPenDocument, planFigmaToPenCreate } from "../src/index.js";
+
+function fixture() {
+  const document = importPenDocument(
+    {
+      id: "root",
+      type: "frame",
+      name: "Export",
+      width: 393,
+      height: 844,
+      layout: "vertical",
+      gap: 12,
+      padding: [10, 20, 30, 40],
+      children: [
+        {
+          id: "title",
+          type: "text",
+          content: "Hello",
+          fontFamily: "Inter",
+          fontSize: 24,
+          fontWeight: 700,
+          width: "fill_container(323)",
+        },
+        {
+          id: "row",
+          type: "frame",
+          children: [
+            {
+              id: "dot",
+              type: "ellipse",
+              width: 8,
+              height: 8,
+              fill: "#123456",
+            },
+          ],
+        },
+      ],
+    },
+    { documentId: "test.pen" },
+  );
+  document.source = { app: "figma", documentId: "figma-local" };
+  return document;
+}
+
+describe("planFigmaToPenCreate", () => {
+  it("plans assets, parent-first inserts, and root finalization", () => {
+    const document = fixture();
+    document.assets.push({
+      status: "pending",
+      id: "figma-image:abc",
+      kind: "image",
+      sourceUri: "figma-image://abc",
+    });
+    const plan = planFigmaToPenCreate(document, {
+      maxOperationsPerChunk: 2,
+      maxBytesPerChunk: 10_000,
+    });
+
+    expect(plan.mode).toBe("create-copy");
+    expect(plan.counts).toEqual({ assets: 1, inserts: 4, finalizes: 1 });
+    expect(plan.operations.map((operation) => operation.type)).toEqual([
+      "prepare-asset",
+      "insert",
+      "insert",
+      "insert",
+      "insert",
+      "finalize-root",
+    ]);
+    expect(
+      plan.operations
+        .filter((operation) => operation.type === "insert")
+        .map((operation) => operation.bridgeId),
+    ).toEqual(["pen:root", "pen:title", "pen:row", "pen:dot"]);
+    expect(plan.chunks.every((chunk) => chunk.operations.length <= 2)).toBe(
+      true,
+    );
+  });
+
+  it("maps authored layout, sizing, and text properties", () => {
+    const plan = planFigmaToPenCreate(fixture());
+    const inserts = plan.operations.filter(
+      (operation) => operation.type === "insert",
+    );
+    expect(inserts[0]?.payload).toMatchObject({
+      type: "frame",
+      placeholder: true,
+      layout: "vertical",
+      gap: 12,
+      padding: [10, 20, 30, 40],
+      width: 393,
+      height: 844,
+    });
+    expect(inserts[1]?.payload).toMatchObject({
+      type: "text",
+      content: "Hello",
+      width: "fill_container(323)",
+      fontFamily: "Inter",
+      fontSize: 24,
+      fontWeight: 700,
+    });
+  });
+
+  it("declares SVG wrapper rasterization", () => {
+    const document = fixture();
+    document.root.children[0]!.icon = { assetId: "figma-svg:1:2" };
+    document.assets.push({
+      status: "pending",
+      id: "figma-svg:1:2",
+      kind: "svg",
+      sourceUri: "figma-svg://1:2",
+    });
+
+    const plan = planFigmaToPenCreate(document);
+    expect(plan.warnings).toContainEqual(
+      expect.objectContaining({
+        code: "FIGMA_SVG_RASTERIZED",
+        action: "rasterize",
+      }),
+    );
+    const icon = plan.operations.find(
+      (operation) =>
+        operation.type === "insert" && operation.bridgeId === "pen:title",
+    );
+    expect(icon?.type === "insert" ? icon.payload : undefined).toMatchObject({
+      type: "rectangle",
+      fill: [expect.objectContaining({ type: "image", mode: "fit" })],
+    });
+  });
+
+  it("rejects an operation larger than the byte ceiling", () => {
+    const document = fixture();
+    document.root.children[0]!.text!.characters = "x".repeat(1000);
+    expect(() =>
+      planFigmaToPenCreate(document, {
+        maxOperationsPerChunk: 20,
+        maxBytesPerChunk: 256,
+      }),
+    ).toThrow("Pen operation exceeds 256 bytes");
+  });
+});

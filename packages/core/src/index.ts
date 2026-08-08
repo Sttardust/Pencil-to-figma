@@ -8,3 +8,11 @@ export type {
   SyncOperation,
   SyncPlan,
 } from "./sync/plan.js";
+export { planFigmaToPenCreate } from "./export/pen.js";
+export type {
+  PenCreatePlan,
+  PenInsertOperation,
+  PenPlanOptions,
+  PenWriteChunk,
+  PenWriteOperation,
+} from "./export/pen.js";

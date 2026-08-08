@@ -3,6 +3,7 @@ import {
   readSelectedFigmaDocument,
   type FigmaReadResult,
 } from "./figma/read.js";
+import { planFigmaToPenCreate } from "@pen-fig/core";
 
 let pendingFigmaExport: FigmaReadResult | undefined;
 
@@ -64,6 +65,38 @@ figma.ui.onmessage = async (message: { type: string }) => {
         type: "figma-export-preview",
         ok: false,
         message: error instanceof Error ? error.message : "Figma read failed",
+      });
+    }
+  }
+
+  if (message.type === "plan-figma-export") {
+    try {
+      if (!pendingFigmaExport)
+        throw new Error("Preview the selected Figma frame first");
+      const plan = planFigmaToPenCreate(pendingFigmaExport.document);
+      figma.ui.postMessage({
+        type: "figma-export-plan",
+        ok: true,
+        mode: plan.mode,
+        rootBridgeId: plan.rootBridgeId,
+        counts: plan.counts,
+        chunks: plan.chunks.map((chunk) => ({
+          index: chunk.index,
+          operations: chunk.operations.length,
+          estimatedBytes: chunk.estimatedBytes,
+        })),
+        warnings: plan.warnings.map((warning) => ({
+          code: warning.code,
+          action: warning.action,
+          message: warning.message,
+        })),
+      });
+    } catch (error) {
+      figma.ui.postMessage({
+        type: "figma-export-plan",
+        ok: false,
+        message:
+          error instanceof Error ? error.message : "Export planning failed",
       });
     }
   }
