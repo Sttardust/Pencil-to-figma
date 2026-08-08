@@ -8,6 +8,15 @@ export type {
   SyncOperation,
   SyncPlan,
 } from "./sync/plan.js";
+export { classifyThreeWayDiff } from "./sync/three-way.js";
+export type {
+  BaselineNodeSnapshot,
+  ChangedSide,
+  CurrentNodeSnapshot,
+  ThreeWayClassification,
+  ThreeWayDiff,
+  ThreeWayDiffEntry,
+} from "./sync/three-way.js";
 export { planFigmaToPenCreate } from "./export/pen.js";
 export type {
   PenCreatePlan,
