@@ -1,5 +1,10 @@
 import { previewBridgeDocument, writeBridgeDocument } from "./figma/write.js";
-import { readSelectedFigmaDocument } from "./figma/read.js";
+import {
+  readSelectedFigmaDocument,
+  type FigmaReadResult,
+} from "./figma/read.js";
+
+let pendingFigmaExport: FigmaReadResult | undefined;
 
 figma.showUI(__html__, { width: 360, height: 520, themeColors: true });
 
@@ -28,12 +33,33 @@ figma.ui.onmessage = async (message: { type: string }) => {
   if (message.type === "preview-figma-export") {
     try {
       const result = await readSelectedFigmaDocument();
+      pendingFigmaExport = result;
       figma.ui.postMessage({
         type: "figma-export-preview",
         ok: true,
-        ...result,
+        root: {
+          bridgeId: result.document.root.bridgeId,
+          name: result.document.root.name,
+          kind: result.document.root.kind,
+        },
+        nodeCount: result.nodeCount,
+        fonts: result.fonts,
+        assets: {
+          total: result.document.assets.length,
+          images: result.document.assets.filter(
+            (asset) => asset.kind === "image",
+          ).length,
+          svg: result.document.assets.filter((asset) => asset.kind === "svg")
+            .length,
+        },
+        warnings: result.document.warnings.map((warning) => ({
+          code: warning.code,
+          action: warning.action,
+          message: warning.message,
+        })),
       });
     } catch (error) {
+      pendingFigmaExport = undefined;
       figma.ui.postMessage({
         type: "figma-export-preview",
         ok: false,
