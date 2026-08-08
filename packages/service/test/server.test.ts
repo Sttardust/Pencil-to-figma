@@ -807,6 +807,144 @@ describe("BridgeServer", () => {
     expect(executeWriteCount).toBe(3);
   });
 
+  it("verifies component exports with returned identities for Pencil refs", async () => {
+    const directory = await mkdtemp(
+      path.join(os.tmpdir(), "pen-fig-component-export-"),
+    );
+    temporaryDirectories.push(directory);
+    const penPath = path.join(directory, "test.pen");
+    await writeFile(
+      penPath,
+      JSON.stringify({ version: "2.15", children: [] }),
+      "utf8",
+    );
+    const component: PenNode = {
+      id: "component",
+      type: "frame",
+      name: "Button",
+      reusable: true,
+      children: [{ id: "label", type: "text", content: "Button" }],
+    };
+    const document = importPenDocument(
+      {
+        id: "root",
+        type: "frame",
+        name: "Component export",
+        children: [
+          {
+            id: "instance",
+            type: "ref",
+            name: "Button instance",
+            ref: "component",
+            descendants: { label: { content: "Continue" } },
+          },
+        ],
+      },
+      { documentId: "source.pen", components: [component] },
+    );
+    document.source = { app: "figma", documentId: "figma-file" };
+    const setFigmaSources = (node: BridgeDocument["root"]) => {
+      node.source = {
+        app: "figma",
+        documentId: "figma-file",
+        nodeId: `figma-${node.bridgeId.slice(4)}`,
+      };
+      for (const child of node.children) setFigmaSources(child);
+    };
+    setFigmaSources(document.root);
+    for (const dependency of document.components ?? [])
+      setFigmaSources(dependency);
+    const nativeIds: Record<string, string> = {
+      "pen:component": "nativeComponent",
+      "pen:label": "nativeLabel",
+      "pen:root": "nativeRoot",
+      "pen:instance": "nativeInstance",
+    };
+    const pen = {
+      getAppState: async () => ({
+        text: `- Currently active canvas editor: \`${penPath}\``,
+      }),
+      getTopLevelBounds: async () => undefined,
+      executeWrite: async (input: string) =>
+        [...input.matchAll(/Print\("MAP","\|","([^"]+)"/g)]
+          .map((match) => `MAP | ${match[1]} | ${nativeIds[match[1]!]}`)
+          .join("\n") || "OK",
+      getNode: async (nodeId: string): Promise<PenNode> => {
+        if (nodeId === "nativeRoot")
+          return {
+            id: "nativeRoot",
+            type: "frame",
+            name: "Component export · Figma Copy",
+            metadata: { type: "pen-fig-export", bridgeId: "pen:root" },
+            children: [
+              {
+                id: "nativeInstance",
+                type: "ref",
+                name: "Button instance",
+                ref: "nativeComponent",
+                descendants: { nativeLabel: { content: "Continue" } },
+              },
+            ],
+          };
+        if (nodeId === "nativeComponent")
+          return {
+            id: "nativeComponent",
+            type: "frame",
+            name: "Button · Component",
+            reusable: true,
+            metadata: {
+              type: "pen-fig-export-component",
+              bridgeId: "pen:component",
+            },
+            children: [
+              {
+                id: "nativeLabel",
+                type: "text",
+                name: "Label",
+                content: "Button",
+                metadata: {
+                  type: "pen-fig-bridge",
+                  bridgeId: "pen:label",
+                },
+              },
+            ],
+          };
+        throw new Error(`Unexpected Pencil node ${nodeId}`);
+      },
+    } as PenMcpClient;
+    const server = new BridgeServer({ host: "127.0.0.1", port: 0, pen });
+    servers.push(server);
+    const port = await server.start();
+    const origin = `http://localhost:${port}`;
+    const paired = await fetch(`${origin}/pair`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        type: "pair",
+        protocol: 1,
+        code: server.pairingCode,
+      }),
+    }).then((response) => response.json());
+    const token = encodeURIComponent(String(paired.token));
+    await fetch(`${origin}/hello?token=${token}`, { method: "POST" });
+
+    const response = await fetch(`${origin}/figma/export?token=${token}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ document, assetData: {} }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      type: "figma-export-result",
+      ok: true,
+      operation: "created-copy",
+      rootId: "nativeRoot",
+      nodeCount: 4,
+      manifest: { revision: 0, mappingCount: 2 },
+    });
+  });
+
   it("resolves reorder conflicts by keeping either editor", async () => {
     const directory = await mkdtemp(
       path.join(os.tmpdir(), "pen-fig-reorder-conflict-"),

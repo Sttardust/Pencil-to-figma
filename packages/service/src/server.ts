@@ -396,18 +396,52 @@ export class BridgeServer {
         const syncMappings = mappings.filter((mapping) =>
           rootBridgeIds.has(mapping.bridgeId),
         );
-        const writtenRoot = await this.#pen.getNode(result.rootId);
-        const penDocument = await this.#importPenDocumentWithComponents(
-          writtenRoot,
-          penPath,
-          true,
-        );
-        const manifest = await this.#commitFigmaExportManifest(
-          exportRequest.document,
-          syncMappings,
-          penPath,
-          penDocument,
-        );
+        let manifest: {
+          revision: number;
+          mappingCount: number;
+          manifestPath: string;
+        };
+        try {
+          const writtenRoot = await this.#pen.getNode(result.rootId);
+          const penDocument = await this.#importPenDocumentWithComponents(
+            writtenRoot,
+            penPath,
+            true,
+            mappings,
+          );
+          manifest = await this.#commitFigmaExportManifest(
+            exportRequest.document,
+            syncMappings,
+            penPath,
+            penDocument,
+          );
+        } catch (error) {
+          const componentRootIds = (exportRequest.document.components ?? [])
+            .map(
+              (component) =>
+                mappings.find(
+                  (mapping) => mapping.bridgeId === component.bridgeId,
+                )?.penNodeId,
+            )
+            .filter((nodeId): nodeId is string => Boolean(nodeId));
+          const artifactIds = [
+            ...new Set([result.rootId, ...componentRootIds]),
+          ];
+          let rollback = `Rolled back ${artifactIds.length} unverified Pencil root${artifactIds.length === 1 ? "" : "s"}`;
+          try {
+            await this.#pen.executeWrite(
+              artifactIds
+                .map((nodeId) => `Delete(${JSON.stringify(nodeId)})`)
+                .join(";"),
+              30_000,
+            );
+          } catch {
+            rollback = `Could not roll back ${artifactIds.length} unverified Pencil root${artifactIds.length === 1 ? "" : "s"}`;
+          }
+          const message =
+            error instanceof Error ? error.message : "Unknown error";
+          throw new Error(`${message}. ${rollback}`);
+        }
         json(response, 200, {
           type: "figma-export-result",
           ok: true,
@@ -1020,7 +1054,12 @@ export class BridgeServer {
     root: PenNode,
     penPath: string,
     useBridgeMetadata = false,
+    mappings: PenBridgeMapping[] = [],
   ): Promise<BridgeDocument> {
+    const bridgeIdByPenNodeId = new Map(
+      mappings.map((mapping) => [mapping.penNodeId, mapping.bridgeId]),
+    );
+    applyPenBridgeMappings(root, bridgeIdByPenNodeId);
     const knownComponentIds = collectReusablePenIds(root);
     const queued = collectPenRefs(root).filter(
       (ref) => !knownComponentIds.has(ref),
@@ -1034,6 +1073,7 @@ export class BridgeServer {
       if (components.length >= 100)
         throw new Error("Pencil component dependency limit exceeded (100)");
       const component = await this.#pen.getNode(ref);
+      applyPenBridgeMappings(component, bridgeIdByPenNodeId);
       if (component.type !== "frame" || !component.reusable)
         throw new Error(`Pencil ref ${ref} is not a reusable frame`);
       components.push(component);
@@ -1450,6 +1490,21 @@ function collectReusablePenIds(root: PenNode): Set<string> {
   };
   visit(root);
   return ids;
+}
+
+function applyPenBridgeMappings(
+  root: PenNode,
+  bridgeIdByPenNodeId: ReadonlyMap<string, string>,
+): void {
+  const visit = (node: PenNode) => {
+    const bridgeId = bridgeIdByPenNodeId.get(node.id);
+    if (bridgeId)
+      node.metadata = node.metadata
+        ? { ...node.metadata, bridgeId }
+        : { type: "pen-fig-bridge", bridgeId };
+    for (const child of node.children ?? []) visit(child);
+  };
+  visit(root);
 }
 
 function diffSubtreeIds(
