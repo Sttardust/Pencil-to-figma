@@ -188,4 +188,30 @@ describe("importPenDocument", () => {
     const document = importPenDocument(root, { documentId: "test.pen" });
     expect(document.root.layout?.mode).toBe("horizontal");
   });
+
+  it("restores bridge identities from managed Pencil export metadata", () => {
+    const document = importPenDocument(
+      {
+        id: "nativeRoot",
+        type: "frame",
+        metadata: { type: "pen-fig-export", bridgeId: "pen:originalRoot" },
+        children: [
+          {
+            id: "nativeChild",
+            type: "rectangle",
+            metadata: {
+              type: "pen-fig-bridge",
+              bridgeId: "pen:originalChild",
+            },
+          },
+        ],
+      },
+      { documentId: "test.pen", useBridgeMetadata: true },
+    );
+
+    expect(document.root.bridgeId).toBe("pen:originalRoot");
+    expect(document.root.source.nodeId).toBe("nativeRoot");
+    expect(document.root.children[0]?.bridgeId).toBe("pen:originalChild");
+    expect(document.root.children[0]?.source.nodeId).toBe("nativeChild");
+  });
 });

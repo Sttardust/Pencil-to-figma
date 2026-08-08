@@ -10,6 +10,7 @@ import type { PenNode, PenSize } from "../pen-types.js";
 
 export interface PenImportOptions {
   documentId: string;
+  useBridgeMetadata?: boolean;
 }
 
 export function importPenDocument(
@@ -21,7 +22,7 @@ export function importPenDocument(
   const document: BridgeDocument = {
     version: 1,
     source: { app: "pen", documentId: options.documentId },
-    root: importNode(root, options.documentId, warnings, assets),
+    root: importNode(root, options, warnings, assets),
     assets,
     variables: [],
     warnings,
@@ -31,12 +32,18 @@ export function importPenDocument(
 
 function importNode(
   node: PenNode,
-  documentId: string,
+  options: PenImportOptions,
   warnings: TransferWarning[],
   assets: BridgeAsset[],
 ): BridgeNode {
   if (!node.id || !node.type) throw new Error("Pen node is missing id or type");
-  const bridgeId = `pen:${node.id}`;
+  const metadataBridgeId = node.metadata?.bridgeId;
+  const bridgeId =
+    options.useBridgeMetadata &&
+    typeof metadataBridgeId === "string" &&
+    metadataBridgeId
+      ? metadataBridgeId
+      : `pen:${node.id}`;
   const kind = mapKind(node, bridgeId, warnings);
   const width = mapSizing(node.width);
   const height = mapSizing(node.height);
@@ -45,13 +52,13 @@ function importNode(
       ? []
       : (node.children ?? [])
           .filter((child) => child.enabled !== false)
-          .map((child) => importNode(child, documentId, warnings, assets));
+          .map((child) => importNode(child, options, warnings, assets));
 
   const result: BridgeNode = {
     bridgeId,
     kind,
     name: node.name ?? `${node.type} ${node.id}`,
-    source: { app: "pen", documentId, nodeId: node.id },
+    source: { app: "pen", documentId: options.documentId, nodeId: node.id },
     bounds: {
       x: node.x ?? 0,
       y: node.y ?? 0,

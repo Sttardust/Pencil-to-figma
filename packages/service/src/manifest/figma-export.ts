@@ -6,6 +6,12 @@ export interface PenBridgeMapping {
   penNodeId: string;
 }
 
+export interface FigmaExportManifestOptions {
+  previous?: BridgeManifest | undefined;
+  penDocument?: BridgeDocument | undefined;
+  updatedAt?: Date | undefined;
+}
+
 export function collectPenBridgeMappings(root: PenNode): PenBridgeMapping[] {
   const mappings: PenBridgeMapping[] = [];
   const bridgeIds = new Set<string>();
@@ -27,10 +33,12 @@ export function buildFigmaExportManifest(
   document: BridgeDocument,
   penMappings: PenBridgeMapping[],
   penPath: string,
-  previous: BridgeManifest | undefined,
-  updatedAt = new Date(),
+  options: FigmaExportManifestOptions = {},
 ): BridgeManifest {
   const hashes = authoredDocumentHashes(document);
+  const penHashes = options.penDocument
+    ? authoredDocumentHashes(options.penDocument)
+    : undefined;
   const penByBridgeId = uniquePenMappings(penMappings);
   const expectedBridgeIds = new Set(Object.keys(hashes));
   if (penByBridgeId.size !== expectedBridgeIds.size)
@@ -38,6 +46,12 @@ export function buildFigmaExportManifest(
   for (const bridgeId of penByBridgeId.keys())
     if (!expectedBridgeIds.has(bridgeId))
       throw new Error(`Pencil mapping has unexpected identity ${bridgeId}`);
+  if (
+    penHashes &&
+    (Object.keys(penHashes).length !== expectedBridgeIds.size ||
+      [...expectedBridgeIds].some((bridgeId) => !penHashes[bridgeId]))
+  )
+    throw new Error("Pencil baseline does not match the Figma export");
 
   const mappings: BridgeManifest["mappings"] = [];
   visitBridgeNodes(document.root, (node) => {
@@ -50,14 +64,18 @@ export function buildFigmaExportManifest(
       penNodeId: penMapping.penNodeId,
       figmaNodeId: node.source.nodeId,
       baselineHash: hashes[node.bridgeId]!,
+      ...(penHashes?.[node.bridgeId]
+        ? { penBaselineHash: penHashes[node.bridgeId] }
+        : {}),
+      figmaBaselineHash: hashes[node.bridgeId]!,
     });
   });
   return {
     version: 1,
     penDocumentId: penPath,
     figmaDocumentId: document.source.documentId,
-    revision: (previous?.revision ?? -1) + 1,
-    updatedAt: updatedAt.toISOString(),
+    revision: (options.previous?.revision ?? -1) + 1,
+    updatedAt: (options.updatedAt ?? new Date()).toISOString(),
     mappings,
   };
 }

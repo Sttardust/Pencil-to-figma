@@ -9,6 +9,8 @@ export const manifestMappingSchema = z
     penNodeId: z.string().min(1).optional(),
     figmaNodeId: z.string().min(1).optional(),
     baselineHash: sha256Schema,
+    penBaselineHash: sha256Schema.optional(),
+    figmaBaselineHash: sha256Schema.optional(),
   })
   .strict()
   .refine((mapping) => mapping.penNodeId || mapping.figmaNodeId, {

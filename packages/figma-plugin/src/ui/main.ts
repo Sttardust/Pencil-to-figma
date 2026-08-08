@@ -9,6 +9,7 @@ const screenQuery = required<HTMLInputElement>("screen-query");
 const exportCopy = required<HTMLButtonElement>("export-copy");
 const adoptRootId = required<HTMLInputElement>("adopt-root-id");
 const adoptCopy = required<HTMLButtonElement>("adopt-copy");
+const previewSync = required<HTMLButtonElement>("preview-sync");
 let token: string | undefined;
 let pendingExportPlan: any;
 let pendingImport:
@@ -50,6 +51,7 @@ required("preview-export").addEventListener("click", () => {
   pendingExportPlan = undefined;
   exportCopy.disabled = true;
   adoptCopy.disabled = true;
+  previewSync.disabled = true;
   setStatus("Reading Figma…", true);
   parent.postMessage({ pluginMessage: { type: "preview-figma-export" } }, "*");
 });
@@ -99,6 +101,14 @@ adoptCopy.addEventListener("click", () => {
         penRootId,
       },
     },
+    "*",
+  );
+});
+previewSync.addEventListener("click", () => {
+  if (!token) return;
+  setStatus("Comparing both editors…", true);
+  parent.postMessage(
+    { pluginMessage: { type: "preview-mapped-sync", token } },
     "*",
   );
 });
@@ -189,6 +199,7 @@ window.onmessage = (event) => {
       );
       if (!message.ok) detail.textContent = message.message;
       adoptCopy.disabled = !message.ok;
+      previewSync.disabled = !message.ok;
     }
     if (message.type === "figma-export-plan") {
       setStatus(
@@ -223,6 +234,22 @@ window.onmessage = (event) => {
       if (!message.ok) detail.textContent = message.message;
       else
         detail.textContent = `Mapped ${message.nodeCount} nodes from Pencil root ${message.rootId} at manifest revision ${message.manifest.revision}.`;
+    }
+    if (message.type === "figma-sync-preview") {
+      setStatus(
+        message.ok
+          ? message.canApplyWithoutResolution
+            ? "Sync preview ready"
+            : "Sync needs attention"
+          : "Sync preview failed",
+        Boolean(message.ok),
+      );
+      if (!message.ok) detail.textContent = message.message;
+      else if (message.baselineUpgradeRequired)
+        detail.textContent =
+          "This mapping predates dual baselines. Adopt the same Pencil root once more, then preview again.";
+      else
+        detail.textContent = `To Pencil: ${message.actions.toPencil}. To Figma: ${message.actions.toFigma}. Conflicts: ${message.actions.conflicts}.`;
     }
   }
 };

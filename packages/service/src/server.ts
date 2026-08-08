@@ -15,7 +15,12 @@ import {
 } from "./protocol.js";
 import { SessionManager } from "./session.js";
 import type { PenMcpClient } from "./pen/mcp-client.js";
-import { authoredDocumentHashes, importPenDocument } from "@pen-fig/core";
+import {
+  authoredDocumentHashes,
+  classifyThreeWayDiff,
+  importPenDocument,
+  snapshotBridgeDocument,
+} from "@pen-fig/core";
 import { resolveAssets } from "./assets/resolve.js";
 import { ManifestRepository } from "./manifest/repository.js";
 import { writeFigmaCopyToPen } from "./export/pen-writer.js";
@@ -341,10 +346,16 @@ export class BridgeServer {
           this.#pen,
         );
         const { mappings, ...summary } = result;
+        const writtenRoot = await this.#pen.getNode(result.rootId);
+        const penDocument = importPenDocument(writtenRoot, {
+          documentId: penPath,
+          useBridgeMetadata: true,
+        });
         const manifest = await this.#commitFigmaExportManifest(
           exportRequest.document,
           mappings,
           penPath,
+          penDocument,
         );
         json(response, 200, {
           type: "figma-export-result",
@@ -369,10 +380,15 @@ export class BridgeServer {
             `Pencil root ${root.id} does not match ${adoptRequest.document.root.bridgeId}`,
           );
         const mappings = collectPenBridgeMappings(root);
+        const penDocument = importPenDocument(root, {
+          documentId: penPath,
+          useBridgeMetadata: true,
+        });
         const manifest = await this.#commitFigmaExportManifest(
           adoptRequest.document,
           mappings,
           penPath,
+          penDocument,
         );
         json(response, 200, {
           type: "figma-export-adopted",
@@ -381,6 +397,80 @@ export class BridgeServer {
           rootId: root.id,
           nodeCount: mappings.length,
           manifest,
+        });
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/figma/sync/preview"
+      ) {
+        const syncRequest = figmaSyncRequestSchema.parse(
+          await readJsonBody(request, 5 * 1024 * 1024),
+        );
+        const penPath = await this.#requireActivePenPath();
+        const manifestPath = sidecarPath(penPath);
+        const manifest = await this.#manifests.read(manifestPath);
+        if (!manifest) throw new Error("No sync manifest exists for this file");
+        if (manifest.penDocumentId !== penPath)
+          throw new Error("Sync manifest belongs to a different Pencil file");
+        const rootMapping = manifest.mappings.find(
+          (mapping) => mapping.bridgeId === syncRequest.document.root.bridgeId,
+        );
+        if (!rootMapping?.penNodeId || !rootMapping.figmaNodeId)
+          throw new Error("The selected Figma root is not fully mapped");
+        if (rootMapping.figmaNodeId !== syncRequest.document.root.source.nodeId)
+          throw new Error(
+            `Figma root mapping points to ${rootMapping.figmaNodeId}, not ${syncRequest.document.root.source.nodeId}`,
+          );
+        const penRoot = await this.#pen.getNode(rootMapping.penNodeId);
+        const penDocument = importPenDocument(penRoot, {
+          documentId: penPath,
+          useBridgeMetadata: true,
+        });
+        if (penDocument.root.bridgeId !== syncRequest.document.root.bridgeId)
+          throw new Error("Mapped Pencil root bridge identity does not match");
+        const penSnapshots = snapshotBridgeDocument(penDocument);
+        const figmaSnapshots = snapshotBridgeDocument(syncRequest.document);
+        const relevantBridgeIds = new Set([
+          ...penSnapshots.map((snapshot) => snapshot.bridgeId),
+          ...figmaSnapshots.map((snapshot) => snapshot.bridgeId),
+        ]);
+        const baseline = manifest.mappings.filter((mapping) =>
+          relevantBridgeIds.has(mapping.bridgeId),
+        );
+        const diff = classifyThreeWayDiff(
+          baseline,
+          penSnapshots,
+          figmaSnapshots,
+        );
+        json(response, 200, {
+          type: "figma-sync-preview",
+          ok: true,
+          manifestRevision: manifest.revision,
+          root: {
+            bridgeId: syncRequest.document.root.bridgeId,
+            penNodeId: rootMapping.penNodeId,
+            figmaNodeId: rootMapping.figmaNodeId,
+          },
+          counts: diff.counts,
+          actions: countSyncDirections(diff.entries),
+          conflictRoots: diff.conflictRoots.map((entry) => ({
+            bridgeId: entry.bridgeId,
+            reason: entry.reason,
+          })),
+          canApplyWithoutResolution: diff.canApplyWithoutResolution,
+          baselineUpgradeRequired: baseline.some(
+            (mapping) => !mapping.penBaselineHash || !mapping.figmaBaselineHash,
+          ),
+          changes: diff.entries
+            .filter((entry) => entry.classification !== "unchanged")
+            .slice(0, 200)
+            .map((entry) => ({
+              bridgeId: entry.bridgeId,
+              classification: entry.classification,
+              side: entry.side,
+              reason: entry.reason,
+            })),
         });
         return;
       }
@@ -413,6 +503,7 @@ export class BridgeServer {
     document: BridgeDocument,
     mappings: PenBridgeMapping[],
     penPath: string,
+    penDocument: BridgeDocument,
   ): Promise<{
     revision: number;
     mappingCount: number;
@@ -420,12 +511,10 @@ export class BridgeServer {
   }> {
     const manifestPath = sidecarPath(penPath);
     const previous = await this.#manifests.read(manifestPath);
-    const manifest = buildFigmaExportManifest(
-      document,
-      mappings,
-      penPath,
+    const manifest = buildFigmaExportManifest(document, mappings, penPath, {
       previous,
-    );
+      penDocument,
+    });
     await this.#manifests.writeAtomic(manifestPath, manifest);
     return {
       revision: manifest.revision,
@@ -523,6 +612,30 @@ const figmaAdoptRequestSchema = z
     penRootId: z.string().regex(/^[A-Za-z0-9]+$/),
   })
   .strict();
+
+const figmaSyncRequestSchema = z
+  .object({ document: bridgeDocumentSchema })
+  .strict();
+
+function countSyncDirections(
+  entries: ReturnType<typeof classifyThreeWayDiff>["entries"],
+): { toPencil: number; toFigma: number; conflicts: number; unmapped: number } {
+  const counts = { toPencil: 0, toFigma: 0, conflicts: 0, unmapped: 0 };
+  for (const entry of entries) {
+    if (entry.classification === "figma-only") counts.toPencil += 1;
+    else if (entry.classification === "pen-only") counts.toFigma += 1;
+    else if (entry.classification === "conflicted") counts.conflicts += 1;
+    else if (entry.classification === "unmapped") counts.unmapped += 1;
+    else if (entry.classification === "added") {
+      if (entry.side === "figma") counts.toPencil += 1;
+      else if (entry.side === "pen") counts.toFigma += 1;
+    } else if (entry.classification === "deleted") {
+      if (entry.side === "figma") counts.toPencil += 1;
+      else if (entry.side === "pen") counts.toFigma += 1;
+    }
+  }
+  return counts;
+}
 
 function extractActivePenPath(text: string): string | undefined {
   return /Currently active canvas editor:\s*`([^`]+\.pen)`/.exec(text)?.[1];

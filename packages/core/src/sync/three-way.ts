@@ -1,6 +1,8 @@
 export interface BaselineNodeSnapshot {
   bridgeId: string;
   baselineHash: string;
+  penBaselineHash?: string | undefined;
+  figmaBaselineHash?: string | undefined;
 }
 
 export interface CurrentNodeSnapshot {
@@ -39,6 +41,24 @@ export interface ThreeWayDiff {
   counts: Record<ThreeWayClassification, number>;
   conflictRoots: ThreeWayDiffEntry[];
   canApplyWithoutResolution: boolean;
+}
+
+export function snapshotBridgeDocument(
+  document: BridgeDocument,
+): CurrentNodeSnapshot[] {
+  const hashes = authoredDocumentHashes(document);
+  const snapshots: CurrentNodeSnapshot[] = [];
+  const visit = (node: BridgeNode, parentBridgeId: string | undefined) => {
+    snapshots.push({
+      bridgeId: node.bridgeId,
+      nodeId: node.source.nodeId,
+      parentBridgeId,
+      authoredHash: hashes[node.bridgeId]!,
+    });
+    for (const child of node.children) visit(child, node.bridgeId);
+  };
+  visit(document.root, undefined);
+  return snapshots;
 }
 
 export function classifyThreeWayDiff(
@@ -89,9 +109,11 @@ function classifyEntry(
     });
   }
 
-  const penChanged = Boolean(pen && pen.authoredHash !== baseline.baselineHash);
+  const penBaselineHash = baseline.penBaselineHash ?? baseline.baselineHash;
+  const figmaBaselineHash = baseline.figmaBaselineHash ?? baseline.baselineHash;
+  const penChanged = Boolean(pen && pen.authoredHash !== penBaselineHash);
   const figmaChanged = Boolean(
-    figma && figma.authoredHash !== baseline.baselineHash,
+    figma && figma.authoredHash !== figmaBaselineHash,
   );
   if (!pen && !figma)
     return entry(bridgeId, "deleted", baseline.baselineHash, pen, figma, {
@@ -229,3 +251,5 @@ function countClassifications(
   for (const entry of entries) counts[entry.classification] += 1;
   return counts;
 }
+import type { BridgeDocument, BridgeNode } from "@pen-fig/bridge-schema";
+import { authoredDocumentHashes } from "../hash.js";

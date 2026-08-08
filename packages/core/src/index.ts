@@ -8,7 +8,10 @@ export type {
   SyncOperation,
   SyncPlan,
 } from "./sync/plan.js";
-export { classifyThreeWayDiff } from "./sync/three-way.js";
+export {
+  classifyThreeWayDiff,
+  snapshotBridgeDocument,
+} from "./sync/three-way.js";
 export type {
   BaselineNodeSnapshot,
   ChangedSide,

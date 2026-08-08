@@ -41,8 +41,11 @@ describe("Figma export manifests", () => {
       document,
       penMappings,
       "/tmp/orchid.pen",
-      previous,
-      new Date("2026-08-08T12:00:00.000Z"),
+      {
+        previous,
+        penDocument: document,
+        updatedAt: new Date("2026-08-08T12:00:00.000Z"),
+      },
     );
     const hashes = authoredDocumentHashes(document);
 
@@ -58,12 +61,16 @@ describe("Figma export manifests", () => {
           penNodeId: "new-root",
           figmaNodeId: "figma-root",
           baselineHash: hashes["pen:root"],
+          penBaselineHash: hashes["pen:root"],
+          figmaBaselineHash: hashes["pen:root"],
         },
         {
           bridgeId: "pen:title",
           penNodeId: "new-title",
           figmaNodeId: "figma-title",
           baselineHash: hashes["pen:title"],
+          penBaselineHash: hashes["pen:title"],
+          figmaBaselineHash: hashes["pen:title"],
         },
       ],
     });
@@ -76,7 +83,6 @@ describe("Figma export manifests", () => {
         document,
         [{ bridgeId: "pen:root", penNodeId: "root" }],
         "/tmp/orchid.pen",
-        undefined,
       ),
     ).toThrow("mapping count does not match");
     expect(() =>
@@ -87,7 +93,6 @@ describe("Figma export manifests", () => {
           { bridgeId: "pen:unexpected", penNodeId: "other" },
         ],
         "/tmp/orchid.pen",
-        undefined,
       ),
     ).toThrow("unexpected identity pen:unexpected");
     expect(() =>

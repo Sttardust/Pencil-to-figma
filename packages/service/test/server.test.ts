@@ -202,9 +202,38 @@ describe("BridgeServer", () => {
       figmaDocumentId: "figma-file",
       revision: 0,
       mappings: [
-        { bridgeId: "pen:root", penNodeId: "adoptedRoot" },
-        { bridgeId: "pen:title", penNodeId: "adoptedTitle" },
+        {
+          bridgeId: "pen:root",
+          penNodeId: "adoptedRoot",
+          penBaselineHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          figmaBaselineHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+        {
+          bridgeId: "pen:title",
+          penNodeId: "adoptedTitle",
+          penBaselineHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          figmaBaselineHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
       ],
+    });
+
+    const previewResponse = await fetch(
+      `${origin}/figma/sync/preview?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ document: figmaExportDocument() }),
+      },
+    );
+    expect(previewResponse.status).toBe(200);
+    expect(await previewResponse.json()).toMatchObject({
+      type: "figma-sync-preview",
+      ok: true,
+      manifestRevision: 0,
+      counts: { unchanged: 2, conflicted: 0 },
+      actions: { toPencil: 0, toFigma: 0, conflicts: 0, unmapped: 0 },
+      canApplyWithoutResolution: true,
+      baselineUpgradeRequired: false,
     });
   });
 

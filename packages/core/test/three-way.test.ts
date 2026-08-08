@@ -61,6 +61,27 @@ describe("classifyThreeWayDiff", () => {
     expect(result.canApplyWithoutResolution).toBe(true);
   });
 
+  it("compares each editor against its own lossy round-trip baseline", () => {
+    const result = classifyThreeWayDiff(
+      [
+        {
+          bridgeId: "icon",
+          baselineHash: BASELINE,
+          penBaselineHash: PEN_EDIT,
+          figmaBaselineHash: FIGMA_EDIT,
+        },
+      ],
+      [current("icon", PEN_EDIT)],
+      [current("icon", FIGMA_EDIT)],
+    );
+
+    expect(result.entries[0]).toMatchObject({
+      classification: "unchanged",
+      penChanged: false,
+      figmaChanged: false,
+    });
+  });
+
   it("distinguishes clean deletions from delete-vs-edit conflicts", () => {
     const cleanPenDelete = classifyThreeWayDiff(
       [base("node")],
