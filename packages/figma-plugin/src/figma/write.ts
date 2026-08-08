@@ -12,6 +12,8 @@ import {
 import {
   AUTHORED_HASH_KEY,
   BRIDGE_ID_KEY,
+  BRIDGE_KIND_KEY,
+  SVG_ASSET_KEY,
   findMappedRoots,
   readMappedSubtree,
 } from "./identity.js";
@@ -263,6 +265,8 @@ function applyNodeProperties(
   node.locked = source.locked;
   if ("rotation" in node) node.rotation = source.rotation;
   node.setPluginData(BRIDGE_ID_KEY, source.bridgeId);
+  node.setPluginData(BRIDGE_KIND_KEY, source.kind);
+  node.setPluginData(SVG_ASSET_KEY, source.icon?.assetId ?? "");
   node.setPluginData(AUTHORED_HASH_KEY, context.hashes[source.bridgeId] ?? "");
   node.setPluginData("penFigSchema", "1");
   applyLayoutPosition(node, source, parent);

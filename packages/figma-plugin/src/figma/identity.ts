@@ -1,5 +1,7 @@
 export const BRIDGE_ID_KEY = "penFigBridgeId";
 export const AUTHORED_HASH_KEY = "penFigAuthoredHash";
+export const BRIDGE_KIND_KEY = "penFigBridgeKind";
+export const SVG_ASSET_KEY = "penFigSvgAssetId";
 
 export interface IdentityRecord {
   bridgeId: string;

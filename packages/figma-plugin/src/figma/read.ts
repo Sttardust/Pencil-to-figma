@@ -7,7 +7,7 @@ import {
   type Paint,
   type TransferWarning,
 } from "@pen-fig/bridge-schema";
-import { BRIDGE_ID_KEY } from "./identity.js";
+import { BRIDGE_ID_KEY, BRIDGE_KIND_KEY, SVG_ASSET_KEY } from "./identity.js";
 
 export interface FigmaReadResult {
   document: BridgeDocument;
@@ -56,9 +56,15 @@ function readNode(
 ): BridgeNode {
   counted();
   const bridgeId = node.getPluginData(BRIDGE_ID_KEY) || `figma:${node.id}`;
+  const generatedSvgWrapper = isGeneratedSvgWrapper(node);
+  const storedKind = node.getPluginData(BRIDGE_KIND_KEY);
   const result: BridgeNode = {
     bridgeId,
-    kind: mapKind(node),
+    kind: generatedSvgWrapper
+      ? "frame"
+      : isBridgeKind(storedKind)
+        ? storedKind
+        : mapKind(node),
     name: node.name,
     source: { app: "figma", documentId, nodeId: node.id },
     bounds: { x: node.x, y: node.y, width: node.width, height: node.height },
@@ -74,7 +80,7 @@ function readNode(
         : "auto",
     children: [],
   };
-  if ("children" in node) {
+  if ("children" in node && !generatedSvgWrapper) {
     for (const child of node.children) {
       if (!isSupportedSceneNode(child)) {
         warnings.push(
@@ -91,6 +97,17 @@ function readNode(
         readNode(child, documentId, assets, warnings, fonts, counted),
       );
     }
+  }
+  if (generatedSvgWrapper) {
+    const assetId = node.getPluginData(SVG_ASSET_KEY) || `figma-svg:${node.id}`;
+    if (!assets.some((asset) => asset.id === assetId))
+      assets.push({
+        status: "pending",
+        id: assetId,
+        kind: "svg",
+        sourceUri: `figma-svg://${node.id}`,
+      });
+    result.icon = { assetId };
   }
 
   if (node.type === "FRAME" || node.type === "COMPONENT") {
@@ -222,6 +239,28 @@ function isSupportedSceneNode(node: SceneNode): boolean {
     "VECTOR",
     "TEXT",
   ].includes(node.type);
+}
+
+function isGeneratedSvgWrapper(node: SceneNode): boolean {
+  if (!("children" in node) || node.children.length === 0) return false;
+  if (!node.getPluginData(BRIDGE_ID_KEY)) return false;
+  return node.children.every(
+    (child) => child.getPluginData(BRIDGE_ID_KEY) === "",
+  );
+}
+
+function isBridgeKind(value: string): value is BridgeNode["kind"] {
+  return [
+    "frame",
+    "group",
+    "rectangle",
+    "ellipse",
+    "polygon",
+    "path",
+    "text",
+    "component",
+    "instance",
+  ].includes(value);
 }
 
 function mapSizing(
