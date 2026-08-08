@@ -486,6 +486,9 @@ export class BridgeServer {
           penSnapshots,
           figmaSnapshots,
         );
+        const actions = countSyncDirections(diff.entries);
+        const structural = hasStructuralDifference(diff.entries);
+        const structuralSupported = !(structural && actions.toPencil > 0);
         json(response, 200, {
           type: "figma-sync-preview",
           ok: true,
@@ -496,12 +499,20 @@ export class BridgeServer {
             figmaNodeId: rootMapping.figmaNodeId,
           },
           counts: diff.counts,
-          actions: countSyncDirections(diff.entries),
+          actions,
+          structural,
           conflictRoots: diff.conflictRoots.map((entry) => ({
             bridgeId: entry.bridgeId,
             reason: entry.reason,
           })),
-          canApplyWithoutResolution: diff.canApplyWithoutResolution,
+          canApplyWithoutResolution:
+            diff.canApplyWithoutResolution && structuralSupported,
+          ...(!structuralSupported
+            ? {
+                unsupportedReason:
+                  "Figma-originated node creation, deletion, and reordering are not enabled yet.",
+              }
+            : {}),
           baselineUpgradeRequired: baseline.some(
             (mapping) => !mapping.penBaselineHash || !mapping.figmaBaselineHash,
           ),

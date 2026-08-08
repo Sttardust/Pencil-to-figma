@@ -311,20 +311,13 @@ window.onmessage = (event) => {
       else if (message.actions.toFigma > 0 && message.actions.toPencil === 0)
         applySync.textContent = "Apply Pencil changes to Figma…";
       else applySync.textContent = "Apply mapped changes…";
-      applySync.disabled = !(
-        message.ok &&
-        !message.baselineUpgradeRequired &&
-        ((message.actions.toPencil > 0 && message.actions.toFigma === 0) ||
-          (message.actions.toFigma > 0 && message.actions.toPencil === 0)) &&
-        message.actions.conflicts === 0 &&
-        message.actions.unmapped === 0 &&
-        message.counts.added === 0 &&
-        message.counts.deleted === 0
-      );
+      applySync.disabled = !canApplySyncPreview(message);
       if (!message.ok) detail.textContent = message.message;
       else if (message.baselineUpgradeRequired)
         detail.textContent =
           "This mapping predates dual baselines. Adopt the same Pencil root once more, then preview again.";
+      else if (message.unsupportedReason)
+        detail.textContent = message.unsupportedReason;
       else
         detail.textContent = `To Pencil: ${message.actions.toPencil}. To Figma: ${message.actions.toFigma}. Conflicts: ${message.actions.conflicts}.`;
     }
@@ -348,13 +341,7 @@ window.onmessage = (event) => {
         keepPencil.disabled = false;
         keepFigma.disabled = false;
         cancelConflict.disabled = false;
-        applySync.disabled = !(
-          ((pendingSyncPreview?.actions?.toPencil > 0 &&
-            pendingSyncPreview?.actions?.toFigma === 0) ||
-            (pendingSyncPreview?.actions?.toFigma > 0 &&
-              pendingSyncPreview?.actions?.toPencil === 0)) &&
-          pendingSyncPreview?.actions?.conflicts === 0
-        );
+        applySync.disabled = !canApplySyncPreview(pendingSyncPreview);
       } else {
         pendingSyncPreview = undefined;
         applySync.disabled = true;
@@ -367,6 +354,18 @@ window.onmessage = (event) => {
     }
   }
 };
+
+function canApplySyncPreview(message: any): boolean {
+  if (!message?.ok || message.baselineUpgradeRequired) return false;
+  const toPencil = Number(message.actions?.toPencil ?? 0);
+  const toFigma = Number(message.actions?.toFigma ?? 0);
+  return Boolean(
+    message.canApplyWithoutResolution &&
+    ((toPencil > 0 && toFigma === 0) || (toFigma > 0 && toPencil === 0)) &&
+    message.actions?.conflicts === 0 &&
+    message.actions?.unmapped === 0,
+  );
+}
 
 function resolveConflict(direction: "pen" | "figma"): void {
   if (!token || !pendingConflict) return;

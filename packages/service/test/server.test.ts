@@ -600,6 +600,8 @@ describe("BridgeServer", () => {
     expect(await structuralPreview.json()).toMatchObject({
       counts: { "pen-only": 1, added: 1 },
       actions: { toPencil: 0, toFigma: 2 },
+      structural: true,
+      canApplyWithoutResolution: true,
     });
 
     const prepareStructuralUpdate = await fetch(
