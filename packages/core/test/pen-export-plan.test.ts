@@ -103,7 +103,9 @@ describe("planFigmaToPenCreate", () => {
 
   it("declares SVG wrapper rasterization", () => {
     const document = fixture();
-    document.root.children[0]!.icon = { assetId: "figma-svg:1:2" };
+    const svgWrapper = document.root.children[1]!;
+    svgWrapper.children = [];
+    svgWrapper.icon = { assetId: "figma-svg:1:2" };
     document.assets.push({
       status: "pending",
       id: "figma-svg:1:2",
@@ -120,12 +122,21 @@ describe("planFigmaToPenCreate", () => {
     );
     const icon = plan.operations.find(
       (operation) =>
-        operation.type === "insert" && operation.bridgeId === "pen:title",
+        operation.type === "insert" && operation.bridgeId === "pen:row",
     );
     expect(icon?.type === "insert" ? icon.payload : undefined).toMatchObject({
       type: "rectangle",
       fill: [expect.objectContaining({ type: "image", mode: "fit" })],
     });
+    expect(
+      icon?.type === "insert" ? icon.payload : undefined,
+    ).not.toHaveProperty("layout");
+    expect(
+      icon?.type === "insert" ? icon.payload : undefined,
+    ).not.toHaveProperty("clip");
+    expect(
+      icon?.type === "insert" ? icon.payload : undefined,
+    ).not.toHaveProperty("padding");
   });
 
   it("uses staged asset paths supplied by the writer", () => {

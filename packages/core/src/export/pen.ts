@@ -109,9 +109,10 @@ function toPenPayload(
     payload.descendants = node.instance.overrides;
   }
   if (
-    node.kind === "frame" ||
-    node.kind === "component" ||
-    (node.kind === "instance" && !node.instance)
+    !node.icon &&
+    (node.kind === "frame" ||
+      node.kind === "component" ||
+      (node.kind === "instance" && !node.instance))
   ) {
     payload.clip = node.clipsContent ?? false;
     if (node.layout) {
