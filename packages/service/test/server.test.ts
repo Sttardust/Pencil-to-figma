@@ -1,19 +1,31 @@
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { BridgeServer } from "../src/server.js";
 import type { PenMcpClient } from "../src/pen/mcp-client.js";
 
 const servers: BridgeServer[] = [];
+const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.close()));
+  await Promise.all(
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
+  );
 });
 
 describe("BridgeServer", () => {
   it("pairs and reads Pen screens over loopback HTTP", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "pen-fig-server-"));
+    temporaryDirectories.push(directory);
+    const penPath = path.join(directory, "test.pen");
     const pen = {
       getAppState: async () => ({
-        text: "- Currently active canvas editor: `/tmp/test.pen`",
+        text: `- Currently active canvas editor: \`${penPath}\``,
       }),
       listRootFrames: async () => "abc | Screen",
       searchRootFrames: async () => "abc | Screen",
@@ -60,9 +72,34 @@ describe("BridgeServer", () => {
       text: "abc | Screen",
     });
     const node = await fetch(`${origin}/pen/nodes/abc?token=${token}`);
-    expect(await node.json()).toMatchObject({
+    const transferred = await node.json();
+    expect(transferred).toMatchObject({
       type: "pen-document",
+      transferId: expect.any(String),
       document: { root: { bridgeId: "pen:abc", name: "Screen" } },
+    });
+    const completed = await fetch(`${origin}/sync/complete?token=${token}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transferId: transferred.transferId,
+        mappings: [{ bridgeId: "pen:abc", figmaNodeId: "1:2" }],
+      }),
+    });
+    expect(await completed.json()).toMatchObject({
+      type: "sync-committed",
+      revision: 0,
+      mappingCount: 1,
+      manifestPath: path.join(directory, "test.pen-fig.json"),
+    });
+    expect(
+      JSON.parse(
+        await readFile(path.join(directory, "test.pen-fig.json"), "utf8"),
+      ),
+    ).toMatchObject({
+      version: 1,
+      revision: 0,
+      mappings: [{ bridgeId: "pen:abc", figmaNodeId: "1:2" }],
     });
   });
 

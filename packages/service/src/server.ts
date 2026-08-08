@@ -1,5 +1,9 @@
 import { createServer, type Server as HttpServer } from "node:http";
+import { randomUUID } from "node:crypto";
+import path from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
+import { z } from "zod";
+import type { BridgeDocument, BridgeManifest } from "@pen-fig/bridge-schema";
 import {
   clientMessageSchema,
   type ClientMessage,
@@ -7,8 +11,9 @@ import {
 } from "./protocol.js";
 import { SessionManager } from "./session.js";
 import type { PenMcpClient } from "./pen/mcp-client.js";
-import { importPenDocument } from "@pen-fig/core";
+import { authoredDocumentHashes, importPenDocument } from "@pen-fig/core";
 import { resolveAssets } from "./assets/resolve.js";
+import { ManifestRepository } from "./manifest/repository.js";
 
 export interface BridgeServerOptions {
   host: string;
@@ -24,6 +29,12 @@ export class BridgeServer {
   readonly #sessions: SessionManager;
   readonly #host: string;
   readonly #port: number;
+  readonly #manifests = new ManifestRepository();
+  readonly #transfers = new Map<
+    string,
+    { document: BridgeDocument; penPath: string; createdAt: number }
+  >();
+  #activePenPath: string | undefined;
 
   constructor(options: BridgeServerOptions) {
     this.#host = options.host;
@@ -118,6 +129,7 @@ export class BridgeServer {
         }
         try {
           const state = await this.#pen.getAppState();
+          this.#activePenPath = extractActivePenPath(state.text);
           send(socket, {
             type: "ready",
             protocol: 1,
@@ -207,6 +219,7 @@ export class BridgeServer {
       }
       if (request.method === "POST" && requestUrl.pathname === "/hello") {
         const state = await this.#pen.getAppState();
+        this.#activePenPath = extractActivePenPath(state.text);
         json(response, 200, {
           type: "ready",
           protocol: 1,
@@ -233,10 +246,74 @@ export class BridgeServer {
           ? /^\/pen\/nodes\/([A-Za-z0-9]+)$/.exec(requestUrl.pathname)
           : undefined;
       if (nodeMatch?.[1]) {
+        const penPath = await this.#requireActivePenPath();
         const node = await this.#pen.getNode(nodeMatch[1]);
-        const document = importPenDocument(node, { documentId: "active.pen" });
+        const document = importPenDocument(node, { documentId: penPath });
         const resolved = await resolveAssets(document);
-        json(response, 200, { type: "pen-document", ...resolved });
+        const transferId = randomUUID();
+        this.#pruneTransfers();
+        this.#transfers.set(transferId, {
+          document: resolved.document,
+          penPath,
+          createdAt: Date.now(),
+        });
+        json(response, 200, {
+          type: "pen-document",
+          transferId,
+          ...resolved,
+        });
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/sync/complete"
+      ) {
+        const completion = syncCompletionSchema.parse(
+          await readJsonBody(request),
+        );
+        const transfer = this.#transfers.get(completion.transferId);
+        if (!transfer)
+          throw new Error("Transfer expired; read the Pen screen again");
+        const expectedHashes = authoredDocumentHashes(transfer.document);
+        const returned = new Map(
+          completion.mappings.map((mapping) => [mapping.bridgeId, mapping]),
+        );
+        if (
+          returned.size !== completion.mappings.length ||
+          returned.size !== Object.keys(expectedHashes).length
+        )
+          throw new Error("Figma mapping count does not match the transfer");
+        const mappings: BridgeManifest["mappings"] = [];
+        visitBridgeNodes(transfer.document.root, (node) => {
+          const mapping = returned.get(node.bridgeId);
+          if (!mapping)
+            throw new Error(`Figma mapping missing ${node.bridgeId}`);
+          mappings.push({
+            bridgeId: node.bridgeId,
+            penNodeId: node.source.nodeId,
+            figmaNodeId: mapping.figmaNodeId,
+            baselineHash: expectedHashes[node.bridgeId]!,
+          });
+        });
+        const manifestPath = sidecarPath(transfer.penPath);
+        const previous = await this.#manifests.read(manifestPath);
+        await this.#manifests.writeAtomic(manifestPath, {
+          version: 1,
+          penDocumentId: transfer.penPath,
+          ...(completion.figmaDocumentId
+            ? { figmaDocumentId: completion.figmaDocumentId }
+            : {}),
+          revision: (previous?.revision ?? -1) + 1,
+          updatedAt: new Date().toISOString(),
+          mappings,
+        });
+        this.#transfers.delete(completion.transferId);
+        json(response, 200, {
+          type: "sync-committed",
+          revision: (previous?.revision ?? -1) + 1,
+          mappingCount: mappings.length,
+          manifestPath,
+        });
         return;
       }
       json(response, 404, {
@@ -252,6 +329,22 @@ export class BridgeServer {
         message,
       });
     }
+  }
+
+  async #requireActivePenPath(): Promise<string> {
+    if (this.#activePenPath) return this.#activePenPath;
+    const state = await this.#pen.getAppState();
+    const penPath = extractActivePenPath(state.text);
+    if (!penPath)
+      throw new Error("Pencil did not report an active .pen document");
+    this.#activePenPath = penPath;
+    return penPath;
+  }
+
+  #pruneTransfers(): void {
+    const cutoff = Date.now() - 15 * 60_000;
+    for (const [id, transfer] of this.#transfers)
+      if (transfer.createdAt < cutoff) this.#transfers.delete(id);
   }
 
   async #handleAuthenticated(
@@ -286,6 +379,41 @@ export class BridgeServer {
       send(socket, failure);
     }
   }
+}
+
+const syncCompletionSchema = z
+  .object({
+    transferId: z.string().uuid(),
+    figmaDocumentId: z.string().min(1).max(500).optional(),
+    mappings: z
+      .array(
+        z
+          .object({
+            bridgeId: z.string().min(1).max(200),
+            figmaNodeId: z.string().min(1).max(200),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(5000),
+  })
+  .strict();
+
+function extractActivePenPath(text: string): string | undefined {
+  return /Currently active canvas editor:\s*`([^`]+\.pen)`/.exec(text)?.[1];
+}
+
+function sidecarPath(penPath: string): string {
+  const extension = path.extname(penPath);
+  return `${penPath.slice(0, -extension.length)}.pen-fig.json`;
+}
+
+function visitBridgeNodes(
+  node: BridgeDocument["root"],
+  callback: (node: BridgeDocument["root"]) => void,
+): void {
+  callback(node);
+  for (const child of node.children) visitBridgeNodes(child, callback);
 }
 
 function send(socket: WebSocket, message: ServerMessage): void {

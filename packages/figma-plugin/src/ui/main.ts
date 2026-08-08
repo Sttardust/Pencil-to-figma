@@ -8,7 +8,12 @@ const screenList = required<HTMLElement>("screen-list");
 const screenQuery = required<HTMLInputElement>("screen-query");
 let token: string | undefined;
 let pendingImport:
-  { document: any; assetData: Record<string, string> } | undefined;
+  | {
+      document: any;
+      assetData: Record<string, string>;
+      transferId: string;
+    }
+  | undefined;
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -46,9 +51,41 @@ window.onmessage = (event) => {
   if (message) {
     output.textContent = JSON.stringify(message, null, 2);
     if (message.type === "import-result") {
-      setStatus(message.ok ? "Imported" : "Import failed", message.ok);
-      if (!message.ok) detail.textContent = message.message;
-      if (message.ok) pendingImport = undefined;
+      if (!message.ok) {
+        setStatus("Import failed", false);
+        detail.textContent = message.message;
+      } else {
+        const completedImport = pendingImport;
+        pendingImport = undefined;
+        if (!completedImport) {
+          setStatus("Imported — mapping not saved", false);
+          return;
+        }
+        setStatus("Saving mapping…", true);
+        void request("/sync/complete", {
+          method: "POST",
+          body: JSON.stringify({
+            transferId: completedImport.transferId,
+            mappings: message.mappings,
+            ...(message.figmaDocumentId
+              ? { figmaDocumentId: message.figmaDocumentId }
+              : {}),
+          }),
+        })
+          .then((committed) => {
+            output.textContent = JSON.stringify(
+              { ...message, manifest: committed },
+              null,
+              2,
+            );
+            setStatus("Imported and mapped", true);
+          })
+          .catch((error) => {
+            setStatus("Imported — mapping save failed", false);
+            detail.textContent =
+              error instanceof Error ? error.message : "Mapping save failed";
+          });
+      }
     }
     if (message.type === "import-preview") {
       if (!message.ok) {
@@ -108,7 +145,11 @@ async function importScreen(nodeId: string): Promise<void> {
     setStatus("Reading Pen…", true);
     const message = await request(`/pen/nodes/${nodeId}`, { method: "GET" });
     const document = message.document;
-    pendingImport = { document, assetData: message.assetData ?? {} };
+    pendingImport = {
+      document,
+      assetData: message.assetData ?? {},
+      transferId: message.transferId,
+    };
     setStatus("Planning changes…", true);
     parent.postMessage(
       {

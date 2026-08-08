@@ -34,7 +34,12 @@ figma.ui.onmessage = async (message: { type: string }) => {
           ? (message.assetData as Record<string, string>)
           : {},
       );
-      figma.ui.postMessage({ type: "import-result", ok: true, ...result });
+      figma.ui.postMessage({
+        type: "import-result",
+        ok: true,
+        ...result,
+        ...(figma.fileKey ? { figmaDocumentId: figma.fileKey } : {}),
+      });
     } catch (error) {
       figma.ui.postMessage({
         type: "import-result",

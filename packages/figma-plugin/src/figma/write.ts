@@ -21,6 +21,7 @@ export interface WriteResult {
   nodeCount: number;
   operation: "created" | "unchanged" | "updated";
   operations?: SyncPlan["counts"];
+  mappings: Array<{ bridgeId: string; figmaNodeId: string }>;
   warnings: string[];
 }
 
@@ -90,6 +91,7 @@ export async function writeBridgeDocument(
         nodeCount: 0,
         operation: "unchanged",
         operations: plan.counts,
+        mappings: mappingsFromNodes(mapped.nodes),
         warnings: document.warnings.map((warning) => warning.message),
       };
     }
@@ -115,6 +117,7 @@ export async function writeBridgeDocument(
       nodeCount: plan.operations.length,
       operation: "updated",
       operations: plan.counts,
+      mappings: mappingsFromNodes(context.nodes),
       warnings: [
         ...document.warnings.map((warning) => warning.message),
         ...context.warnings,
@@ -136,6 +139,7 @@ export async function writeBridgeDocument(
       rootId: root.id,
       nodeCount: context.nodeCount,
       operation: "created",
+      mappings: mappingsFromNodes(context.nodes),
       warnings: [
         ...document.warnings.map((warning) => warning.message),
         ...context.warnings,
@@ -145,6 +149,15 @@ export async function writeBridgeDocument(
     root?.remove();
     throw error;
   }
+}
+
+function mappingsFromNodes(
+  nodes: Map<string, SceneNode>,
+): Array<{ bridgeId: string; figmaNodeId: string }> {
+  return [...nodes].map(([bridgeId, node]) => ({
+    bridgeId,
+    figmaNodeId: node.id,
+  }));
 }
 
 interface WriteContext {
