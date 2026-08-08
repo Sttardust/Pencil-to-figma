@@ -1,4 +1,4 @@
-import { bytesToHex } from "@noble/hashes/utils.js";
+import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import {
   canonicalStringify,
@@ -35,9 +35,7 @@ export function authoredNodeHash(node: BridgeNode): string {
     icon: node.icon,
     childOrder: node.children.map((child) => child.bridgeId),
   };
-  return bytesToHex(
-    sha256(new TextEncoder().encode(canonicalStringify(authored))),
-  );
+  return bytesToHex(sha256(utf8ToBytes(canonicalStringify(authored))));
 }
 
 export function authoredDocumentHashes(
