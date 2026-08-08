@@ -26,6 +26,25 @@ export function rankFontFallbacks<T extends FontDescriptor>(
     });
 }
 
+export function directFontCandidates(
+  requested: FontDescriptor,
+): FontDescriptor[] {
+  const portable: FontDescriptor[] = [];
+  for (const family of ["Georgia", "Times New Roman", "Inter", "Arial"])
+    for (const style of family === "Inter"
+      ? ["Regular", "Medium", "Semi Bold", "Bold", "Italic", "Bold Italic"]
+      : ["Regular", "Bold", "Italic", "Bold Italic"])
+      portable.push({ family, style });
+  return [
+    requested,
+    ...rankFontFallbacks(requested, portable).slice(0, 5),
+  ].filter(
+    (candidate, index, values) =>
+      values.findIndex((other) => fontKey(other) === fontKey(candidate)) ===
+      index,
+  );
+}
+
 export function fontKey(font: FontDescriptor): string {
   return `${font.family.toLowerCase()}\0${font.style.toLowerCase()}`;
 }

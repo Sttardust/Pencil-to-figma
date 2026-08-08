@@ -17,7 +17,7 @@ import {
   findMappedRoots,
   readMappedSubtree,
 } from "./identity.js";
-import { fontKey, rankFontFallbacks } from "./fonts.js";
+import { directFontCandidates, fontKey } from "./fonts.js";
 
 export interface WriteResult {
   rootId: string;
@@ -396,18 +396,15 @@ async function preflightFonts(document: BridgeDocument): Promise<string[]> {
       }
     });
   if (!fonts.size) return [];
-  const available = (await figma.listAvailableFontsAsync()).map(
-    (entry) => entry.fontName,
-  );
   const warnings: string[] = [];
   const loaded = new Set<string>();
   for (const { font, nodes } of fonts.values()) {
     let selected: FontName | undefined;
-    for (const candidate of rankFontFallbacks(font, available)) {
+    for (const candidate of directFontCandidates(font)) {
       const key = fontKey(candidate);
       try {
         if (!loaded.has(key)) {
-          await figma.loadFontAsync(candidate);
+          await loadFontWithTimeout(candidate);
           loaded.add(key);
         }
         selected = candidate;
@@ -431,6 +428,23 @@ async function preflightFonts(document: BridgeDocument): Promise<string[]> {
     );
   }
   return warnings;
+}
+
+async function loadFontWithTimeout(font: FontName): Promise<void> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      figma.loadFontAsync(font),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error(`Timed out loading ${font.family}`)),
+          5_000,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
 }
 
 async function createNode(

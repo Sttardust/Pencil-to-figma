@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rankFontFallbacks } from "../src/figma/fonts.js";
+import { directFontCandidates, rankFontFallbacks } from "../src/figma/fonts.js";
 
 describe("rankFontFallbacks", () => {
   const available = [
@@ -25,5 +25,18 @@ describe("rankFontFallbacks", () => {
     expect(
       rankFontFallbacks({ family: "Inter", style: "Medium" }, available)[0],
     ).toEqual({ family: "Inter", style: "Medium" });
+  });
+
+  it("builds a bounded direct fallback list without enumerating Figma fonts", () => {
+    const candidates = directFontCandidates({
+      family: "Fraunces",
+      style: "Semi Bold",
+    });
+    expect(candidates[0]).toEqual({
+      family: "Fraunces",
+      style: "Semi Bold",
+    });
+    expect(candidates[1]).toEqual({ family: "Georgia", style: "Bold" });
+    expect(candidates.length).toBeLessThanOrEqual(6);
   });
 });
