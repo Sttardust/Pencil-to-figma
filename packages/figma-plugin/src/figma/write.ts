@@ -4,10 +4,18 @@ import {
   type BridgeNode,
   type Paint,
 } from "@pen-fig/bridge-schema";
+import { authoredDocumentHashes } from "@pen-fig/core";
+import {
+  AUTHORED_HASH_KEY,
+  BRIDGE_ID_KEY,
+  classifyIdentities,
+  readPageIdentities,
+} from "./identity.js";
 
 export interface WriteResult {
   rootId: string;
   nodeCount: number;
+  operation: "created" | "unchanged";
   warnings: string[];
 }
 
@@ -16,14 +24,38 @@ export async function writeBridgeDocument(
   assetData: Record<string, string> = {},
 ): Promise<WriteResult> {
   const document = bridgeDocumentSchema.parse(input);
-  await preflightFonts(document);
   await figma.currentPage.loadAsync();
+  const hashes = authoredDocumentHashes(document);
+  const identityState = classifyIdentities(
+    hashes,
+    readPageIdentities(figma.currentPage),
+  );
+  if (identityState.status === "unchanged") {
+    const root = figma.currentPage.findOne(
+      (node) => node.getPluginData(BRIDGE_ID_KEY) === document.root.bridgeId,
+    );
+    if (!root) throw new Error("Mapped Figma root is missing");
+    figma.currentPage.selection = [root];
+    figma.viewport.scrollAndZoomIntoView([root]);
+    return {
+      rootId: root.id,
+      nodeCount: 0,
+      operation: "unchanged",
+      warnings: document.warnings.map((warning) => warning.message),
+    };
+  }
+  if (identityState.status === "changed")
+    throw new Error(
+      `Mapped Figma subtree has ${identityState.changedBridgeIds.length} changed and ${identityState.missingBridgeIds.length} missing nodes; update planning is required`,
+    );
+  await preflightFonts(document);
   const context: WriteContext = {
     nodes: new Map(),
     images: new Map(),
     assetData,
     nodeCount: 0,
     warnings: [],
+    hashes,
   };
   for (const asset of document.assets) {
     if (asset.status === "ready" && asset.kind === "image") {
@@ -46,6 +78,7 @@ export async function writeBridgeDocument(
     return {
       rootId: root.id,
       nodeCount: context.nodeCount,
+      operation: "created",
       warnings: [
         ...document.warnings.map((warning) => warning.message),
         ...context.warnings,
@@ -63,6 +96,7 @@ interface WriteContext {
   assetData: Record<string, string>;
   nodeCount: number;
   warnings: string[];
+  hashes: Record<string, string>;
 }
 
 async function preflightFonts(document: BridgeDocument): Promise<void> {
@@ -104,7 +138,8 @@ async function createNode(
   if ("opacity" in node) node.opacity = source.opacity;
   node.locked = source.locked;
   if ("rotation" in node) node.rotation = source.rotation;
-  node.setPluginData("penFigBridgeId", source.bridgeId);
+  node.setPluginData(BRIDGE_ID_KEY, source.bridgeId);
+  node.setPluginData(AUTHORED_HASH_KEY, context.hashes[source.bridgeId] ?? "");
   node.setPluginData("penFigSchema", "1");
   applyLayoutPosition(node, source, parent);
   applySize(node, source);
