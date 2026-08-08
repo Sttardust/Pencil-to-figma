@@ -40,10 +40,19 @@ export async function readSelectedFigmaDocument(): Promise<FigmaReadResult> {
   const assets: BridgeAsset[] = [];
   const warnings: TransferWarning[] = [];
   const fonts = new Set<string>();
+  const instanceComponents = await loadInstanceComponents(selected);
   let nodeCount = 0;
-  const root = readNode(selected, documentId, assets, warnings, fonts, () => {
-    nodeCount += 1;
-  });
+  const root = readNode(
+    selected,
+    documentId,
+    assets,
+    warnings,
+    fonts,
+    instanceComponents,
+    () => {
+      nodeCount += 1;
+    },
+  );
   removeDerivedInstanceChildren(root);
   nodeCount = countBridgeNodes(root);
   const document = bridgeDocumentSchema.parse({
@@ -60,6 +69,26 @@ export async function readSelectedFigmaDocument(): Promise<FigmaReadResult> {
     fonts: [...fonts].sort(),
     assetData: await collectAssetData(document.assets),
   };
+}
+
+async function loadInstanceComponents(
+  root: SceneNode,
+): Promise<Map<string, ComponentNode | null>> {
+  const instances: InstanceNode[] = [];
+  if (root.type === "INSTANCE") instances.push(root);
+  if ("findAll" in root)
+    instances.push(
+      ...root
+        .findAll((node) => node.type === "INSTANCE")
+        .filter((node): node is InstanceNode => node.type === "INSTANCE"),
+    );
+  const components = new Map<string, ComponentNode | null>();
+  await Promise.all(
+    instances.map(async (instance) => {
+      components.set(instance.id, await instance.getMainComponentAsync());
+    }),
+  );
+  return components;
 }
 
 async function collectAssetData(
@@ -142,6 +171,7 @@ function readNode(
   assets: BridgeAsset[],
   warnings: TransferWarning[],
   fonts: Set<string>,
+  instanceComponents: ReadonlyMap<string, ComponentNode | null>,
   counted: () => void,
 ): BridgeNode {
   counted();
@@ -184,7 +214,15 @@ function readNode(
         continue;
       }
       result.children.push(
-        readNode(child, documentId, assets, warnings, fonts, counted),
+        readNode(
+          child,
+          documentId,
+          assets,
+          warnings,
+          fonts,
+          instanceComponents,
+          counted,
+        ),
       );
     }
   }
@@ -288,7 +326,7 @@ function readNode(
   } else if (node.type === "COMPONENT") {
     result.component = { key: node.key || node.id };
   } else if (node.type === "INSTANCE") {
-    const component = node.mainComponent;
+    const component = instanceComponents.get(node.id);
     result.instance = {
       componentBridgeId:
         component?.getPluginData(BRIDGE_ID_KEY) ||
