@@ -62,6 +62,9 @@ frames become Figma components and resolvable refs become instances; dependency 
 kept outside the screen's sync manifest. Pencil descendant text overrides become native Figma text
 component properties, keeping both the reusable component relationship and the instance-specific
 copy editable. Unsupported descendant property types return an explicit warning.
+Mapped sync also preserves those instance text overrides in both directions: Figma component
+property edits are translated to native Pencil descendant IDs, and Pencil descendant edits are
+applied through the corresponding Figma component property without detaching the instance.
 
 Saved Pencil variables are retained in the bridge document and their current values are inlined
 for colors, font families, and corner radii so Figma receives the same appearance. Imports report

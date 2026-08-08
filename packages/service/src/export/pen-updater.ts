@@ -30,6 +30,7 @@ export async function writeFigmaUpdatesToPen(
   changedBridgeIds: string[],
   mappings: PenBridgeMapping[],
   currentRoot: PenNode,
+  currentPenDocument: BridgeDocument,
   assetData: Record<string, FigmaExportAssetData>,
   penPath: string,
   pen: PenMcpClient,
@@ -56,9 +57,9 @@ export async function writeFigmaUpdatesToPen(
       )
       .map((operation) => [operation.bridgeId, operation]),
   );
-  const penByBridgeId = new Map(
-    mappings.map((mapping) => [mapping.bridgeId, mapping.penNodeId]),
-  );
+  const penByBridgeId = collectPenNativeIds(currentPenDocument);
+  for (const mapping of mappings)
+    penByBridgeId.set(mapping.bridgeId, mapping.penNodeId);
   const currentByBridgeId = flattenPenNodes(currentRoot, currentMappings);
   const statements: string[] = [];
 
@@ -73,10 +74,13 @@ export async function writeFigmaUpdatesToPen(
       throw new Error(
         `Pencil node type change requires replacement: ${bridgeId} (${current.type} → ${String(expectedType)})`,
       );
-    const payload = sanitizeUpdatePayload(
-      operation.payload,
-      bridgeId === document.root.bridgeId,
-      document.root.name,
+    const payload = resolvePenReferences(
+      sanitizeUpdatePayload(
+        operation.payload,
+        bridgeId === document.root.bridgeId,
+        document.root.name,
+      ),
+      penByBridgeId,
     );
     statements.push(
       `Update(${JSON.stringify(penNodeId)},${JSON.stringify(payload)})`,
@@ -105,6 +109,7 @@ export async function writeFigmaStructureToPen(
   changedBridgeIds: string[],
   mappings: PenBridgeMapping[],
   currentRoot: PenNode,
+  currentPenDocument: BridgeDocument,
   assetData: Record<string, FigmaExportAssetData>,
   penPath: string,
   pen: PenMcpClient,
@@ -152,9 +157,9 @@ export async function writeFigmaStructureToPen(
   const survivingMappings = currentMappings.filter(
     (mapping) => !removed.has(mapping.bridgeId),
   );
-  const nativeByBridgeId = new Map(
-    survivingMappings.map((mapping) => [mapping.bridgeId, mapping.penNodeId]),
-  );
+  const nativeByBridgeId = collectPenNativeIds(currentPenDocument);
+  for (const mapping of survivingMappings)
+    nativeByBridgeId.set(mapping.bridgeId, mapping.penNodeId);
   const variableByBridgeId = new Map<string, string>();
   const statements: string[] = [];
   let operationCount = 0;
@@ -199,10 +204,13 @@ export async function writeFigmaStructureToPen(
       throw new Error(
         `Pencil node type change requires replacement: ${bridgeId} (${currentEntry.node.type} → ${String(expectedType)})`,
       );
-    const payload = sanitizeUpdatePayload(
-      operation.payload,
-      bridgeId === document.root.bridgeId,
-      document.root.name,
+    const payload = resolvePenReferences(
+      sanitizeUpdatePayload(
+        operation.payload,
+        bridgeId === document.root.bridgeId,
+        document.root.name,
+      ),
+      nativeByBridgeId,
     );
     statements.push(
       `Update(${nodeReference(bridgeId, nativeByBridgeId, variableByBridgeId)},${JSON.stringify(payload)})`,
@@ -406,10 +414,44 @@ function prepareStructuralInsertPayload(
 ): Record<string, unknown> {
   const payload = { ...source };
   delete payload.placeholder;
-  if (payload.type === "ref" && typeof payload.ref === "string") {
+  return resolvePenReferences(payload, nativeByBridgeId);
+}
+
+function collectPenNativeIds(document: BridgeDocument): Map<string, string> {
+  const nativeIds = new Map<string, string>();
+  const visit = (node: BridgeDocument["root"]) => {
+    if (node.source.app === "pen")
+      nativeIds.set(node.bridgeId, node.source.nodeId);
+    for (const child of node.children) visit(child);
+  };
+  visit(document.root);
+  for (const component of document.components ?? []) visit(component);
+  return nativeIds;
+}
+
+function resolvePenReferences(
+  source: Record<string, unknown>,
+  nativeByBridgeId: ReadonlyMap<string, string>,
+): Record<string, unknown> {
+  const payload = { ...source };
+  if (typeof payload.ref === "string") {
     const mapped = nativeByBridgeId.get(payload.ref);
     if (!mapped) throw new Error(`Unresolved Figma component ${payload.ref}`);
     payload.ref = mapped;
+  }
+  if (
+    payload.descendants &&
+    typeof payload.descendants === "object" &&
+    !Array.isArray(payload.descendants)
+  ) {
+    payload.descendants = Object.fromEntries(
+      Object.entries(payload.descendants).map(([bridgeId, override]) => {
+        const nativeId = nativeByBridgeId.get(bridgeId);
+        if (!nativeId)
+          throw new Error(`Unresolved Figma component child ${bridgeId}`);
+        return [nativeId, override];
+      }),
+    );
   }
   return payload;
 }

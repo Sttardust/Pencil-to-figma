@@ -35,6 +35,7 @@ describe("writeFigmaUpdatesToPen", () => {
       ["pen:title"],
       mappings(),
       currentPenRoot(),
+      currentPenDocument(),
       {},
       path.join(directory, "design.pen"),
       pen,
@@ -69,6 +70,7 @@ describe("writeFigmaUpdatesToPen", () => {
       ["pen:title"],
       mappings(),
       nativeRoot,
+      currentPenDocument(nativeRoot),
       {},
       path.join(directory, "design.pen"),
       pen,
@@ -76,6 +78,87 @@ describe("writeFigmaUpdatesToPen", () => {
 
     expect(result.updatedBridgeIds).toEqual(["pen:title"]);
     expect(calls[0]).toContain('Update("nativeTitle"');
+  });
+
+  it("maps Figma instance overrides to native Pencil component ids", async () => {
+    const directory = await temporaryDirectory();
+    const calls: string[] = [];
+    const component: PenNode = {
+      id: "nativeComponent",
+      type: "frame",
+      name: "Button",
+      reusable: true,
+      width: 200,
+      height: 48,
+      metadata: { type: "pen-fig-bridge", bridgeId: "pen:component" },
+      children: [
+        {
+          id: "nativeLabel",
+          type: "text",
+          name: "Label",
+          content: "Button",
+          fontFamily: "Inter",
+          fontSize: 16,
+          metadata: {
+            type: "pen-fig-bridge",
+            bridgeId: "pen:component-label",
+          },
+        },
+      ],
+    };
+    const root: PenNode = {
+      id: "nativeRoot",
+      type: "frame",
+      name: "Screen",
+      width: 393,
+      height: 844,
+      layout: "none",
+      metadata: { type: "pen-fig-export", bridgeId: "pen:root" },
+      children: [
+        {
+          id: "nativeInstance",
+          type: "ref",
+          name: "Continue",
+          ref: "nativeComponent",
+          descendants: { nativeLabel: { content: "Before" } },
+          metadata: { type: "pen-fig-bridge", bridgeId: "pen:instance" },
+        },
+      ],
+    };
+    const penDocument = currentPenDocument(root, [component]);
+    const figma = structuredClone(penDocument);
+    figma.source = { app: "figma", documentId: "figma-file" };
+    figma.root.children[0]!.instance!.overrides = {
+      "pen:component-label": { content: "After" },
+    };
+    const pen = {
+      executeWrite: async (input: string) => {
+        calls.push(input);
+        return "OK\n\n## Print output\nUPDATED | pen:instance | nativeInstance";
+      },
+    } as unknown as PenMcpClient;
+
+    const result = await writeFigmaUpdatesToPen(
+      figma,
+      ["pen:instance"],
+      [
+        { bridgeId: "pen:root", penNodeId: "nativeRoot" },
+        { bridgeId: "pen:instance", penNodeId: "nativeInstance" },
+      ],
+      root,
+      penDocument,
+      {},
+      path.join(directory, "design.pen"),
+      pen,
+    );
+
+    expect(result.updatedBridgeIds).toEqual(["pen:instance"]);
+    expect(calls[0]).toContain('Update("nativeInstance"');
+    expect(calls[0]).toContain('"ref":"nativeComponent"');
+    expect(calls[0]).toContain(
+      '"descendants":{"nativeLabel":{"content":"After"}}',
+    );
+    expect(calls[0]).not.toContain('"pen:component-label"');
   });
 
   it("rejects structural and native-type changes before writing", async () => {
@@ -104,6 +187,7 @@ describe("writeFigmaUpdatesToPen", () => {
         ["pen:title"],
         mappings(),
         currentPenRoot(),
+        currentPenDocument(),
         {},
         path.join(directory, "design.pen"),
         pen,
@@ -118,6 +202,7 @@ describe("writeFigmaUpdatesToPen", () => {
         ["pen:title"],
         mappings(),
         wrongType,
+        currentPenDocument(wrongType),
         {},
         path.join(directory, "design.pen"),
         pen,
@@ -152,6 +237,7 @@ describe("writeFigmaUpdatesToPen", () => {
       ["pen:root", "figma:added"],
       mappings(),
       currentPenRoot(),
+      currentPenDocument(),
       {},
       path.join(directory, "design.pen"),
       pen,
@@ -184,6 +270,7 @@ describe("writeFigmaUpdatesToPen", () => {
       ["pen:root", "pen:title"],
       mappings(),
       currentPenRoot(),
+      currentPenDocument(),
       {},
       path.join(directory, "design.pen"),
       pen,
@@ -234,6 +321,7 @@ describe("writeFigmaUpdatesToPen", () => {
       ["pen:root"],
       currentMappings,
       root,
+      currentPenDocument(root),
       {},
       path.join(directory, "design.pen"),
       pen,
@@ -319,6 +407,17 @@ function mappings() {
     { bridgeId: "pen:root", penNodeId: "nativeRoot" },
     { bridgeId: "pen:title", penNodeId: "nativeTitle" },
   ];
+}
+
+function currentPenDocument(
+  root = currentPenRoot(),
+  components: PenNode[] = [],
+) {
+  return importPenDocument(structuredClone(root), {
+    documentId: "source.pen",
+    useBridgeMetadata: true,
+    components: structuredClone(components),
+  });
 }
 
 async function temporaryDirectory(): Promise<string> {

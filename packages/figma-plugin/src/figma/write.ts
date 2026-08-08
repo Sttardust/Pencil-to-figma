@@ -220,6 +220,8 @@ export async function writeBridgeNodeUpdates(
   await prepareAssets(document, context);
   figma.commitUndo();
   try {
+    prepareLocalComponents(document, context);
+    await materializeComponentDependencies(document, context);
     for (const bridgeId of uniqueBridgeIds) {
       const source = sources.get(bridgeId)!;
       const node = mapped.nodes.get(bridgeId)!;
@@ -228,6 +230,7 @@ export async function writeBridgeNodeUpdates(
         throw new Error(`Conflict parent missing ${bridgeId}`);
       applyNodeProperties(node, source, parent, context);
     }
+    discardUnusedPreparedComponents(context);
     figma.currentPage.selection = [root];
     figma.commitUndo();
   } catch (error) {
