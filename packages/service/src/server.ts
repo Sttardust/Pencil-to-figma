@@ -389,6 +389,13 @@ export class BridgeServer {
           this.#pen,
         );
         const { mappings, ...summary } = result;
+        const rootBridgeIds = new Set<string>();
+        visitBridgeNodes(exportRequest.document.root, (node) =>
+          rootBridgeIds.add(node.bridgeId),
+        );
+        const syncMappings = mappings.filter((mapping) =>
+          rootBridgeIds.has(mapping.bridgeId),
+        );
         const writtenRoot = await this.#pen.getNode(result.rootId);
         const penDocument = await this.#importPenDocumentWithComponents(
           writtenRoot,
@@ -397,7 +404,7 @@ export class BridgeServer {
         );
         const manifest = await this.#commitFigmaExportManifest(
           exportRequest.document,
-          mappings,
+          syncMappings,
           penPath,
           penDocument,
         );

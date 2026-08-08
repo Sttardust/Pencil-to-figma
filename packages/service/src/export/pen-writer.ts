@@ -31,7 +31,10 @@ export async function writeFigmaCopyToPen(
 ): Promise<PenExportResult> {
   const transferId = randomUUID();
   const assetPaths = await stageFigmaAssets(document, assetData, penPath);
-  const plan = planFigmaToPenCreate(document, { assetPaths });
+  const plan = planFigmaToPenCreate(document, {
+    assetPaths,
+    ...(document.components?.length ? { maxOperationsPerChunk: 1 } : {}),
+  });
   const nativeIds = new Map<string, string>();
   const sourceId = document.root.bridgeId.startsWith("pen:")
     ? document.root.bridgeId.slice(4)
@@ -101,16 +104,30 @@ export async function writeFigmaCopyToPen(
   } catch (error) {
     const discoveredRoot =
       rootId ?? (await pen.findExportRoot(transferId).catch(() => undefined));
+    const topLevelBridgeIds = plan.operations
+      .filter(
+        (operation): operation is PenInsertOperation =>
+          operation.type === "insert" && !operation.parentBridgeId,
+      )
+      .map((operation) => operation.bridgeId);
+    const rollbackIds = topLevelBridgeIds
+      .map((bridgeId) => nativeIds.get(bridgeId))
+      .filter((nodeId): nodeId is string => Boolean(nodeId));
+    if (discoveredRoot && !rollbackIds.includes(discoveredRoot))
+      rollbackIds.push(discoveredRoot);
     let rollback = "No partial Pencil root remained";
-    if (discoveredRoot) {
+    if (rollbackIds.length) {
       try {
         await pen.executeWrite(
-          `Delete(${JSON.stringify(discoveredRoot)})`,
+          rollbackIds
+            .reverse()
+            .map((nodeId) => `Delete(${JSON.stringify(nodeId)})`)
+            .join(";"),
           30_000,
         );
-        rollback = `Rolled back partial root ${discoveredRoot}`;
+        rollback = `Rolled back ${rollbackIds.length} partial root${rollbackIds.length === 1 ? "" : "s"}`;
       } catch {
-        rollback = `Could not roll back partial root ${discoveredRoot}`;
+        rollback = `Could not roll back ${rollbackIds.length} partial root${rollbackIds.length === 1 ? "" : "s"}`;
       }
     }
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -148,12 +165,45 @@ function preparePayload(
       bridgeId: operation.bridgeId,
       transferId,
     };
+  } else {
+    const componentIndex = (document.components ?? []).findIndex(
+      (component) => component.bridgeId === operation.bridgeId,
+    );
+    if (componentIndex >= 0) {
+      const component = document.components![componentIndex]!;
+      payload.x = rootPosition.x + document.root.bounds.width + 120;
+      payload.y =
+        rootPosition.y +
+        document
+          .components!.slice(0, componentIndex)
+          .reduce((offset, item) => offset + item.bounds.height + 40, 0);
+      payload.name = `${component.name} · Component`;
+      payload.metadata = {
+        type: "pen-fig-export-component",
+        bridgeId: operation.bridgeId,
+        transferId,
+      };
+    }
   }
   if (payload.type === "ref" && typeof payload.ref === "string") {
     const mapped = nativeIds.get(payload.ref);
     if (mapped) payload.ref = mapped;
     else if (payload.ref.startsWith("figma:"))
       throw new Error(`Unresolved Figma component ${payload.ref}`);
+  }
+  if (
+    payload.descendants &&
+    typeof payload.descendants === "object" &&
+    !Array.isArray(payload.descendants)
+  ) {
+    payload.descendants = Object.fromEntries(
+      Object.entries(payload.descendants).map(([bridgeId, override]) => {
+        const mapped = nativeIds.get(bridgeId);
+        if (!mapped && bridgeId.startsWith("figma:"))
+          throw new Error(`Unresolved Figma component child ${bridgeId}`);
+        return [mapped ?? bridgeId.replace(/^pen:/, ""), override];
+      }),
+    );
   }
   return payload;
 }

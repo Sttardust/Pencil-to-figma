@@ -101,6 +101,65 @@ describe("planFigmaToPenCreate", () => {
     });
   });
 
+  it("plans external component definitions before their instances", () => {
+    const document = fixture();
+    document.components = [
+      {
+        ...structuredClone(document.root.children[1]!),
+        bridgeId: "figma:component",
+        kind: "component",
+        name: "Button component",
+        component: { key: "component-key" },
+        children: [
+          {
+            ...structuredClone(document.root.children[0]!),
+            bridgeId: "figma:component-label",
+            name: "Label",
+          },
+        ],
+      },
+    ];
+    document.root.children = [
+      {
+        ...structuredClone(document.root.children[1]!),
+        bridgeId: "figma:instance",
+        kind: "instance",
+        name: "Button instance",
+        instance: {
+          componentBridgeId: "figma:component",
+          overrides: {
+            "figma:component-label": { content: "Continue" },
+          },
+        },
+        children: [],
+      },
+    ];
+
+    const plan = planFigmaToPenCreate(document);
+    const inserts = plan.operations.filter(
+      (
+        operation,
+      ): operation is Extract<
+        (typeof plan.operations)[number],
+        { type: "insert" }
+      > => operation.type === "insert",
+    );
+
+    expect(inserts.map((operation) => operation.bridgeId)).toEqual([
+      "figma:component",
+      "figma:component-label",
+      "pen:root",
+      "figma:instance",
+    ]);
+    expect(inserts[3]!.payload).toMatchObject({
+      type: "ref",
+      ref: "figma:component",
+      descendants: {
+        "figma:component-label": { content: "Continue" },
+      },
+    });
+  });
+
   it("declares SVG wrapper rasterization", () => {
     const document = fixture();
     const svgWrapper = document.root.children[1]!;

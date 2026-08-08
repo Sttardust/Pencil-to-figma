@@ -53,6 +53,15 @@ export function planFigmaToPenCreate(
     assetId: asset.id,
     kind: asset.kind,
   }));
+  for (const component of document.components ?? [])
+    visit(component, undefined, (node, parentBridgeId) => {
+      operations.push({
+        type: "insert",
+        bridgeId: node.bridgeId,
+        parentBridgeId,
+        payload: toPenPayload(node, document, warnings, options.assetPaths),
+      });
+    });
   visit(document.root, undefined, (node, parentBridgeId) => {
     operations.push({
       type: "insert",

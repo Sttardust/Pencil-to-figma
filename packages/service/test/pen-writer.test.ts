@@ -108,8 +108,94 @@ describe("writeFigmaCopyToPen", () => {
         path.join(directory, "design.pen"),
         pen,
       ),
-    ).rejects.toThrow("Rolled back partial root partial1");
+    ).rejects.toThrow("Rolled back 1 partial root");
     expect(calls.at(-1)).toBe('Delete("partial1")');
+  });
+
+  it("creates component dependencies before instances and maps overrides", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "pen-writer-"));
+    temporaryDirectories.push(directory);
+    const document = fixture();
+    const card = document.root.children[0]!;
+    document.components = [
+      {
+        ...structuredClone(card),
+        bridgeId: "figma:component",
+        kind: "component",
+        name: "Button",
+        component: { key: "button-key" },
+        children: [
+          {
+            ...structuredClone(card),
+            bridgeId: "figma:component-label",
+            kind: "text",
+            name: "Label",
+            text: {
+              characters: "Button",
+              resize: "auto",
+              style: {
+                family: "Inter",
+                style: "Regular",
+                weight: 400,
+                size: 16,
+                lineHeight: { unit: "auto" },
+                letterSpacing: 0,
+                horizontalAlign: "left",
+                verticalAlign: "top",
+                decoration: "none",
+              },
+            },
+            children: [],
+          },
+        ],
+      },
+    ];
+    document.root.children = [
+      {
+        ...structuredClone(card),
+        bridgeId: "figma:instance",
+        kind: "instance",
+        name: "Button instance",
+        instance: {
+          componentBridgeId: "figma:component",
+          overrides: {
+            "figma:component-label": { content: "Continue" },
+          },
+        },
+        children: [],
+      },
+    ];
+    let nextId = 1;
+    const calls: string[] = [];
+    const pen = {
+      getTopLevelBounds: async () => undefined,
+      executeWrite: async (input: string) => {
+        calls.push(input);
+        const mapping = /Print\("MAP","\|","([^"]+)","\|",[A-Za-z0-9_]+\)/.exec(
+          input,
+        );
+        return mapping ? `MAP | ${mapping[1]} | p${nextId++}` : "OK";
+      },
+    } as unknown as PenMcpClient;
+
+    const result = await writeFigmaCopyToPen(
+      document,
+      {},
+      path.join(directory, "design.pen"),
+      pen,
+    );
+
+    expect(result.rootId).toBe("p3");
+    expect(result.mappings).toEqual([
+      { bridgeId: "figma:component", penNodeId: "p1" },
+      { bridgeId: "figma:component-label", penNodeId: "p2" },
+      { bridgeId: "pen:root", penNodeId: "p3" },
+      { bridgeId: "figma:instance", penNodeId: "p4" },
+    ]);
+    const script = calls.join("\n");
+    expect(script).toContain('"reusable":true');
+    expect(script).toContain('"ref":"p1"');
+    expect(script).toContain('"descendants":{"p2":{"content":"Continue"}}');
   });
 });
 

@@ -42,7 +42,7 @@ export async function readSelectedFigmaDocument(
   const assets: BridgeAsset[] = [];
   const warnings: TransferWarning[] = [];
   const fonts = new Set<string>();
-  const instanceComponents = await loadInstanceComponents(selected);
+  const dependencies = await loadComponentDependencies(selected);
   let nodeCount = 0;
   const root = readNode(
     selected,
@@ -50,17 +50,39 @@ export async function readSelectedFigmaDocument(
     assets,
     warnings,
     fonts,
-    instanceComponents,
+    dependencies.instanceComponents,
     () => {
       nodeCount += 1;
     },
   );
-  removeDerivedInstanceChildren(root);
-  nodeCount = countBridgeNodes(root);
+  const selectedNodeIds = collectSceneNodeIds(selected);
+  const components = dependencies.components
+    .filter((component) => !selectedNodeIds.has(component.id))
+    .map((component) =>
+      readNode(
+        component,
+        documentId,
+        assets,
+        warnings,
+        fonts,
+        dependencies.instanceComponents,
+        () => {
+          nodeCount += 1;
+        },
+      ),
+    );
+  removeDerivedInstanceChildren(root, components);
+  nodeCount =
+    countBridgeNodes(root) +
+    components.reduce(
+      (total, component) => total + countBridgeNodes(component),
+      0,
+    );
   const document = bridgeDocumentSchema.parse({
     version: 1,
     source: { app: "figma", documentId },
     root,
+    ...(components.length ? { components } : {}),
     assets,
     variables: [],
     warnings,
@@ -76,24 +98,65 @@ export async function readSelectedFigmaDocument(
   };
 }
 
-async function loadInstanceComponents(
-  root: SceneNode,
-): Promise<Map<string, ComponentNode | null>> {
-  const instances: InstanceNode[] = [];
-  if (root.type === "INSTANCE") instances.push(root);
+async function loadComponentDependencies(root: SceneNode): Promise<{
+  instanceComponents: Map<string, ComponentNode | null>;
+  components: ComponentNode[];
+}> {
+  const instanceComponents = new Map<string, ComponentNode | null>();
+  const components: ComponentNode[] = [];
+  const queued: SceneNode[] = [root];
+  const visitedComponentIds = new Set<string>();
+  while (queued.length) {
+    const owner = queued.shift()!;
+    const instances = collectInstances(owner).filter(
+      (instance) => !instanceComponents.has(instance.id),
+    );
+    await Promise.all(
+      instances.map(async (instance) => {
+        const component = await instance.getMainComponentAsync();
+        instanceComponents.set(instance.id, component);
+        if (component && !visitedComponentIds.has(component.id)) {
+          visitedComponentIds.add(component.id);
+          components.push(component);
+          queued.push(component);
+        }
+      }),
+    );
+  }
+  const orderedComponents: ComponentNode[] = [];
+  const orderedIds = new Set<string>();
+  const visiting = new Set<string>();
+  const order = (component: ComponentNode) => {
+    if (orderedIds.has(component.id) || visiting.has(component.id)) return;
+    visiting.add(component.id);
+    for (const instance of collectInstances(component)) {
+      const dependency = instanceComponents.get(instance.id);
+      if (dependency) order(dependency);
+    }
+    visiting.delete(component.id);
+    orderedIds.add(component.id);
+    orderedComponents.push(component);
+  };
+  for (const component of components) order(component);
+  return { instanceComponents, components: orderedComponents };
+}
+
+function collectInstances(root: SceneNode): InstanceNode[] {
+  const instances: InstanceNode[] = root.type === "INSTANCE" ? [root] : [];
   if ("findAll" in root)
     instances.push(
       ...root
         .findAll((node) => node.type === "INSTANCE")
         .filter((node): node is InstanceNode => node.type === "INSTANCE"),
     );
-  const components = new Map<string, ComponentNode | null>();
-  await Promise.all(
-    instances.map(async (instance) => {
-      components.set(instance.id, await instance.getMainComponentAsync());
-    }),
-  );
-  return components;
+  return instances;
+}
+
+function collectSceneNodeIds(root: SceneNode): Set<string> {
+  const ids = new Set([root.id]);
+  if ("findAll" in root)
+    for (const node of root.findAll(() => true)) ids.add(node.id);
+  return ids;
 }
 
 async function collectAssetData(
@@ -336,7 +399,7 @@ function readNode(
       componentBridgeId:
         component?.getPluginData(BRIDGE_ID_KEY) ||
         `figma:${component?.id ?? "unresolved"}`,
-      overrides: readInstanceOverrides(node, bridgeId, warnings),
+      overrides: readInstanceOverrides(node, component, bridgeId, warnings),
     };
   }
   return result;
@@ -344,17 +407,43 @@ function readNode(
 
 function readInstanceOverrides(
   node: InstanceNode,
+  component: ComponentNode | null | undefined,
   bridgeId: string,
   warnings: TransferWarning[],
 ): Record<string, unknown> {
   const stored = node.getPluginData(INSTANCE_OVERRIDE_MAP_KEY);
-  if (!stored)
-    return Object.fromEntries(
-      Object.entries(node.componentProperties).map(([name, property]) => [
-        name,
-        property.value,
-      ]),
-    );
+  if (!stored) {
+    const overrides: Record<string, unknown> = {};
+    for (const [propertyName, property] of Object.entries(
+      node.componentProperties,
+    )) {
+      if (property.type !== "TEXT" || typeof property.value !== "string")
+        continue;
+      const target = component
+        ? [component, ...component.findAll(() => true)].find(
+            (candidate) =>
+              candidate.type === "TEXT" &&
+              candidate.componentPropertyReferences?.characters ===
+                propertyName,
+          )
+        : undefined;
+      if (!target) {
+        warnings.push(
+          warning(
+            bridgeId,
+            "instance text property",
+            "skip",
+            `Could not map Figma component property ${propertyName} on ${node.name}`,
+          ),
+        );
+        continue;
+      }
+      const targetBridgeId =
+        target.getPluginData(BRIDGE_ID_KEY) || `figma:${target.id}`;
+      overrides[targetBridgeId] = { content: property.value };
+    }
+    return overrides;
+  }
   try {
     const mapping = JSON.parse(stored) as Record<
       string,
@@ -386,13 +475,17 @@ function readInstanceOverrides(
   }
 }
 
-function removeDerivedInstanceChildren(root: BridgeNode): void {
+function removeDerivedInstanceChildren(
+  root: BridgeNode,
+  components: BridgeNode[] = [],
+): void {
   const componentBridgeIds = new Set<string>();
   const collect = (node: BridgeNode) => {
     if (node.kind === "component") componentBridgeIds.add(node.bridgeId);
     for (const child of node.children) collect(child);
   };
   collect(root);
+  for (const component of components) collect(component);
   const normalize = (node: BridgeNode) => {
     if (
       node.kind === "instance" &&
@@ -405,6 +498,7 @@ function removeDerivedInstanceChildren(root: BridgeNode): void {
     for (const child of node.children) normalize(child);
   };
   normalize(root);
+  for (const component of components) normalize(component);
 }
 
 function countBridgeNodes(node: BridgeNode): number {
