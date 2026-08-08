@@ -45,14 +45,17 @@ The development plugin currently supports both directions:
   **Export copy to Pencil…**. The bridge writes a new editable root beside the source frame and
   stages image assets in a `.pen-fig-assets` folder beside the active `.pen` file.
 - **Mapped sync:** adopt an exported Pencil copy, preview changes against the last dual baseline,
-  and atomically apply one-sided property edits in either direction. If both editors changed the
-  same mapped subtree, choose **Keep Pencil**, **Keep Figma**, or **Cancel**; Cancel performs no
+  and atomically apply property and structural edits in either direction. Mapped sync preserves
+  native identities while creating, deleting, moving, or reordering editable nodes. If both
+  editors changed the same mapped subtree, choose **Keep Pencil**, **Keep Figma**, or **Cancel**;
+  reorder and delete-versus-edit conflicts are resolved atomically, while Cancel performs no
   writes.
 
 Initial Figma → Pencil exports are create-copy operations. Each copy is created behind a
-placeholder and removed automatically if a chunk fails. After adoption, mapped property updates
-and explicit conflict resolution can update that copy in place; structural conflict resolution is
-not enabled yet.
+placeholder and removed automatically if a chunk fails. After adoption, mapped property and
+structural updates modify that copy in place. The bridge verifies the resulting tree before it
+commits the next manifest revision, including native Pencil IDs created while resolving a
+delete-versus-edit conflict.
 
 Pencil → Figma imports also resolve local Pencil `ref` dependencies by native identity. Reusable
 frames become Figma components and resolvable refs become instances; dependency components are
