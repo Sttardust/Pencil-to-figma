@@ -21,6 +21,10 @@ export interface PenUpdateResult {
   updatedBridgeIds: string[];
 }
 
+export interface PenStructuralUpdateResult extends PenUpdateResult {
+  mappings: PenBridgeMapping[];
+}
+
 export async function writeFigmaUpdatesToPen(
   document: BridgeDocument,
   changedBridgeIds: string[],
@@ -94,6 +98,286 @@ export async function writeFigmaUpdatesToPen(
     updatedNodeCount: changedBridgeIds.length,
     updatedBridgeIds: [...changedBridgeIds],
   };
+}
+
+export async function writeFigmaStructureToPen(
+  document: BridgeDocument,
+  changedBridgeIds: string[],
+  mappings: PenBridgeMapping[],
+  currentRoot: PenNode,
+  assetData: Record<string, FigmaExportAssetData>,
+  penPath: string,
+  pen: PenMcpClient,
+): Promise<PenStructuralUpdateResult> {
+  const currentMappings = collectMappedPenBridgeMappings(currentRoot, mappings);
+  const assetPaths = await stageFigmaAssets(document, assetData, penPath);
+  const plan = planFigmaToPenCreate(document, { assetPaths });
+  const inserts = new Map(
+    plan.operations
+      .filter(
+        (operation): operation is PenInsertOperation =>
+          operation.type === "insert",
+      )
+      .map((operation) => [operation.bridgeId, operation]),
+  );
+  const current = describePenStructure(currentRoot, currentMappings);
+  const expected = describeBridgeStructure(document);
+  if (!current.has(document.root.bridgeId))
+    throw new Error("Mapped Pencil root is missing");
+  if (expected.get(document.root.bridgeId)?.parentBridgeId)
+    throw new Error("Figma root cannot have a parent");
+
+  const removed = new Set(
+    [...current.keys()].filter((bridgeId) => !expected.has(bridgeId)),
+  );
+  const added = [...expected.values()].filter(
+    (entry) => !current.has(entry.bridgeId),
+  );
+  if (added.some((entry) => !entry.parentBridgeId))
+    throw new Error("Replacing the mapped root is not supported");
+  const topRemoved = [...removed].filter((bridgeId) => {
+    const parentBridgeId = current.get(bridgeId)?.parentBridgeId;
+    return !parentBridgeId || !removed.has(parentBridgeId);
+  });
+  const survivingMappings = currentMappings.filter(
+    (mapping) => !removed.has(mapping.bridgeId),
+  );
+  const nativeByBridgeId = new Map(
+    survivingMappings.map((mapping) => [mapping.bridgeId, mapping.penNodeId]),
+  );
+  const variableByBridgeId = new Map<string, string>();
+  const statements: string[] = [];
+  let operationCount = 0;
+
+  for (const bridgeId of topRemoved) {
+    const nativeId = mappings.find(
+      (mapping) => mapping.bridgeId === bridgeId,
+    )?.penNodeId;
+    if (!nativeId) throw new Error(`Pencil delete mapping missing ${bridgeId}`);
+    statements.push(`Delete(${JSON.stringify(nativeId)})`);
+    operationCount += 1;
+  }
+
+  for (const entry of added) {
+    const operation = inserts.get(entry.bridgeId);
+    if (!operation || !entry.parentBridgeId)
+      throw new Error(`Pencil insert plan missing ${entry.bridgeId}`);
+    const variable = `added_${variableByBridgeId.size}`;
+    const payload = prepareStructuralInsertPayload(
+      operation.payload,
+      nativeByBridgeId,
+    );
+    statements.push(
+      `let ${variable}=Insert(${nodeReference(entry.parentBridgeId, nativeByBridgeId, variableByBridgeId)},${JSON.stringify(payload)})`,
+      `Print("MAP","|",${JSON.stringify(entry.bridgeId)},"|",${variable})`,
+    );
+    variableByBridgeId.set(entry.bridgeId, variable);
+    operationCount += 1;
+  }
+
+  for (const bridgeId of changedBridgeIds) {
+    if (removed.has(bridgeId) || variableByBridgeId.has(bridgeId)) continue;
+    const operation = inserts.get(bridgeId);
+    const currentEntry = current.get(bridgeId);
+    if (!operation || !currentEntry)
+      throw new Error(`Pencil update mapping missing ${bridgeId}`);
+    const expectedType = operation.payload.type;
+    if (
+      typeof expectedType !== "string" ||
+      currentEntry.node.type !== expectedType
+    )
+      throw new Error(
+        `Pencil node type change requires replacement: ${bridgeId} (${currentEntry.node.type} → ${String(expectedType)})`,
+      );
+    const payload = sanitizeUpdatePayload(
+      operation.payload,
+      bridgeId === document.root.bridgeId,
+      document.root.name,
+    );
+    statements.push(
+      `Update(${nodeReference(bridgeId, nativeByBridgeId, variableByBridgeId)},${JSON.stringify(payload)})`,
+    );
+    operationCount += 1;
+  }
+
+  for (const move of planRequiredMoves(current, expected, removed, added)) {
+    statements.push(
+      `Move(${nodeReference(move.bridgeId, nativeByBridgeId, variableByBridgeId)},${nodeReference(move.parentBridgeId, nativeByBridgeId, variableByBridgeId)},${move.index})`,
+    );
+    operationCount += 1;
+  }
+  statements.push(
+    `Print("STRUCTURE_UPDATED","|",${JSON.stringify(document.root.bridgeId)})`,
+  );
+  if (operationCount > MAX_UPDATE_OPERATIONS)
+    throw new Error(
+      `Pencil structural update has ${operationCount} operations; the atomic limit is ${MAX_UPDATE_OPERATIONS}`,
+    );
+  const input = statements.join(";");
+  if (input.length > MAX_UPDATE_BYTES)
+    throw new Error(
+      `Pencil structural update is ${input.length} bytes; the atomic limit is ${MAX_UPDATE_BYTES}`,
+    );
+  const output = await pen.executeWrite(input, 90_000);
+  if (!/STRUCTURE_UPDATED\s*\|/.test(output))
+    throw new Error("Pencil did not confirm the structural update");
+  const createdMappings = parseMappings(output).map((mapping) => ({
+    bridgeId: mapping.bridgeId,
+    penNodeId: mapping.nativeId,
+  }));
+  const createdByBridgeId = new Map(
+    createdMappings.map((mapping) => [mapping.bridgeId, mapping.penNodeId]),
+  );
+  for (const entry of added)
+    if (!createdByBridgeId.has(entry.bridgeId))
+      throw new Error(`Pencil did not return an id for ${entry.bridgeId}`);
+  return {
+    operation: "updated",
+    updatedNodeCount: changedBridgeIds.length,
+    updatedBridgeIds: [...changedBridgeIds],
+    mappings: [...survivingMappings, ...createdMappings],
+  };
+}
+
+interface StructureEntry {
+  bridgeId: string;
+  parentBridgeId: string | undefined;
+  index: number;
+  node: PenNode;
+}
+
+function describePenStructure(
+  root: PenNode,
+  mappings: PenBridgeMapping[],
+): Map<string, StructureEntry> {
+  const bridgeIdByPenNodeId = new Map(
+    mappings.map((mapping) => [mapping.penNodeId, mapping.bridgeId]),
+  );
+  const result = new Map<string, StructureEntry>();
+  const visit = (
+    node: PenNode,
+    parentBridgeId: string | undefined,
+    index: number,
+  ) => {
+    const bridgeId = bridgeIdByPenNodeId.get(node.id);
+    if (!bridgeId) throw new Error(`Pencil node ${node.id} is not mapped`);
+    result.set(bridgeId, { bridgeId, parentBridgeId, index, node });
+    (node.children ?? []).forEach((child, childIndex) =>
+      visit(child, bridgeId, childIndex),
+    );
+  };
+  visit(root, undefined, 0);
+  return result;
+}
+
+interface ExpectedStructureEntry {
+  bridgeId: string;
+  parentBridgeId: string | undefined;
+  index: number;
+}
+
+function describeBridgeStructure(
+  document: BridgeDocument,
+): Map<string, ExpectedStructureEntry> {
+  const result = new Map<string, ExpectedStructureEntry>();
+  const visit = (
+    node: BridgeDocument["root"],
+    parentBridgeId: string | undefined,
+    index: number,
+  ) => {
+    result.set(node.bridgeId, {
+      bridgeId: node.bridgeId,
+      parentBridgeId,
+      index,
+    });
+    node.children.forEach((child, childIndex) =>
+      visit(child, node.bridgeId, childIndex),
+    );
+  };
+  visit(document.root, undefined, 0);
+  return result;
+}
+
+function planRequiredMoves(
+  current: Map<string, StructureEntry>,
+  expected: Map<string, ExpectedStructureEntry>,
+  removed: Set<string>,
+  added: ExpectedStructureEntry[],
+): Array<{ bridgeId: string; parentBridgeId: string; index: number }> {
+  const children = new Map<string, string[]>();
+  const parentByChild = new Map<string, string>();
+  for (const entry of current.values()) {
+    if (!entry.parentBridgeId || removed.has(entry.bridgeId)) continue;
+    const siblings = children.get(entry.parentBridgeId) ?? [];
+    siblings.push(entry.bridgeId);
+    children.set(entry.parentBridgeId, siblings);
+    parentByChild.set(entry.bridgeId, entry.parentBridgeId);
+  }
+  for (const entry of added) {
+    if (!entry.parentBridgeId) continue;
+    const siblings = children.get(entry.parentBridgeId) ?? [];
+    siblings.push(entry.bridgeId);
+    children.set(entry.parentBridgeId, siblings);
+    parentByChild.set(entry.bridgeId, entry.parentBridgeId);
+  }
+  const expectedChildren = new Map<string, string[]>();
+  for (const entry of expected.values()) {
+    if (!entry.parentBridgeId) continue;
+    const siblings = expectedChildren.get(entry.parentBridgeId) ?? [];
+    siblings.push(entry.bridgeId);
+    expectedChildren.set(entry.parentBridgeId, siblings);
+  }
+  const moves: Array<{
+    bridgeId: string;
+    parentBridgeId: string;
+    index: number;
+  }> = [];
+  for (const [parentBridgeId, target] of expectedChildren) {
+    const siblings = children.get(parentBridgeId) ?? [];
+    for (let index = 0; index < target.length; index += 1) {
+      const bridgeId = target[index]!;
+      if (siblings[index] === bridgeId) continue;
+      const oldParent = parentByChild.get(bridgeId);
+      if (!oldParent)
+        throw new Error(`Pencil move mapping missing ${bridgeId}`);
+      const oldSiblings = children.get(oldParent)!;
+      const oldIndex = oldSiblings.indexOf(bridgeId);
+      if (oldIndex < 0)
+        throw new Error(`Pencil move source missing ${bridgeId}`);
+      oldSiblings.splice(oldIndex, 1);
+      siblings.splice(index, 0, bridgeId);
+      children.set(parentBridgeId, siblings);
+      parentByChild.set(bridgeId, parentBridgeId);
+      moves.push({ bridgeId, parentBridgeId, index });
+    }
+  }
+  return moves;
+}
+
+function prepareStructuralInsertPayload(
+  source: Record<string, unknown>,
+  nativeByBridgeId: Map<string, string>,
+): Record<string, unknown> {
+  const payload = { ...source };
+  delete payload.placeholder;
+  if (payload.type === "ref" && typeof payload.ref === "string") {
+    const mapped = nativeByBridgeId.get(payload.ref);
+    if (!mapped) throw new Error(`Unresolved Figma component ${payload.ref}`);
+    payload.ref = mapped;
+  }
+  return payload;
+}
+
+function nodeReference(
+  bridgeId: string,
+  nativeByBridgeId: Map<string, string>,
+  variableByBridgeId: Map<string, string>,
+): string {
+  const variable = variableByBridgeId.get(bridgeId);
+  if (variable) return variable;
+  const nativeId = nativeByBridgeId.get(bridgeId);
+  if (!nativeId) throw new Error(`Pencil mapping missing ${bridgeId}`);
+  return JSON.stringify(nativeId);
 }
 
 function sanitizeUpdatePayload(
@@ -192,4 +476,14 @@ function parseUpdatedMappings(output: string): Set<string> {
   const pattern = /UPDATED\s*\|\s*([^|\r\n]+?)\s*\|\s*[A-Za-z0-9]+/g;
   for (const match of output.matchAll(pattern)) updated.add(match[1]!.trim());
   return updated;
+}
+
+function parseMappings(
+  output: string,
+): Array<{ bridgeId: string; nativeId: string }> {
+  const mappings: Array<{ bridgeId: string; nativeId: string }> = [];
+  const pattern = /MAP\s*\|\s*([^|\r\n]+?)\s*\|\s*([A-Za-z0-9]+)/g;
+  for (const match of output.matchAll(pattern))
+    mappings.push({ bridgeId: match[1]!.trim(), nativeId: match[2]! });
+  return mappings;
 }

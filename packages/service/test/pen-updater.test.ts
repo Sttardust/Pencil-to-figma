@@ -3,7 +3,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { importPenDocument, type PenNode } from "@pen-fig/core";
-import { writeFigmaUpdatesToPen } from "../src/export/pen-updater.js";
+import {
+  writeFigmaStructureToPen,
+  writeFigmaUpdatesToPen,
+} from "../src/export/pen-updater.js";
 import type { PenMcpClient } from "../src/pen/mcp-client.js";
 
 const temporaryDirectories: string[] = [];
@@ -121,6 +124,122 @@ describe("writeFigmaUpdatesToPen", () => {
       ),
     ).rejects.toThrow("node type change requires replacement");
     expect(writes).toBe(0);
+  });
+
+  it("creates a Figma-added layer in the mapped Pencil parent", async () => {
+    const directory = await temporaryDirectory();
+    const calls: string[] = [];
+    const pen = {
+      executeWrite: async (input: string) => {
+        calls.push(input);
+        return "OK\n\n## Print output\nMAP | figma:added | nativeAdded\nSTRUCTURE_UPDATED | pen:root";
+      },
+    } as unknown as PenMcpClient;
+    const document = figmaDocument("Title");
+    document.root.children.push({
+      ...structuredClone(document.root.children[0]!),
+      bridgeId: "figma:added",
+      name: "Added",
+      source: {
+        app: "figma",
+        documentId: "figma-file",
+        nodeId: "figma-added",
+      },
+    });
+
+    const result = await writeFigmaStructureToPen(
+      document,
+      ["pen:root", "figma:added"],
+      mappings(),
+      currentPenRoot(),
+      {},
+      path.join(directory, "design.pen"),
+      pen,
+    );
+
+    expect(result.updatedNodeCount).toBe(2);
+    expect(result.mappings).toEqual([
+      ...mappings(),
+      { bridgeId: "figma:added", penNodeId: "nativeAdded" },
+    ]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain('Insert("nativeRoot"');
+    expect(calls[0]).toContain('"bridgeId":"figma:added"');
+  });
+
+  it("deletes a Figma-removed layer in the same Pencil transaction", async () => {
+    const directory = await temporaryDirectory();
+    const calls: string[] = [];
+    const pen = {
+      executeWrite: async (input: string) => {
+        calls.push(input);
+        return "OK\n\n## Print output\nSTRUCTURE_UPDATED | pen:root";
+      },
+    } as unknown as PenMcpClient;
+    const document = figmaDocument("Title");
+    document.root.children = [];
+
+    const result = await writeFigmaStructureToPen(
+      document,
+      ["pen:root", "pen:title"],
+      mappings(),
+      currentPenRoot(),
+      {},
+      path.join(directory, "design.pen"),
+      pen,
+    );
+
+    expect(result.mappings).toEqual([
+      { bridgeId: "pen:root", penNodeId: "nativeRoot" },
+    ]);
+    expect(calls[0]).toContain('Delete("nativeTitle")');
+  });
+
+  it("reorders existing Pencil layers with Move", async () => {
+    const directory = await temporaryDirectory();
+    const calls: string[] = [];
+    const pen = {
+      executeWrite: async (input: string) => {
+        calls.push(input);
+        return "OK\n\n## Print output\nSTRUCTURE_UPDATED | pen:root";
+      },
+    } as unknown as PenMcpClient;
+    const document = figmaDocument("Title");
+    const subtitle = {
+      ...structuredClone(document.root.children[0]!),
+      bridgeId: "pen:subtitle",
+      name: "Subtitle",
+      source: {
+        app: "figma" as const,
+        documentId: "figma-file",
+        nodeId: "figma-subtitle",
+      },
+    };
+    document.root.children.push(subtitle);
+    document.root.children.reverse();
+    const root = currentPenRoot();
+    root.children!.push({
+      ...structuredClone(root.children![0]!),
+      id: "nativeSubtitle",
+      name: "Subtitle",
+      metadata: { type: "pen-fig-bridge", bridgeId: "pen:subtitle" },
+    });
+    const currentMappings = [
+      ...mappings(),
+      { bridgeId: "pen:subtitle", penNodeId: "nativeSubtitle" },
+    ];
+
+    await writeFigmaStructureToPen(
+      document,
+      ["pen:root"],
+      currentMappings,
+      root,
+      {},
+      path.join(directory, "design.pen"),
+      pen,
+    );
+
+    expect(calls[0]).toContain('Move("nativeSubtitle","nativeRoot",0)');
   });
 });
 

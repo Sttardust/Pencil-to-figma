@@ -26,7 +26,10 @@ import {
 import { resolveAssets } from "./assets/resolve.js";
 import { ManifestRepository } from "./manifest/repository.js";
 import { writeFigmaCopyToPen } from "./export/pen-writer.js";
-import { writeFigmaUpdatesToPen } from "./export/pen-updater.js";
+import {
+  writeFigmaStructureToPen,
+  writeFigmaUpdatesToPen,
+} from "./export/pen-updater.js";
 import {
   buildFigmaExportManifest,
   collectMappedPenBridgeMappings,
@@ -488,7 +491,6 @@ export class BridgeServer {
         );
         const actions = countSyncDirections(diff.entries);
         const structural = hasStructuralDifference(diff.entries);
-        const structuralSupported = !(structural && actions.toPencil > 0);
         json(response, 200, {
           type: "figma-sync-preview",
           ok: true,
@@ -505,14 +507,7 @@ export class BridgeServer {
             bridgeId: entry.bridgeId,
             reason: entry.reason,
           })),
-          canApplyWithoutResolution:
-            diff.canApplyWithoutResolution && structuralSupported,
-          ...(!structuralSupported
-            ? {
-                unsupportedReason:
-                  "Figma-originated node creation, deletion, and reordering are not enabled yet.",
-              }
-            : {}),
+          canApplyWithoutResolution: diff.canApplyWithoutResolution,
           baselineUpgradeRequired: baseline.some(
             (mapping) => !mapping.penBaselineHash || !mapping.figmaBaselineHash,
           ),
@@ -558,11 +553,6 @@ export class BridgeServer {
             "Both editors have independent changes; apply one direction at a time",
           );
         const structural = hasStructuralDifference(state.diff.entries);
-        if (structural && actions.toPencil)
-          throw new Error(
-            "Figma-originated structural sync is not enabled yet",
-          );
-
         const changedFigmaBridgeIds = state.diff.entries
           .filter(
             (entry) =>
@@ -610,7 +600,13 @@ export class BridgeServer {
         }
 
         const changedPenBridgeIds = state.diff.entries
-          .filter((entry) => entry.classification === "figma-only")
+          .filter(
+            (entry) =>
+              entry.classification === "figma-only" ||
+              ((entry.classification === "added" ||
+                entry.classification === "deleted") &&
+                entry.side === "figma"),
+          )
           .map((entry) => entry.bridgeId);
         if (actions.toPencil !== changedPenBridgeIds.length)
           throw new Error("Sync contains unsupported Pencil operations");
@@ -634,37 +630,60 @@ export class BridgeServer {
             };
           },
         );
-        const update = await writeFigmaUpdatesToPen(
-          syncRequest.document,
-          changedPenBridgeIds,
-          penMappings,
-          state.penRoot,
-          syncRequest.assetData,
-          penPath,
-          this.#pen,
-        );
+        const structuralUpdate = structural
+          ? await writeFigmaStructureToPen(
+              syncRequest.document,
+              changedPenBridgeIds,
+              penMappings,
+              state.penRoot,
+              syncRequest.assetData,
+              penPath,
+              this.#pen,
+            )
+          : undefined;
+        const update =
+          structuralUpdate ??
+          (await writeFigmaUpdatesToPen(
+            syncRequest.document,
+            changedPenBridgeIds,
+            penMappings,
+            state.penRoot,
+            syncRequest.assetData,
+            penPath,
+            this.#pen,
+          ));
         const verifiedRoot = await this.#pen.getNode(
           state.rootMapping.penNodeId,
         );
         const verifiedMappings = collectMappedPenBridgeMappings(
           verifiedRoot,
-          penMappings,
+          structuralUpdate?.mappings ?? penMappings,
         );
-        if (verifiedMappings.length !== state.baseline.length)
+        if (
+          verifiedMappings.length !==
+          (structuralUpdate?.mappings.length ?? state.baseline.length)
+        )
           throw new Error("Pencil verification found a mapping count mismatch");
         const verifiedPenDocument = await this.#importPenDocumentWithComponents(
           verifiedRoot,
           penPath,
           true,
         );
-        const committed = await this.#commitPartialFigmaExportManifest(
-          syncRequest.document,
-          verifiedMappings,
-          penPath,
-          verifiedPenDocument,
-          state.manifest,
-          changedPenBridgeIds,
-        );
+        const committed = structural
+          ? await this.#commitFigmaExportManifest(
+              syncRequest.document,
+              verifiedMappings,
+              penPath,
+              verifiedPenDocument,
+            )
+          : await this.#commitPartialFigmaExportManifest(
+              syncRequest.document,
+              verifiedMappings,
+              penPath,
+              verifiedPenDocument,
+              state.manifest,
+              changedPenBridgeIds,
+            );
         json(response, 200, {
           type: "figma-sync-result",
           ok: true,

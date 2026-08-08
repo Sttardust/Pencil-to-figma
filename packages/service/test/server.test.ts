@@ -310,8 +310,26 @@ describe("BridgeServer", () => {
       executeWrite: async (input: string) => {
         executeWriteCount += 1;
         const content = /"content":"([^"]+)"/.exec(input)?.[1];
-        if (content) adoptedRoot.children![0]!.content = content;
-        return "OK\n\n## Print output\nUPDATED | pen:title | adoptedTitle";
+        if (content && input.includes('Update("adoptedTitle"'))
+          adoptedRoot.children![0]!.content = content;
+        if (input.includes('"bridgeId":"figma:added"'))
+          adoptedRoot.children!.push({
+            id: "adoptedFigmaAdded",
+            type: "text",
+            name: "Added in Figma",
+            content: "Added in Figma",
+            metadata: { type: "pen-fig-bridge", bridgeId: "figma:added" },
+          });
+        return [
+          "OK\n\n## Print output",
+          "UPDATED | pen:title | adoptedTitle",
+          ...(input.includes('"bridgeId":"figma:added"')
+            ? ["MAP | figma:added | adoptedFigmaAdded"]
+            : []),
+          ...(input.includes("STRUCTURE_UPDATED")
+            ? ["STRUCTURE_UPDATED | pen:root"]
+            : []),
+        ].join("\n");
       },
     } as PenMcpClient;
     const server = new BridgeServer({ host: "127.0.0.1", port: 0, pen });
@@ -736,6 +754,57 @@ describe("BridgeServer", () => {
       manifest: { revision: 7, mappingCount: 2 },
     });
     expect(executeWriteCount).toBe(2);
+
+    const figmaAddedDocument = structuredClone(deletedFigmaDocument);
+    figmaAddedDocument.root.children.push({
+      ...structuredClone(figmaAddedDocument.root.children[0]!),
+      bridgeId: "figma:added",
+      name: "Added in Figma",
+      text: {
+        ...structuredClone(figmaAddedDocument.root.children[0]!.text!),
+        characters: "Added in Figma",
+      },
+      source: {
+        app: "figma",
+        documentId: "figma-file",
+        nodeId: "figma-added",
+      },
+    });
+    const figmaStructuralPreview = await fetch(
+      `${origin}/figma/sync/preview?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ document: figmaAddedDocument }),
+      },
+    );
+    expect(await figmaStructuralPreview.json()).toMatchObject({
+      counts: { "figma-only": 1, added: 1 },
+      actions: { toPencil: 2, toFigma: 0 },
+      structural: true,
+      canApplyWithoutResolution: true,
+    });
+    const applyFigmaStructure = await fetch(
+      `${origin}/figma/sync/apply?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          document: figmaAddedDocument,
+          assetData: {},
+        }),
+      },
+    );
+    expect(applyFigmaStructure.status).toBe(200);
+    expect(await applyFigmaStructure.json()).toMatchObject({
+      type: "figma-sync-result",
+      operation: "updated-pen",
+      updatedBridgeIds: ["pen:root", "figma:added"],
+      updatedNodeCount: 2,
+      manifest: { revision: 8, mappingCount: 3 },
+    });
+    expect(adoptedRoot.children).toHaveLength(2);
+    expect(executeWriteCount).toBe(3);
   });
 
   it("rejects requests before authentication", async () => {
