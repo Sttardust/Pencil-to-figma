@@ -44,9 +44,14 @@ The development plugin currently supports both directions:
 - **Figma → Pencil:** select one Figma frame, preview it, build the chunk plan, then confirm
   **Export copy to Pencil…**. The bridge writes a new editable root beside the source frame and
   stages image assets in a `.pen-fig-assets` folder beside the active `.pen` file.
+- **Mapped sync:** adopt an exported Pencil copy, preview changes against the last dual baseline,
+  and atomically apply Figma-only property edits. If both editors changed the same mapped
+  subtree, choose **Keep Pencil**, **Keep Figma**, or **Cancel**; Cancel performs no writes.
 
-Figma → Pencil exports are create-copy only at this milestone. The original Pencil root is not
-modified. Each copy is created behind a placeholder and removed automatically if a chunk fails.
+Initial Figma → Pencil exports are create-copy operations. Each copy is created behind a
+placeholder and removed automatically if a chunk fails. After adoption, mapped property updates
+and explicit conflict resolution can update that copy in place; structural conflict resolution is
+not enabled yet.
 
 When modifying the plugin, run its watch build in another terminal:
 

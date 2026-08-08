@@ -1,4 +1,8 @@
-import { previewBridgeDocument, writeBridgeDocument } from "./figma/write.js";
+import {
+  previewBridgeDocument,
+  writeBridgeDocument,
+  writeBridgeNodeUpdates,
+} from "./figma/write.js";
 import {
   readSelectedFigmaDocument,
   type FigmaReadResult,
@@ -7,12 +11,14 @@ import { planFigmaToPenCreate } from "@pen-fig/core";
 
 let pendingFigmaExport: FigmaReadResult | undefined;
 
-figma.showUI(__html__, { width: 360, height: 520, themeColors: true });
+figma.showUI(__html__, { width: 360, height: 640, themeColors: true });
 
 figma.ui.onmessage = async (message: {
   type: string;
   token?: unknown;
   penRootId?: unknown;
+  direction?: unknown;
+  bridgeId?: unknown;
 }) => {
   if (message.type === "selection-summary") {
     await figma.currentPage.loadAsync();
@@ -253,6 +259,95 @@ figma.ui.onmessage = async (message: {
         type: "figma-sync-result",
         ok: false,
         message: error instanceof Error ? error.message : "Sync apply failed",
+      });
+    }
+  }
+
+  if (message.type === "resolve-mapped-sync") {
+    try {
+      if (!pendingFigmaExport)
+        throw new Error("Preview the selected Figma frame first");
+      if (typeof message.token !== "string" || !message.token)
+        throw new Error("Pair and authenticate first");
+      if (message.direction !== "pen" && message.direction !== "figma")
+        throw new Error("Choose Pencil or Figma as the conflict winner");
+      if (typeof message.bridgeId !== "string" || !message.bridgeId)
+        throw new Error("Choose a mapped conflict root");
+      const response = await fetch(
+        `http://localhost:32145/figma/sync/resolve?token=${encodeURIComponent(message.token)}`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-pen-fig-token": message.token,
+          },
+          body: JSON.stringify({
+            document: pendingFigmaExport.document,
+            assetData: pendingFigmaExport.assetData,
+            direction: message.direction,
+            bridgeId: message.bridgeId,
+          }),
+        },
+      );
+      const prepared = (await response.json()) as Record<string, unknown>;
+      if (!response.ok)
+        throw new Error(
+          typeof prepared.message === "string"
+            ? prepared.message
+            : `Bridge error ${response.status}`,
+        );
+      if (prepared.type !== "figma-sync-resolution-prepared") {
+        figma.ui.postMessage(prepared);
+        return;
+      }
+      if (
+        typeof prepared.resolutionId !== "string" ||
+        !Array.isArray(prepared.bridgeIds) ||
+        !prepared.bridgeIds.every((bridgeId) => typeof bridgeId === "string") ||
+        !prepared.document ||
+        typeof prepared.document !== "object"
+      )
+        throw new Error("Bridge returned an invalid conflict resolution");
+      await writeBridgeNodeUpdates(
+        prepared.document,
+        prepared.bridgeIds as string[],
+        prepared.assetData && typeof prepared.assetData === "object"
+          ? (prepared.assetData as Record<string, string>)
+          : {},
+      );
+      const verified = await readSelectedFigmaDocument();
+      const completionResponse = await fetch(
+        `http://localhost:32145/figma/sync/resolve/complete?token=${encodeURIComponent(message.token)}`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-pen-fig-token": message.token,
+          },
+          body: JSON.stringify({
+            resolutionId: prepared.resolutionId,
+            document: verified.document,
+          }),
+        },
+      );
+      const completed = (await completionResponse.json()) as Record<
+        string,
+        unknown
+      >;
+      if (!completionResponse.ok)
+        throw new Error(
+          typeof completed.message === "string"
+            ? completed.message
+            : `Bridge error ${completionResponse.status}`,
+        );
+      pendingFigmaExport = verified;
+      figma.ui.postMessage(completed);
+    } catch (error) {
+      figma.ui.postMessage({
+        type: "figma-sync-result",
+        ok: false,
+        message:
+          error instanceof Error ? error.message : "Conflict resolution failed",
       });
     }
   }

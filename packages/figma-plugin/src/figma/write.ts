@@ -35,6 +35,12 @@ export interface PreviewResult {
   warnings: string[];
 }
 
+export interface NodeUpdateResult {
+  rootId: string;
+  updatedNodeCount: number;
+  updatedBridgeIds: string[];
+}
+
 export async function previewBridgeDocument(
   input: unknown,
 ): Promise<PreviewResult> {
@@ -151,6 +157,60 @@ export async function writeBridgeDocument(
     root?.remove();
     throw error;
   }
+}
+
+export async function writeBridgeNodeUpdates(
+  input: unknown,
+  bridgeIds: string[],
+  assetData: Record<string, string> = {},
+): Promise<NodeUpdateResult> {
+  const document = bridgeDocumentSchema.parse(input);
+  if (!bridgeIds.length || bridgeIds.length > 40)
+    throw new Error("Conflict resolution must update 1–40 mapped nodes");
+  await figma.currentPage.loadAsync();
+  const mappedRoots = findMappedRoots(
+    figma.currentPage,
+    document.root.bridgeId,
+  );
+  if (mappedRoots.length !== 1)
+    throw new Error(
+      `Conflict resolution requires exactly one mapped root for ${document.root.bridgeId}`,
+    );
+  const root = mappedRoots[0]!;
+  const mapped = readMappedSubtree(root);
+  const sources = new Map<string, BridgeNode>();
+  visit(document.root, (node) => sources.set(node.bridgeId, node));
+  const uniqueBridgeIds = [...new Set(bridgeIds)];
+  for (const bridgeId of uniqueBridgeIds)
+    if (!sources.has(bridgeId) || !mapped.nodes.has(bridgeId))
+      throw new Error(`Conflict mapping missing ${bridgeId}`);
+  await preflightFonts(document);
+  const hashes = authoredDocumentHashes(document);
+  const context = prepareContext(document, assetData, hashes);
+  for (const [bridgeId, node] of mapped.nodes)
+    context.nodes.set(bridgeId, node);
+  await prepareAssets(document, context);
+  figma.commitUndo();
+  try {
+    for (const bridgeId of uniqueBridgeIds) {
+      const source = sources.get(bridgeId)!;
+      const node = mapped.nodes.get(bridgeId)!;
+      const parent = node.parent;
+      if (!parent || !("children" in parent))
+        throw new Error(`Conflict parent missing ${bridgeId}`);
+      applyNodeProperties(node, source, parent, context);
+    }
+    figma.currentPage.selection = [root];
+    figma.commitUndo();
+  } catch (error) {
+    figma.triggerUndo();
+    throw error;
+  }
+  return {
+    rootId: root.id,
+    updatedNodeCount: uniqueBridgeIds.length,
+    updatedBridgeIds: uniqueBridgeIds,
+  };
 }
 
 function mappingsFromNodes(

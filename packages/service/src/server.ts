@@ -50,6 +50,20 @@ export class BridgeServer {
     string,
     { document: BridgeDocument; penPath: string; createdAt: number }
   >();
+  readonly #resolutions = new Map<
+    string,
+    {
+      penPath: string;
+      rootBridgeId: string;
+      penRootId: string;
+      bridgeIds: string[];
+      requiredFigmaChangeIds: string[];
+      initialFigmaHashes: Record<string, string>;
+      preparedPenHashes: Record<string, string>;
+      manifestRevision: number;
+      createdAt: number;
+    }
+  >();
   #activePenPath: string | undefined;
 
   constructor(options: BridgeServerOptions) {
@@ -598,6 +612,220 @@ export class BridgeServer {
         });
         return;
       }
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/figma/sync/resolve"
+      ) {
+        const resolutionRequest = figmaResolutionRequestSchema.parse(
+          await readJsonBody(request, 50 * 1024 * 1024),
+        );
+        const penPath = await this.#requireActivePenPath();
+        const state = await this.#readMappedSyncState(
+          resolutionRequest.document,
+          penPath,
+        );
+        if (
+          state.baseline.some(
+            (mapping) => !mapping.penBaselineHash || !mapping.figmaBaselineHash,
+          )
+        )
+          throw new Error(
+            "Adopt this Pencil root again to upgrade its baseline",
+          );
+        const conflict = state.diff.conflictRoots.find(
+          (entry) => entry.bridgeId === resolutionRequest.bridgeId,
+        );
+        if (!conflict)
+          throw new Error(
+            `Conflict root ${resolutionRequest.bridgeId} is no longer current`,
+          );
+        const bridgeIds = bridgeSubtreeIds(
+          resolutionRequest.document,
+          resolutionRequest.bridgeId,
+        );
+        const subtree = new Set(bridgeIds);
+        const structural = state.diff.entries.filter(
+          (entry) =>
+            subtree.has(entry.bridgeId) &&
+            (entry.classification === "added" ||
+              entry.classification === "deleted" ||
+              entry.classification === "unmapped"),
+        );
+        if (structural.length)
+          throw new Error(
+            `Structural conflict resolution is not enabled yet: ${structural[0]!.bridgeId}`,
+          );
+        if (bridgeIds.length > 40)
+          throw new Error(
+            `Conflict subtree has ${bridgeIds.length} nodes; the atomic limit is 40`,
+          );
+        const requiredChangeIds = state.diff.entries
+          .filter(
+            (entry) =>
+              subtree.has(entry.bridgeId) &&
+              entry.classification !== "unchanged",
+          )
+          .map((entry) => entry.bridgeId);
+
+        if (resolutionRequest.direction === "figma") {
+          const initialPenHashes = authoredDocumentHashes(state.penDocument);
+          const penMappings = state.baseline.map((mapping) => {
+            if (!mapping.penNodeId)
+              throw new Error(`Pencil mapping missing ${mapping.bridgeId}`);
+            return {
+              bridgeId: mapping.bridgeId,
+              penNodeId: mapping.penNodeId,
+            };
+          });
+          const update = await writeFigmaUpdatesToPen(
+            resolutionRequest.document,
+            bridgeIds,
+            penMappings,
+            state.penRoot,
+            resolutionRequest.assetData,
+            penPath,
+            this.#pen,
+          );
+          const verifiedRoot = await this.#pen.getNode(
+            state.rootMapping.penNodeId,
+          );
+          const verifiedMappings = collectPenBridgeMappings(verifiedRoot);
+          const verifiedPenDocument = importPenDocument(verifiedRoot, {
+            documentId: penPath,
+            useBridgeMetadata: true,
+          });
+          const verifiedHashes = authoredDocumentHashes(verifiedPenDocument);
+          for (const bridgeId of requiredChangeIds)
+            if (verifiedHashes[bridgeId] === initialPenHashes[bridgeId])
+              throw new Error(
+                `Pencil verification found no resolved change for ${bridgeId}`,
+              );
+          const manifest = await this.#commitPartialFigmaExportManifest(
+            resolutionRequest.document,
+            verifiedMappings,
+            penPath,
+            verifiedPenDocument,
+            state.manifest,
+            bridgeIds,
+          );
+          json(response, 200, {
+            type: "figma-sync-result",
+            ok: true,
+            operation: "resolved-keep-figma",
+            resolvedBridgeId: resolutionRequest.bridgeId,
+            updatedNodeCount: update.updatedNodeCount,
+            manifest,
+          });
+          return;
+        }
+
+        const resolved = await resolveAssets(state.penDocument);
+        const resolutionId = randomUUID();
+        this.#pruneTransfers();
+        this.#resolutions.set(resolutionId, {
+          penPath,
+          rootBridgeId: resolutionRequest.document.root.bridgeId,
+          penRootId: state.rootMapping.penNodeId,
+          bridgeIds,
+          requiredFigmaChangeIds: requiredChangeIds,
+          initialFigmaHashes: authoredDocumentHashes(
+            resolutionRequest.document,
+          ),
+          preparedPenHashes: authoredDocumentHashes(state.penDocument),
+          manifestRevision: state.manifest.revision,
+          createdAt: Date.now(),
+        });
+        json(response, 200, {
+          type: "figma-sync-resolution-prepared",
+          ok: true,
+          direction: "pen",
+          resolutionId,
+          bridgeIds,
+          document: resolved.document,
+          assetData: resolved.assetData,
+        });
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/figma/sync/resolve/complete"
+      ) {
+        const completion = figmaResolutionCompletionSchema.parse(
+          await readJsonBody(request, 5 * 1024 * 1024),
+        );
+        const pending = this.#resolutions.get(completion.resolutionId);
+        if (!pending) throw new Error("Conflict resolution expired");
+        const penPath = await this.#requireActivePenPath();
+        if (penPath !== pending.penPath)
+          throw new Error("Conflict resolution belongs to another Pencil file");
+        if (completion.document.root.bridgeId !== pending.rootBridgeId)
+          throw new Error("Resolved Figma root identity does not match");
+        const currentManifest = await this.#manifests.read(
+          sidecarPath(penPath),
+        );
+        if (!currentManifest)
+          throw new Error("Sync manifest disappeared during resolution");
+        if (currentManifest.revision !== pending.manifestRevision)
+          throw new Error("Sync manifest changed during conflict resolution");
+        const rootMapping = currentManifest.mappings.find(
+          (mapping) => mapping.bridgeId === pending.rootBridgeId,
+        );
+        if (
+          !rootMapping?.figmaNodeId ||
+          rootMapping.figmaNodeId !== completion.document.root.source.nodeId
+        )
+          throw new Error("Resolved Figma root mapping does not match");
+        const penRoot = await this.#pen.getNode(pending.penRootId);
+        const penMappings = collectPenBridgeMappings(penRoot);
+        const penDocument = importPenDocument(penRoot, {
+          documentId: penPath,
+          useBridgeMetadata: true,
+        });
+        const penHashes = authoredDocumentHashes(penDocument);
+        const figmaHashes = authoredDocumentHashes(completion.document);
+        const resolutionIds = new Set(pending.bridgeIds);
+        const changedPen = Object.entries(pending.preparedPenHashes).find(
+          ([bridgeId, hash]) => penHashes[bridgeId] !== hash,
+        );
+        if (changedPen)
+          throw new Error(`Pencil changed during resolution: ${changedPen[0]}`);
+        const outsideFigmaChange = Object.entries(
+          pending.initialFigmaHashes,
+        ).find(
+          ([bridgeId, hash]) =>
+            !resolutionIds.has(bridgeId) && figmaHashes[bridgeId] !== hash,
+        );
+        if (outsideFigmaChange)
+          throw new Error(
+            `Another Figma change appeared during resolution: ${outsideFigmaChange[0]}`,
+          );
+        const missingFigmaChange = pending.requiredFigmaChangeIds.find(
+          (bridgeId) =>
+            figmaHashes[bridgeId] === pending.initialFigmaHashes[bridgeId],
+        );
+        if (missingFigmaChange)
+          throw new Error(
+            `Figma verification found no resolved change for ${missingFigmaChange}`,
+          );
+        const manifest = await this.#commitPartialFigmaExportManifest(
+          completion.document,
+          penMappings,
+          penPath,
+          penDocument,
+          currentManifest,
+          pending.bridgeIds,
+        );
+        this.#resolutions.delete(completion.resolutionId);
+        json(response, 200, {
+          type: "figma-sync-result",
+          ok: true,
+          operation: "resolved-keep-pen",
+          resolvedBridgeId: pending.bridgeIds[0],
+          updatedNodeCount: pending.bridgeIds.length,
+          manifest,
+        });
+        return;
+      }
       json(response, 404, {
         type: "failed",
         code: "NOT_FOUND",
@@ -647,10 +875,112 @@ export class BridgeServer {
     };
   }
 
+  async #commitPartialFigmaExportManifest(
+    document: BridgeDocument,
+    mappings: PenBridgeMapping[],
+    penPath: string,
+    penDocument: BridgeDocument,
+    previous: BridgeManifest,
+    bridgeIds: string[],
+  ): Promise<{
+    revision: number;
+    mappingCount: number;
+    manifestPath: string;
+  }> {
+    const selected = new Set(bridgeIds);
+    const figmaHashes = authoredDocumentHashes(document);
+    const penHashes = authoredDocumentHashes(penDocument);
+    const penNodeIds = new Map(
+      mappings.map((mapping) => [mapping.bridgeId, mapping.penNodeId]),
+    );
+    const figmaNodeIds = new Map<string, string>();
+    visitBridgeNodes(document.root, (node) => {
+      figmaNodeIds.set(node.bridgeId, node.source.nodeId);
+    });
+    for (const bridgeId of selected)
+      if (
+        !previous.mappings.some((mapping) => mapping.bridgeId === bridgeId) ||
+        !figmaHashes[bridgeId] ||
+        !penHashes[bridgeId] ||
+        !penNodeIds.has(bridgeId) ||
+        !figmaNodeIds.has(bridgeId)
+      )
+        throw new Error(`Conflict mapping is incomplete for ${bridgeId}`);
+    const manifest: BridgeManifest = {
+      ...previous,
+      revision: previous.revision + 1,
+      updatedAt: new Date().toISOString(),
+      mappings: previous.mappings.map((mapping) =>
+        selected.has(mapping.bridgeId)
+          ? {
+              ...mapping,
+              penNodeId: penNodeIds.get(mapping.bridgeId),
+              figmaNodeId: figmaNodeIds.get(mapping.bridgeId),
+              baselineHash: figmaHashes[mapping.bridgeId]!,
+              penBaselineHash: penHashes[mapping.bridgeId],
+              figmaBaselineHash: figmaHashes[mapping.bridgeId],
+            }
+          : mapping,
+      ),
+    };
+    const manifestPath = sidecarPath(penPath);
+    await this.#manifests.writeAtomic(manifestPath, manifest);
+    return {
+      revision: manifest.revision,
+      mappingCount: manifest.mappings.length,
+      manifestPath,
+    };
+  }
+
+  async #readMappedSyncState(document: BridgeDocument, penPath: string) {
+    const manifest = await this.#manifests.read(sidecarPath(penPath));
+    if (!manifest) throw new Error("No sync manifest exists for this file");
+    if (manifest.penDocumentId !== penPath)
+      throw new Error("Sync manifest belongs to a different Pencil file");
+    const rootMapping = manifest.mappings.find(
+      (mapping) => mapping.bridgeId === document.root.bridgeId,
+    );
+    if (!rootMapping?.penNodeId || !rootMapping.figmaNodeId)
+      throw new Error("The selected Figma root is not fully mapped");
+    if (rootMapping.figmaNodeId !== document.root.source.nodeId)
+      throw new Error("The selected Figma root does not own this mapping");
+    const penRoot = await this.#pen.getNode(rootMapping.penNodeId);
+    const penDocument = importPenDocument(penRoot, {
+      documentId: penPath,
+      useBridgeMetadata: true,
+    });
+    if (penDocument.root.bridgeId !== document.root.bridgeId)
+      throw new Error("Mapped Pencil root bridge identity does not match");
+    const penSnapshots = snapshotBridgeDocument(penDocument);
+    const figmaSnapshots = snapshotBridgeDocument(document);
+    const relevantBridgeIds = new Set([
+      ...penSnapshots.map((snapshot) => snapshot.bridgeId),
+      ...figmaSnapshots.map((snapshot) => snapshot.bridgeId),
+    ]);
+    const baseline = manifest.mappings.filter((mapping) =>
+      relevantBridgeIds.has(mapping.bridgeId),
+    );
+    const diff = classifyThreeWayDiff(baseline, penSnapshots, figmaSnapshots);
+    return {
+      manifest,
+      rootMapping: {
+        ...rootMapping,
+        penNodeId: rootMapping.penNodeId,
+        figmaNodeId: rootMapping.figmaNodeId,
+      },
+      penRoot,
+      penDocument,
+      baseline,
+      diff,
+    };
+  }
+
   #pruneTransfers(): void {
     const cutoff = Date.now() - 15 * 60_000;
     for (const [id, transfer] of this.#transfers)
       if (transfer.createdAt < cutoff) this.#transfers.delete(id);
+    for (const [id, resolution] of this.#resolutions)
+      if (resolution.createdAt < cutoff) this.#resolutions.delete(id);
   }
 
   async #handleAuthenticated(
@@ -741,6 +1071,20 @@ const figmaSyncRequestSchema = z
   .object({ document: bridgeDocumentSchema })
   .strict();
 
+const figmaResolutionRequestSchema = figmaExportRequestSchema
+  .extend({
+    direction: z.enum(["pen", "figma"]),
+    bridgeId: z.string().min(1).max(200),
+  })
+  .strict();
+
+const figmaResolutionCompletionSchema = z
+  .object({
+    resolutionId: z.string().uuid(),
+    document: bridgeDocumentSchema,
+  })
+  .strict();
+
 function countSyncDirections(
   entries: ReturnType<typeof classifyThreeWayDiff>["entries"],
 ): { toPencil: number; toFigma: number; conflicts: number; unmapped: number } {
@@ -776,6 +1120,20 @@ function visitBridgeNodes(
 ): void {
   callback(node);
   for (const child of node.children) visitBridgeNodes(child, callback);
+}
+
+function bridgeSubtreeIds(
+  document: BridgeDocument,
+  bridgeId: string,
+): string[] {
+  let root: BridgeDocument["root"] | undefined;
+  visitBridgeNodes(document.root, (node) => {
+    if (node.bridgeId === bridgeId) root = node;
+  });
+  if (!root) throw new Error(`Conflict node ${bridgeId} is missing`);
+  const bridgeIds: string[] = [];
+  visitBridgeNodes(root, (node) => bridgeIds.push(node.bridgeId));
+  return bridgeIds;
 }
 
 function send(socket: WebSocket, message: ServerMessage): void {

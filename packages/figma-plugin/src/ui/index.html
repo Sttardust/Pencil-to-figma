@@ -58,6 +58,19 @@
         <button id="apply-sync" type="button" disabled>
           Apply Figma changes to Pencil…
         </button>
+        <aside id="conflict-panel" class="conflict-panel" hidden>
+          <strong>Both editors changed this design</strong>
+          <p id="conflict-summary"></p>
+          <div class="conflict-actions">
+            <button id="keep-pencil" type="button">Keep Pencil</button>
+            <button id="keep-figma" type="button" class="secondary">
+              Keep Figma
+            </button>
+            <button id="cancel-conflict" type="button" class="quiet">
+              Cancel
+            </button>
+          </div>
+        </aside>
         <button id="write-test" type="button" class="secondary">
           Test reversible write
         </button>

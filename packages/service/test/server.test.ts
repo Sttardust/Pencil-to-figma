@@ -153,12 +153,14 @@ describe("BridgeServer", () => {
         },
       ],
     };
+    let executeWriteCount = 0;
     const pen = {
       getAppState: async () => ({
         text: `- Currently active canvas editor: \`${penPath}\``,
       }),
       getNode: async () => structuredClone(adoptedRoot),
       executeWrite: async (input: string) => {
+        executeWriteCount += 1;
         const content = /"content":"([^"]+)"/.exec(input)?.[1];
         if (content) adoptedRoot.children![0]!.content = content;
         return "OK\n\n## Print output\nUPDATED | pen:title | adoptedTitle";
@@ -276,6 +278,108 @@ describe("BridgeServer", () => {
       manifest: { revision: 1, mappingCount: 2 },
     });
     expect(adoptedRoot.children?.[0]?.content).toBe("Updated in Figma");
+    expect(executeWriteCount).toBe(1);
+
+    adoptedRoot.children![0]!.content = "Pencil conflict";
+    const conflictDocument = figmaExportDocument();
+    conflictDocument.root.children[0]!.text!.characters = "Figma conflict";
+    const conflictPreview = await fetch(
+      `${origin}/figma/sync/preview?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ document: conflictDocument }),
+      },
+    );
+    expect(await conflictPreview.json()).toMatchObject({
+      counts: { conflicted: 1 },
+      actions: { conflicts: 1 },
+      conflictRoots: [{ bridgeId: "pen:title" }],
+      canApplyWithoutResolution: false,
+    });
+    expect(executeWriteCount).toBe(1);
+
+    const keepFigmaResponse = await fetch(
+      `${origin}/figma/sync/resolve?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          document: conflictDocument,
+          assetData: {},
+          direction: "figma",
+          bridgeId: "pen:title",
+        }),
+      },
+    );
+    const keepFigmaResult = await keepFigmaResponse.json();
+    expect(keepFigmaResult).toMatchObject({
+      type: "figma-sync-result",
+      ok: true,
+      operation: "resolved-keep-figma",
+      resolvedBridgeId: "pen:title",
+      updatedNodeCount: 1,
+      manifest: { revision: 2, mappingCount: 2 },
+    });
+    expect(keepFigmaResponse.status).toBe(200);
+    expect(adoptedRoot.children?.[0]?.content).toBe("Figma conflict");
+    expect(executeWriteCount).toBe(2);
+
+    adoptedRoot.children![0]!.content = "Pencil wins";
+    const losingFigmaDocument = figmaExportDocument();
+    losingFigmaDocument.root.children[0]!.text!.characters = "Figma loses";
+    const prepareKeepPencil = await fetch(
+      `${origin}/figma/sync/resolve?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          document: losingFigmaDocument,
+          assetData: {},
+          direction: "pen",
+          bridgeId: "pen:title",
+        }),
+      },
+    );
+    expect(prepareKeepPencil.status).toBe(200);
+    const prepared = await prepareKeepPencil.json();
+    expect(prepared).toMatchObject({
+      type: "figma-sync-resolution-prepared",
+      ok: true,
+      direction: "pen",
+      resolutionId: expect.any(String),
+      bridgeIds: ["pen:title"],
+      document: {
+        root: {
+          children: [{ text: { characters: "Pencil wins" } }],
+        },
+      },
+    });
+    expect(executeWriteCount).toBe(2);
+
+    const resolvedFigmaDocument = figmaExportDocument();
+    resolvedFigmaDocument.root.children[0]!.text!.characters = "Pencil wins";
+    const completeKeepPencil = await fetch(
+      `${origin}/figma/sync/resolve/complete?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          resolutionId: prepared.resolutionId,
+          document: resolvedFigmaDocument,
+        }),
+      },
+    );
+    expect(completeKeepPencil.status).toBe(200);
+    expect(await completeKeepPencil.json()).toMatchObject({
+      type: "figma-sync-result",
+      ok: true,
+      operation: "resolved-keep-pen",
+      resolvedBridgeId: "pen:title",
+      updatedNodeCount: 1,
+      manifest: { revision: 3, mappingCount: 2 },
+    });
+    expect(executeWriteCount).toBe(2);
   });
 
   it("rejects requests before authentication", async () => {

@@ -11,9 +11,15 @@ const adoptRootId = required<HTMLInputElement>("adopt-root-id");
 const adoptCopy = required<HTMLButtonElement>("adopt-copy");
 const previewSync = required<HTMLButtonElement>("preview-sync");
 const applySync = required<HTMLButtonElement>("apply-sync");
+const conflictPanel = required<HTMLElement>("conflict-panel");
+const conflictSummary = required<HTMLElement>("conflict-summary");
+const keepPencil = required<HTMLButtonElement>("keep-pencil");
+const keepFigma = required<HTMLButtonElement>("keep-figma");
+const cancelConflict = required<HTMLButtonElement>("cancel-conflict");
 let token: string | undefined;
 let pendingExportPlan: any;
 let pendingSyncPreview: any;
+let pendingConflict: any;
 let pendingImport:
   | {
       document: any;
@@ -56,6 +62,7 @@ required("preview-export").addEventListener("click", () => {
   previewSync.disabled = true;
   applySync.disabled = true;
   pendingSyncPreview = undefined;
+  hideConflict();
   setStatus("Reading Figma…", true);
   parent.postMessage({ pluginMessage: { type: "preview-figma-export" } }, "*");
 });
@@ -130,6 +137,26 @@ applySync.addEventListener("click", () => {
   parent.postMessage(
     { pluginMessage: { type: "apply-mapped-sync", token } },
     "*",
+  );
+});
+keepPencil.addEventListener("click", () => resolveConflict("pen"));
+keepFigma.addEventListener("click", () => resolveConflict("figma"));
+cancelConflict.addEventListener("click", () => {
+  hideConflict();
+  pendingSyncPreview = undefined;
+  applySync.disabled = true;
+  setStatus("Conflict cancelled", true);
+  detail.textContent =
+    "No writes were made. Preview mapped sync again when you are ready.";
+  output.textContent = JSON.stringify(
+    {
+      type: "figma-sync-result",
+      ok: true,
+      operation: "cancelled",
+      writes: 0,
+    },
+    null,
+    2,
   );
 });
 required("write-test").addEventListener("click", () =>
@@ -265,6 +292,12 @@ window.onmessage = (event) => {
         Boolean(message.ok),
       );
       pendingSyncPreview = message.ok ? message : undefined;
+      const conflicts = message.ok ? (message.conflictRoots ?? []) : [];
+      pendingConflict = conflicts[0];
+      conflictPanel.hidden = !pendingConflict;
+      if (pendingConflict) {
+        conflictSummary.textContent = `${conflicts.length} conflict${conflicts.length === 1 ? "" : "s"} found. Resolve ${pendingConflict.bridgeId} by choosing which editor wins. The other editor will be updated atomically.`;
+      }
       applySync.disabled = !(
         message.ok &&
         !message.baselineUpgradeRequired &&
@@ -287,22 +320,70 @@ window.onmessage = (event) => {
         message.ok
           ? message.operation === "unchanged"
             ? "Already synchronized"
-            : "Pencil updated"
+            : message.operation === "resolved-keep-pen"
+              ? "Kept Pencil version"
+              : message.operation === "resolved-keep-figma"
+                ? "Kept Figma version"
+                : "Pencil updated"
           : "Sync apply failed",
         message.ok,
       );
-      if (!message.ok) detail.textContent = message.message;
-      else {
+      if (!message.ok) {
+        detail.textContent = message.message;
+        keepPencil.disabled = false;
+        keepFigma.disabled = false;
+        cancelConflict.disabled = false;
+        applySync.disabled = !(
+          pendingSyncPreview?.actions?.toPencil > 0 &&
+          pendingSyncPreview?.actions?.toFigma === 0 &&
+          pendingSyncPreview?.actions?.conflicts === 0
+        );
+      } else {
         pendingSyncPreview = undefined;
         applySync.disabled = true;
+        hideConflict();
         detail.textContent =
           message.operation === "unchanged"
             ? "No Pencil updates were required."
-            : `Updated ${message.updatedNodeCount} Pencil node${message.updatedNodeCount === 1 ? "" : "s"}; manifest revision ${message.manifest.revision}.`;
+            : `${message.operation === "resolved-keep-pen" ? "Updated Figma from Pencil" : "Updated Pencil from Figma"} for ${message.updatedNodeCount} node${message.updatedNodeCount === 1 ? "" : "s"}; manifest revision ${message.manifest.revision}.`;
       }
     }
   }
 };
+
+function resolveConflict(direction: "pen" | "figma"): void {
+  if (!token || !pendingConflict) return;
+  const winner = direction === "pen" ? "Pencil" : "Figma";
+  if (
+    !confirm(
+      `Keep the ${winner} version for ${pendingConflict.bridgeId}?\n\nThe conflicting mapped subtree in the other editor will be updated in one undoable transaction.`,
+    )
+  )
+    return;
+  keepPencil.disabled = true;
+  keepFigma.disabled = true;
+  cancelConflict.disabled = true;
+  setStatus(`Keeping ${winner}…`, true);
+  parent.postMessage(
+    {
+      pluginMessage: {
+        type: "resolve-mapped-sync",
+        token,
+        direction,
+        bridgeId: pendingConflict.bridgeId,
+      },
+    },
+    "*",
+  );
+}
+
+function hideConflict(): void {
+  pendingConflict = undefined;
+  conflictPanel.hidden = true;
+  keepPencil.disabled = false;
+  keepFigma.disabled = false;
+  cancelConflict.disabled = false;
+}
 
 function renderScreens(text: string): void {
   screenList.replaceChildren();

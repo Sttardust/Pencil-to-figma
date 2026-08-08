@@ -56,10 +56,38 @@ button.secondary {
   background: var(--figma-color-bg-secondary);
   color: var(--figma-color-text);
 }
+button.quiet {
+  background: transparent;
+  color: var(--figma-color-text-secondary);
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
 section {
   display: grid;
   gap: 8px;
   margin-top: 16px;
+}
+.conflict-panel {
+  border: 1px solid var(--figma-color-border-danger-strong);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--figma-color-bg-danger-tertiary);
+}
+.conflict-panel strong {
+  font-size: 12px;
+}
+.conflict-panel p {
+  margin: 5px 0 10px;
+}
+.conflict-actions {
+  display: flex;
+  gap: 6px;
+}
+.conflict-actions button {
+  flex: 1;
+  padding-inline: 6px;
 }
 .badge {
   border-radius: 99px;
