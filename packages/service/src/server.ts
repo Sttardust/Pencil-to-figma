@@ -721,25 +721,38 @@ export class BridgeServer {
           throw new Error(
             `Conflict root ${resolutionRequest.bridgeId} is no longer current`,
           );
-        const bridgeIds = bridgeSubtreeIds(
-          resolutionRequest.document,
+        let bridgeIds = diffSubtreeIds(
+          state.diff.entries,
           resolutionRequest.bridgeId,
         );
-        const subtree = new Set(bridgeIds);
-        const subtreeEntries = state.diff.entries.filter((entry) =>
+        let subtree = new Set(bridgeIds);
+        let subtreeEntries = state.diff.entries.filter((entry) =>
           subtree.has(entry.bridgeId),
         );
         const unsupportedStructural = subtreeEntries.filter(
-          (entry) =>
-            entry.classification === "added" ||
-            entry.classification === "deleted" ||
-            entry.classification === "unmapped",
+          (entry) => entry.classification === "unmapped",
         );
         if (unsupportedStructural.length)
           throw new Error(
-            `Create/delete conflict resolution is not enabled yet: ${unsupportedStructural[0]!.bridgeId}`,
+            `Unmapped conflict resolution is not enabled yet: ${unsupportedStructural[0]!.bridgeId}`,
           );
         const structural = hasStructuralDifference(subtreeEntries);
+        if (structural) {
+          bridgeIds = includeDiffAncestors(state.diff.entries, bridgeIds);
+          subtree = new Set(bridgeIds);
+          subtreeEntries = state.diff.entries.filter((entry) =>
+            subtree.has(entry.bridgeId),
+          );
+        }
+        const outsideChange = state.diff.entries.find(
+          (entry) =>
+            !subtree.has(entry.bridgeId) &&
+            entry.classification !== "unchanged",
+        );
+        if (structural && outsideChange)
+          throw new Error(
+            `Resolve structural conflict ${resolutionRequest.bridgeId} separately from ${outsideChange.bridgeId}`,
+          );
         if (bridgeIds.length > 40)
           throw new Error(
             `Conflict subtree has ${bridgeIds.length} nodes; the atomic limit is 40`,
@@ -771,6 +784,7 @@ export class BridgeServer {
                 resolutionRequest.assetData,
                 penPath,
                 this.#pen,
+                { scopeBridgeIds: subtree },
               )
             : undefined;
           const update =
@@ -798,17 +812,25 @@ export class BridgeServer {
               true,
             );
           const verifiedHashes = authoredDocumentHashes(verifiedPenDocument);
+          if (structural)
+            assertMatchingStructure(
+              verifiedPenDocument,
+              resolutionRequest.document,
+              bridgeIds,
+            );
           for (const bridgeId of requiredChangeIds)
             if (verifiedHashes[bridgeId] === initialPenHashes[bridgeId])
               throw new Error(
                 `Pencil verification found no resolved change for ${bridgeId}`,
               );
           const manifest = structural
-            ? await this.#commitFigmaExportManifest(
+            ? await this.#commitStructuralFigmaExportManifest(
                 resolutionRequest.document,
                 verifiedMappings,
                 penPath,
                 verifiedPenDocument,
+                state.manifest,
+                bridgeIds,
               )
             : await this.#commitPartialFigmaExportManifest(
                 resolutionRequest.document,
@@ -933,11 +955,13 @@ export class BridgeServer {
             `Figma verification found no resolved change for ${missingFigmaChange}`,
           );
         const manifest = pending.structural
-          ? await this.#commitFigmaExportManifest(
+          ? await this.#commitStructuralFigmaExportManifest(
               completion.document,
               penMappings,
               penPath,
               penDocument,
+              currentManifest,
+              pending.bridgeIds,
             )
           : await this.#commitPartialFigmaExportManifest(
               completion.document,
@@ -1090,6 +1114,57 @@ export class BridgeServer {
             }
           : mapping,
       ),
+    };
+    const manifestPath = sidecarPath(penPath);
+    await this.#manifests.writeAtomic(manifestPath, manifest);
+    return {
+      revision: manifest.revision,
+      mappingCount: manifest.mappings.length,
+      manifestPath,
+    };
+  }
+
+  async #commitStructuralFigmaExportManifest(
+    document: BridgeDocument,
+    mappings: PenBridgeMapping[],
+    penPath: string,
+    penDocument: BridgeDocument,
+    previous: BridgeManifest,
+    bridgeIds: string[],
+  ): Promise<{
+    revision: number;
+    mappingCount: number;
+    manifestPath: string;
+  }> {
+    const selected = new Set(bridgeIds);
+    const candidate = buildFigmaExportManifest(document, mappings, penPath, {
+      previous,
+      penDocument,
+    });
+    const previousByBridgeId = new Map(
+      previous.mappings.map((mapping) => [mapping.bridgeId, mapping]),
+    );
+    for (const mapping of previous.mappings)
+      if (
+        !selected.has(mapping.bridgeId) &&
+        !candidate.mappings.some(
+          (candidateMapping) => candidateMapping.bridgeId === mapping.bridgeId,
+        )
+      )
+        throw new Error(
+          `Structural resolution unexpectedly removed ${mapping.bridgeId}`,
+        );
+    const manifest: BridgeManifest = {
+      ...candidate,
+      mappings: candidate.mappings.map((mapping) => {
+        if (selected.has(mapping.bridgeId)) return mapping;
+        const preserved = previousByBridgeId.get(mapping.bridgeId);
+        if (!preserved)
+          throw new Error(
+            `Structural resolution unexpectedly added ${mapping.bridgeId}`,
+          );
+        return preserved;
+      }),
     };
     const manifestPath = sidecarPath(penPath);
     await this.#manifests.writeAtomic(manifestPath, manifest);
@@ -1283,6 +1358,7 @@ function hasStructuralDifference(
   return entries.some((entry) => {
     if (entry.classification === "added") return true;
     if (entry.classification === "deleted") return entry.side !== "both";
+    if (entry.reason === "delete-vs-edit") return true;
     return Boolean(
       entry.pen &&
       entry.figma &&
@@ -1290,6 +1366,34 @@ function hasStructuralDifference(
         entry.pen.index !== entry.figma.index),
     );
   });
+}
+
+function assertMatchingStructure(
+  penDocument: BridgeDocument,
+  figmaDocument: BridgeDocument,
+  bridgeIds: string[],
+): void {
+  const pen = new Map(
+    snapshotBridgeDocument(penDocument).map((entry) => [entry.bridgeId, entry]),
+  );
+  const figma = new Map(
+    snapshotBridgeDocument(figmaDocument).map((entry) => [
+      entry.bridgeId,
+      entry,
+    ]),
+  );
+  for (const bridgeId of bridgeIds) {
+    const left = pen.get(bridgeId);
+    const right = figma.get(bridgeId);
+    if (
+      Boolean(left) !== Boolean(right) ||
+      (left &&
+        right &&
+        (left.parentBridgeId !== right.parentBridgeId ||
+          left.index !== right.index))
+    )
+      throw new Error(`Pencil structural verification differs for ${bridgeId}`);
+  }
 }
 
 function collectPenDocumentMappings(
@@ -1341,18 +1445,60 @@ function collectReusablePenIds(root: PenNode): Set<string> {
   return ids;
 }
 
-function bridgeSubtreeIds(
-  document: BridgeDocument,
+function diffSubtreeIds(
+  entries: ReturnType<typeof classifyThreeWayDiff>["entries"],
   bridgeId: string,
 ): string[] {
-  let root: BridgeDocument["root"] | undefined;
-  visitBridgeNodes(document.root, (node) => {
-    if (node.bridgeId === bridgeId) root = node;
-  });
+  const byBridgeId = new Map(entries.map((entry) => [entry.bridgeId, entry]));
+  const root = byBridgeId.get(bridgeId);
   if (!root) throw new Error(`Conflict node ${bridgeId} is missing`);
-  const bridgeIds: string[] = [];
-  visitBridgeNodes(root, (node) => bridgeIds.push(node.bridgeId));
-  return bridgeIds;
+  const included = new Set([bridgeId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const entry of entries) {
+      if (included.has(entry.bridgeId)) continue;
+      const penParent = entry.pen?.parentBridgeId;
+      const figmaParent = entry.figma?.parentBridgeId;
+      if (
+        (penParent && included.has(penParent)) ||
+        (figmaParent && included.has(figmaParent))
+      ) {
+        included.add(entry.bridgeId);
+        changed = true;
+      }
+    }
+  }
+  return entries
+    .filter((entry) => included.has(entry.bridgeId))
+    .map((entry) => entry.bridgeId);
+}
+
+function includeDiffAncestors(
+  entries: ReturnType<typeof classifyThreeWayDiff>["entries"],
+  bridgeIds: string[],
+): string[] {
+  const byBridgeId = new Map(entries.map((entry) => [entry.bridgeId, entry]));
+  const included = new Set(bridgeIds);
+  const ancestorQueue = bridgeIds.flatMap((bridgeId) => {
+    const entry = byBridgeId.get(bridgeId);
+    return [entry?.pen?.parentBridgeId, entry?.figma?.parentBridgeId];
+  });
+  while (ancestorQueue.length) {
+    const parentBridgeId = ancestorQueue.shift();
+    if (!parentBridgeId || included.has(parentBridgeId)) continue;
+    included.add(parentBridgeId);
+    const parent = byBridgeId.get(parentBridgeId);
+    if (parent) {
+      ancestorQueue.push(
+        parent.pen?.parentBridgeId,
+        parent.figma?.parentBridgeId,
+      );
+    }
+  }
+  return entries
+    .filter((entry) => included.has(entry.bridgeId))
+    .map((entry) => entry.bridgeId);
 }
 
 function send(socket: WebSocket, message: ServerMessage): void {

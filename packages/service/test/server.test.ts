@@ -851,15 +851,40 @@ describe("BridgeServer", () => {
       }),
       getNode: async () => structuredClone(penRoot),
       executeWrite: async (input: string) => {
-        const moves = input.matchAll(/Move\("([^"]+)","nativeRoot",(\d+)\)/g);
-        for (const match of moves) {
-          const oldIndex = penRoot.children!.findIndex(
+        for (const match of input.matchAll(/Delete\("([^"]+)"\)/g)) {
+          const index = penRoot.children!.findIndex(
             (child) => child.id === match[1],
           );
-          const [node] = penRoot.children!.splice(oldIndex, 1);
-          penRoot.children!.splice(Number(match[2]), 0, node!);
+          if (index >= 0) penRoot.children!.splice(index, 1);
         }
-        return "OK\n\n## Print output\nSTRUCTURE_UPDATED | pen:root";
+        const createdA = input.includes('"bridgeId":"pen:a"');
+        if (createdA) {
+          nodes.a = {
+            id: "nativeA2",
+            type: "text",
+            content: "A edited in Figma",
+            metadata: { type: "pen-fig-bridge", bridgeId: "pen:a" },
+          };
+          penRoot.children!.push(nodes.a);
+        }
+        const moves = input.matchAll(
+          /Move\((?:"([^"]+)"|(added_\d+)),"nativeRoot",(\d+)\)/g,
+        );
+        for (const match of moves) {
+          const nativeId =
+            match[1] ??
+            (match[2]?.startsWith("added_") ? "nativeA2" : undefined);
+          const oldIndex = penRoot.children!.findIndex(
+            (child) => child.id === nativeId,
+          );
+          const [node] = penRoot.children!.splice(oldIndex, 1);
+          penRoot.children!.splice(Number(match[3]), 0, node!);
+        }
+        return [
+          "OK\n\n## Print output",
+          ...(createdA ? ["MAP | pen:a | nativeA2"] : []),
+          "STRUCTURE_UPDATED | pen:root",
+        ].join("\n");
       },
     } as PenMcpClient;
     const server = new BridgeServer({ host: "127.0.0.1", port: 0, pen });
@@ -962,6 +987,106 @@ describe("BridgeServer", () => {
       resolvedBridgeId: "pen:root",
       manifest: { revision: 2, mappingCount: 4 },
     });
+
+    nodes.b!.content = "B edited in Pencil";
+    const figmaDeletesB = figmaReorderDocument(["c", "a"]);
+    const deleteConflictPreview = await fetch(
+      `${origin}/figma/sync/preview?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ document: figmaDeletesB }),
+      },
+    ).then((response) => response.json());
+    expect(deleteConflictPreview).toMatchObject({
+      counts: { conflicted: 1 },
+      structural: true,
+      conflictRoots: [{ bridgeId: "pen:b", reason: "delete-vs-edit" }],
+    });
+    const prepareRestoreB = await fetch(
+      `${origin}/figma/sync/resolve?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          document: figmaDeletesB,
+          assetData: {},
+          direction: "pen",
+          bridgeId: "pen:b",
+        }),
+      },
+    );
+    expect(prepareRestoreB.status).toBe(200);
+    const restorePrepared = await prepareRestoreB.json();
+    expect(restorePrepared).toMatchObject({
+      type: "figma-sync-resolution-prepared",
+      structural: true,
+      direction: "pen",
+    });
+    const restoredB = figmaReorderDocument(["c", "a", "b"]);
+    restoredB.root.children.find(
+      (node) => node.bridgeId === "pen:b",
+    )!.text!.characters = "B edited in Pencil";
+    const restoreCompleted = await fetch(
+      `${origin}/figma/sync/resolve/complete?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          resolutionId: restorePrepared.resolutionId,
+          document: restoredB,
+        }),
+      },
+    );
+    expect(restoreCompleted.status).toBe(200);
+    expect(await restoreCompleted.json()).toMatchObject({
+      operation: "resolved-keep-pen",
+      resolvedBridgeId: "pen:b",
+      manifest: { revision: 3, mappingCount: 4 },
+    });
+
+    penRoot.children = [nodes.c!, nodes.b!];
+    const figmaEditsA = structuredClone(restoredB);
+    figmaEditsA.root.children.find(
+      (node) => node.bridgeId === "pen:a",
+    )!.text!.characters = "A edited in Figma";
+    const recreatePreview = await fetch(
+      `${origin}/figma/sync/preview?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ document: figmaEditsA }),
+      },
+    ).then((response) => response.json());
+    expect(recreatePreview).toMatchObject({
+      counts: { conflicted: 1 },
+      structural: true,
+      conflictRoots: [{ bridgeId: "pen:a", reason: "delete-vs-edit" }],
+    });
+    const recreateA = await fetch(
+      `${origin}/figma/sync/resolve?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          document: figmaEditsA,
+          assetData: {},
+          direction: "figma",
+          bridgeId: "pen:a",
+        }),
+      },
+    );
+    expect(recreateA.status).toBe(200);
+    expect(await recreateA.json()).toMatchObject({
+      operation: "resolved-keep-figma",
+      resolvedBridgeId: "pen:a",
+      manifest: { revision: 4, mappingCount: 4 },
+    });
+    expect(penRoot.children!.map((node) => node.content)).toEqual([
+      "C",
+      "A edited in Figma",
+      "B edited in Pencil",
+    ]);
   });
 
   it("rejects requests before authentication", async () => {

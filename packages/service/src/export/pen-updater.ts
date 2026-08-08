@@ -108,8 +108,12 @@ export async function writeFigmaStructureToPen(
   assetData: Record<string, FigmaExportAssetData>,
   penPath: string,
   pen: PenMcpClient,
+  options: { scopeBridgeIds?: ReadonlySet<string> } = {},
 ): Promise<PenStructuralUpdateResult> {
-  const currentMappings = collectMappedPenBridgeMappings(currentRoot, mappings);
+  const currentMappings = collectPresentPenBridgeMappings(
+    currentRoot,
+    mappings,
+  );
   const assetPaths = await stageFigmaAssets(document, assetData, penPath);
   const plan = planFigmaToPenCreate(document, { assetPaths });
   const inserts = new Map(
@@ -128,10 +132,16 @@ export async function writeFigmaStructureToPen(
     throw new Error("Figma root cannot have a parent");
 
   const removed = new Set(
-    [...current.keys()].filter((bridgeId) => !expected.has(bridgeId)),
+    [...current.keys()].filter(
+      (bridgeId) =>
+        !expected.has(bridgeId) &&
+        (!options.scopeBridgeIds || options.scopeBridgeIds.has(bridgeId)),
+    ),
   );
   const added = [...expected.values()].filter(
-    (entry) => !current.has(entry.bridgeId),
+    (entry) =>
+      !current.has(entry.bridgeId) &&
+      (!options.scopeBridgeIds || options.scopeBridgeIds.has(entry.bridgeId)),
   );
   if (added.some((entry) => !entry.parentBridgeId))
     throw new Error("Replacing the mapped root is not supported");
@@ -200,7 +210,13 @@ export async function writeFigmaStructureToPen(
     operationCount += 1;
   }
 
-  for (const move of planRequiredMoves(current, expected, removed, added)) {
+  for (const move of planRequiredMoves(
+    current,
+    expected,
+    removed,
+    added,
+    options.scopeBridgeIds,
+  )) {
     statements.push(
       `Move(${nodeReference(move.bridgeId, nativeByBridgeId, variableByBridgeId)},${nodeReference(move.parentBridgeId, nativeByBridgeId, variableByBridgeId)},${move.index})`,
     );
@@ -270,6 +286,29 @@ function describePenStructure(
   return result;
 }
 
+function collectPresentPenBridgeMappings(
+  root: PenNode,
+  expectedMappings: PenBridgeMapping[],
+): PenBridgeMapping[] {
+  const bridgeIdByPenNodeId = new Map(
+    expectedMappings.map((mapping) => [mapping.penNodeId, mapping.bridgeId]),
+  );
+  const mappings: PenBridgeMapping[] = [];
+  const bridgeIds = new Set<string>();
+  const visit = (node: PenNode) => {
+    const bridgeId = bridgeIdByPenNodeId.get(node.id);
+    if (!bridgeId)
+      throw new Error(`Pencil node ${node.id} is not in the sync manifest`);
+    if (bridgeIds.has(bridgeId))
+      throw new Error(`Duplicate Pencil bridge identity ${bridgeId}`);
+    bridgeIds.add(bridgeId);
+    mappings.push({ bridgeId, penNodeId: node.id });
+    for (const child of node.children ?? []) visit(child);
+  };
+  visit(root);
+  return mappings;
+}
+
 interface ExpectedStructureEntry {
   bridgeId: string;
   parentBridgeId: string | undefined;
@@ -303,6 +342,7 @@ function planRequiredMoves(
   expected: Map<string, ExpectedStructureEntry>,
   removed: Set<string>,
   added: ExpectedStructureEntry[],
+  scopeBridgeIds?: ReadonlySet<string>,
 ): Array<{ bridgeId: string; parentBridgeId: string; index: number }> {
   const children = new Map<string, string[]>();
   const parentByChild = new Map<string, string>();
@@ -333,6 +373,12 @@ function planRequiredMoves(
     index: number;
   }> = [];
   for (const [parentBridgeId, target] of expectedChildren) {
+    if (
+      scopeBridgeIds &&
+      !scopeBridgeIds.has(parentBridgeId) &&
+      !target.some((bridgeId) => scopeBridgeIds.has(bridgeId))
+    )
+      continue;
     const siblings = children.get(parentBridgeId) ?? [];
     for (let index = 0; index < target.length; index += 1) {
       const bridgeId = target[index]!;
