@@ -4,18 +4,23 @@ import {
   type BridgeNode,
   type Paint,
 } from "@pen-fig/bridge-schema";
-import { authoredDocumentHashes } from "@pen-fig/core";
+import {
+  authoredDocumentHashes,
+  planPenToFigmaSync,
+  type SyncPlan,
+} from "@pen-fig/core";
 import {
   AUTHORED_HASH_KEY,
   BRIDGE_ID_KEY,
-  classifyIdentities,
-  readPageIdentities,
+  findMappedRoots,
+  readMappedSubtree,
 } from "./identity.js";
 
 export interface WriteResult {
   rootId: string;
   nodeCount: number;
-  operation: "created" | "unchanged";
+  operation: "created" | "unchanged" | "updated";
+  operations?: SyncPlan["counts"];
   warnings: string[];
 }
 
@@ -26,47 +31,60 @@ export async function writeBridgeDocument(
   const document = bridgeDocumentSchema.parse(input);
   await figma.currentPage.loadAsync();
   const hashes = authoredDocumentHashes(document);
-  const identityState = classifyIdentities(
-    hashes,
-    readPageIdentities(figma.currentPage),
+  const mappedRoots = findMappedRoots(
+    figma.currentPage,
+    document.root.bridgeId,
   );
-  if (identityState.status === "unchanged") {
-    const root = figma.currentPage.findOne(
-      (node) => node.getPluginData(BRIDGE_ID_KEY) === document.root.bridgeId,
+  if (mappedRoots.length > 1)
+    throw new Error(
+      `Duplicate bridge identities require remapping: ${document.root.bridgeId} (${mappedRoots.map((root) => root.id).join(", ")})`,
     );
-    if (!root) throw new Error("Mapped Figma root is missing");
+  const mappedRoot = mappedRoots[0];
+  if (mappedRoot) {
+    const mapped = readMappedSubtree(mappedRoot);
+    const plan = planPenToFigmaSync(document, mapped.records);
+    if (plan.operations.length === 0) {
+      figma.currentPage.selection = [mappedRoot];
+      figma.viewport.scrollAndZoomIntoView([mappedRoot]);
+      return {
+        rootId: mappedRoot.id,
+        nodeCount: 0,
+        operation: "unchanged",
+        operations: plan.counts,
+        warnings: document.warnings.map((warning) => warning.message),
+      };
+    }
+    await preflightFonts(document);
+    const context = prepareContext(document, assetData, hashes);
+    for (const [bridgeId, node] of mapped.nodes)
+      context.nodes.set(bridgeId, node);
+    await prepareAssets(document, context);
+    figma.commitUndo();
+    try {
+      await applySyncPlan(document, mappedRoot, plan, context);
+      figma.commitUndo();
+    } catch (error) {
+      figma.triggerUndo();
+      throw error;
+    }
+    const root = context.nodes.get(document.root.bridgeId);
+    if (!root) throw new Error("Updated Figma root is missing");
     figma.currentPage.selection = [root];
     figma.viewport.scrollAndZoomIntoView([root]);
     return {
       rootId: root.id,
-      nodeCount: 0,
-      operation: "unchanged",
-      warnings: document.warnings.map((warning) => warning.message),
+      nodeCount: plan.operations.length,
+      operation: "updated",
+      operations: plan.counts,
+      warnings: [
+        ...document.warnings.map((warning) => warning.message),
+        ...context.warnings,
+      ],
     };
   }
-  if (identityState.status === "changed")
-    throw new Error(
-      `Mapped Figma subtree has ${identityState.changedBridgeIds.length} changed and ${identityState.missingBridgeIds.length} missing nodes; update planning is required`,
-    );
   await preflightFonts(document);
-  const context: WriteContext = {
-    nodes: new Map(),
-    images: new Map(),
-    assetData,
-    nodeCount: 0,
-    warnings: [],
-    hashes,
-  };
-  for (const asset of document.assets) {
-    if (asset.status === "ready" && asset.kind === "image") {
-      const encoded = assetData[asset.id];
-      if (!encoded) throw new Error(`Image data missing for ${asset.id}`);
-      context.images.set(
-        asset.id,
-        figma.createImage(figma.base64Decode(encoded)).hash,
-      );
-    }
-  }
+  const context = prepareContext(document, assetData, hashes);
+  await prepareAssets(document, context);
   let root: SceneNode | undefined;
   try {
     root = await createNode(document.root, figma.currentPage, context);
@@ -99,6 +117,36 @@ interface WriteContext {
   hashes: Record<string, string>;
 }
 
+function prepareContext(
+  _document: BridgeDocument,
+  assetData: Record<string, string>,
+  hashes: Record<string, string>,
+): WriteContext {
+  return {
+    nodes: new Map(),
+    images: new Map(),
+    assetData,
+    nodeCount: 0,
+    warnings: [],
+    hashes,
+  };
+}
+
+async function prepareAssets(
+  document: BridgeDocument,
+  context: WriteContext,
+): Promise<void> {
+  for (const asset of document.assets) {
+    if (asset.status !== "ready" || asset.kind !== "image") continue;
+    const encoded = context.assetData[asset.id];
+    if (!encoded) throw new Error(`Image data missing for ${asset.id}`);
+    context.images.set(
+      asset.id,
+      figma.createImage(figma.base64Decode(encoded)).hash,
+    );
+  }
+}
+
 async function preflightFonts(document: BridgeDocument): Promise<void> {
   const fonts = new Map<string, FontName>();
   visit(document.root, (node) => {
@@ -129,10 +177,34 @@ async function createNode(
   parent: BaseNode & ChildrenMixin,
   context: WriteContext,
 ): Promise<SceneNode> {
+  const node = createNodeShallow(source, parent, context);
+  if ("children" in node) {
+    for (const child of source.children) await createNode(child, node, context);
+  }
+  applySizingMode(node, source, parent);
+  return node;
+}
+
+function createNodeShallow(
+  source: BridgeNode,
+  parent: BaseNode & ChildrenMixin,
+  context: WriteContext,
+): SceneNode {
   const node = createNativeNode(source, context);
   parent.appendChild(node);
   context.nodes.set(source.bridgeId, node);
   context.nodeCount += 1;
+  applyNodeProperties(node, source, parent, context);
+  return node;
+}
+
+function applyNodeProperties(
+  node: SceneNode,
+  source: BridgeNode,
+  parent: BaseNode & ChildrenMixin,
+  context: WriteContext,
+): void {
+  assertCompatibleNode(node, source);
   node.name = source.name;
   node.visible = source.visible;
   if ("opacity" in node) node.opacity = source.opacity;
@@ -146,14 +218,95 @@ async function createNode(
   node.x = source.bounds.x;
   node.y = source.bounds.y;
   applyGeometry(node, source, context);
-
-  if ("children" in node) {
-    if (node.type === "FRAME" || node.type === "COMPONENT")
-      applyLayout(node, source);
-    for (const child of source.children) await createNode(child, node, context);
-  }
+  if (node.type === "FRAME" || node.type === "COMPONENT")
+    applyLayout(node, source);
   applySizingMode(node, source, parent);
-  return node;
+}
+
+function assertCompatibleNode(node: SceneNode, source: BridgeNode): void {
+  const expected = source.icon
+    ? "FRAME"
+    : source.kind === "frame" || source.kind === "group"
+      ? "FRAME"
+      : source.kind === "component"
+        ? "COMPONENT"
+        : source.kind === "rectangle"
+          ? "RECTANGLE"
+          : source.kind === "ellipse"
+            ? "ELLIPSE"
+            : source.kind === "polygon"
+              ? "POLYGON"
+              : source.kind === "text"
+                ? "TEXT"
+                : source.kind === "instance"
+                  ? "INSTANCE"
+                  : undefined;
+  if (expected && node.type !== expected)
+    throw new Error(
+      `Node type change requires replacement: ${source.bridgeId} (${node.type} → ${expected})`,
+    );
+}
+
+async function applySyncPlan(
+  document: BridgeDocument,
+  root: SceneNode,
+  plan: SyncPlan,
+  context: WriteContext,
+): Promise<void> {
+  const sources = new Map<string, BridgeNode>();
+  visit(document.root, (node) => sources.set(node.bridgeId, node));
+
+  for (const operation of plan.operations) {
+    if (operation.type !== "create") continue;
+    const source = sources.get(operation.bridgeId);
+    if (!source)
+      throw new Error(`Create source missing: ${operation.bridgeId}`);
+    const parent = operation.parentBridgeId
+      ? context.nodes.get(operation.parentBridgeId)
+      : figma.currentPage;
+    if (!parent || !("children" in parent))
+      throw new Error(`Create parent missing: ${operation.parentBridgeId}`);
+    const node = createNodeShallow(source, parent, context);
+    parent.insertChild(
+      Math.min(operation.index, parent.children.length - 1),
+      node,
+    );
+  }
+
+  for (const operation of plan.operations) {
+    if (operation.type !== "update") continue;
+    const source = sources.get(operation.bridgeId);
+    const node = context.nodes.get(operation.bridgeId);
+    if (!source || !node)
+      throw new Error(`Update mapping missing: ${operation.bridgeId}`);
+    const parent = node.parent;
+    if (!parent || !("children" in parent))
+      throw new Error(`Update parent missing: ${operation.bridgeId}`);
+    applyNodeProperties(node, source, parent, context);
+  }
+
+  for (const operation of plan.operations) {
+    if (operation.type !== "move") continue;
+    const node = context.nodes.get(operation.bridgeId);
+    const parent = operation.parentBridgeId
+      ? context.nodes.get(operation.parentBridgeId)
+      : figma.currentPage;
+    if (!node || !parent || !("children" in parent))
+      throw new Error(`Move mapping missing: ${operation.bridgeId}`);
+    parent.insertChild(Math.min(operation.index, parent.children.length), node);
+  }
+
+  for (const operation of plan.operations) {
+    if (operation.type !== "delete") continue;
+    const node = context.nodes.get(operation.bridgeId);
+    if (!node) continue;
+    node.remove();
+    context.nodes.delete(operation.bridgeId);
+  }
+
+  for (const [bridgeId, node] of context.nodes)
+    node.setPluginData(AUTHORED_HASH_KEY, context.hashes[bridgeId] ?? "");
+  context.nodes.set(document.root.bridgeId, root);
 }
 
 function createNativeNode(
@@ -218,18 +371,21 @@ function applyGeometry(
   source: BridgeNode,
   context: WriteContext,
 ): void {
-  if ("clipsContent" in node && source.clipsContent !== undefined)
-    node.clipsContent = source.clipsContent;
+  if ("clipsContent" in node) node.clipsContent = source.clipsContent ?? false;
   if (source.icon) {
     const tint = source.fills?.find((paint) => paint.type === "solid");
     if (tint?.type === "solid") tintSvg(node, tint);
-  } else if ("fills" in node && source.fills) {
-    node.fills = source.fills.map((paint) => toFigmaPaint(paint, context));
-  }
-  if ("strokes" in node && source.stroke) {
-    node.strokes = source.stroke.paints.map((paint) =>
+  } else if ("fills" in node) {
+    node.fills = (source.fills ?? []).map((paint) =>
       toFigmaPaint(paint, context),
     );
+  }
+  if ("strokes" in node) {
+    node.strokes = (source.stroke?.paints ?? []).map((paint) =>
+      toFigmaPaint(paint, context),
+    );
+  }
+  if ("strokes" in node && source.stroke) {
     node.strokeAlign =
       source.stroke.alignment === "outside"
         ? "OUTSIDE"
@@ -250,8 +406,8 @@ function applyGeometry(
       node.strokeLeftWeight = weights.left;
     } else context.warnings.push(`Flattened per-side stroke on ${source.name}`);
   }
-  if ("effects" in node && source.effects) {
-    node.effects = source.effects.map((effect): Effect => {
+  if ("effects" in node) {
+    node.effects = (source.effects ?? []).map((effect): Effect => {
       if (!("color" in effect)) {
         return {
           type: effect.type === "blur" ? "LAYER_BLUR" : "BACKGROUND_BLUR",
@@ -278,6 +434,11 @@ function applyGeometry(
       node.bottomRightRadius,
       node.bottomLeftRadius,
     ] = source.cornerRadii;
+  } else if ("topLeftRadius" in node) {
+    node.topLeftRadius = 0;
+    node.topRightRadius = 0;
+    node.bottomRightRadius = 0;
+    node.bottomLeftRadius = 0;
   }
   if (node.type === "TEXT" && source.text) applyText(node, source);
 }

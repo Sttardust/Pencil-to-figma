@@ -7,6 +7,17 @@ export interface IdentityRecord {
   nodeId: string;
 }
 
+export interface MappedSubtree {
+  records: Array<{
+    bridgeId: string;
+    nodeId: string;
+    parentBridgeId: string | undefined;
+    index: number;
+    authoredHash: string;
+  }>;
+  nodes: Map<string, SceneNode>;
+}
+
 export type IdentityState =
   | { status: "new" }
   | { status: "unchanged" }
@@ -69,4 +80,45 @@ export function readPageIdentities(page: PageNode): IdentityRecord[] {
       authoredHash: node.getPluginData(AUTHORED_HASH_KEY),
       nodeId: node.id,
     }));
+}
+
+export function findMappedRoots(page: PageNode, bridgeId: string): SceneNode[] {
+  return page.findAll((node) => node.getPluginData(BRIDGE_ID_KEY) === bridgeId);
+}
+
+export function readMappedSubtree(root: SceneNode): MappedSubtree {
+  const sceneNodes = [
+    root,
+    ...("findAll" in root
+      ? root.findAll((node) => node.getPluginData(BRIDGE_ID_KEY) !== "")
+      : []),
+  ];
+  const nodes = new Map<string, SceneNode>();
+  const records: MappedSubtree["records"] = [];
+  for (const node of sceneNodes) {
+    const bridgeId = node.getPluginData(BRIDGE_ID_KEY);
+    if (!bridgeId) continue;
+    if (nodes.has(bridgeId))
+      throw new Error(`Duplicate bridge identity ${bridgeId}`);
+    nodes.set(bridgeId, node);
+    const parent = node.parent;
+    const parentBridgeId =
+      parent && "getPluginData" in parent
+        ? parent.getPluginData(BRIDGE_ID_KEY) || undefined
+        : undefined;
+    const mappedSiblings =
+      parent && "children" in parent
+        ? parent.children.filter(
+            (child) => child.getPluginData(BRIDGE_ID_KEY) !== "",
+          )
+        : [node];
+    records.push({
+      bridgeId,
+      nodeId: node.id,
+      parentBridgeId,
+      index: mappedSiblings.indexOf(node),
+      authoredHash: node.getPluginData(AUTHORED_HASH_KEY),
+    });
+  }
+  return { records, nodes };
 }
