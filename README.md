@@ -59,6 +59,11 @@ frames become Figma components and resolvable refs become instances; dependency 
 kept outside the screen's sync manifest. Pencil descendant overrides currently preserve the
 component default and return an explicit warning until override mapping is enabled.
 
+Saved Pencil variables are retained in the bridge document and their current values are inlined
+for colors, font families, and corner radii so Figma receives the same appearance. Imports report
+this flattening explicitly until native Figma variable binding is enabled. Pencil icons from
+Lucide, Material Symbols Rounded, and Phosphor are packaged as SVG assets.
+
 When modifying the plugin, run its watch build in another terminal:
 
 ```sh

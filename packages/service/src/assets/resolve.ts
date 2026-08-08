@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import lucide from "@iconify-json/lucide/icons.json" with { type: "json" };
 import materialSymbols from "@iconify-json/material-symbols/icons.json" with { type: "json" };
+import phosphor from "@iconify-json/ph/icons.json" with { type: "json" };
 import { getIconData, iconToSVG } from "@iconify/utils";
 import {
   bridgeDocumentSchema,
@@ -76,9 +77,11 @@ function resolveIcon(sourceUri: string): {
   const collection =
     library === "lucide"
       ? lucide
-      : library === "Material Symbols Rounded"
-        ? materialSymbols
-        : undefined;
+      : library.toLowerCase() === "phosphor"
+        ? phosphor
+        : library === "Material Symbols Rounded"
+          ? materialSymbols
+          : undefined;
   const iconName =
     library === "Material Symbols Rounded" ? `${name}-rounded` : name;
   const icon = collection ? getIconData(collection, iconName) : undefined;

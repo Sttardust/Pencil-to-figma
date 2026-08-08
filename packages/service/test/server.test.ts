@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { BridgeServer } from "../src/server.js";
@@ -142,6 +142,18 @@ describe("BridgeServer", () => {
     );
     temporaryDirectories.push(directory);
     const penPath = path.join(directory, "components.pen");
+    await writeFile(
+      penPath,
+      JSON.stringify({
+        version: "2.15",
+        children: [],
+        variables: {
+          teal: { type: "color", value: "#2E4A44" },
+          "font-body": { type: "string", value: "Inter" },
+        },
+      }),
+      "utf8",
+    );
     const requested: string[] = [];
     const pen = {
       getAppState: async () => ({
@@ -169,8 +181,14 @@ describe("BridgeServer", () => {
             type: "frame",
             name: "Button component",
             reusable: true,
+            fill: "$teal",
             children: [
-              { id: "buttonLabel", type: "text", content: "Continue" },
+              {
+                id: "buttonLabel",
+                type: "text",
+                content: "Continue",
+                fontFamily: "$font-body",
+              },
             ],
           };
         throw new Error(`Unexpected node ${nodeId}`);
@@ -211,9 +229,22 @@ describe("BridgeServer", () => {
           {
             bridgeId: "pen:buttonComponent",
             kind: "component",
+            fills: [
+              {
+                type: "solid",
+                color: expect.objectContaining({ r: 46 / 255, g: 74 / 255 }),
+              },
+            ],
             children: [{ bridgeId: "pen:buttonLabel", kind: "text" }],
           },
         ],
+        variables: expect.arrayContaining([
+          expect.objectContaining({ id: "pen-var:teal", type: "color" }),
+          expect.objectContaining({
+            id: "pen-var:font-body",
+            type: "string",
+          }),
+        ]),
       },
     });
     expect(requested).toEqual(["screen", "buttonComponent"]);

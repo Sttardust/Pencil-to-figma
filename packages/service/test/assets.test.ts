@@ -33,6 +33,12 @@ function documentWithIcons(): BridgeDocument {
         kind: "svg",
         sourceUri: "icon://Material%20Symbols%20Rounded/search",
       },
+      {
+        status: "pending",
+        id: "asset:flower-lotus",
+        kind: "svg",
+        sourceUri: "icon://phosphor/flower-lotus",
+      },
     ],
     variables: [],
     warnings: [],
@@ -40,10 +46,10 @@ function documentWithIcons(): BridgeDocument {
 }
 
 describe("resolveAssets", () => {
-  it("packages Lucide and Material Symbols icons as ready SVG assets", async () => {
+  it("packages supported icon libraries as ready SVG assets", async () => {
     const result = await resolveAssets(documentWithIcons());
 
-    expect(result.document.assets).toHaveLength(2);
+    expect(result.document.assets).toHaveLength(3);
     expect(result.document.assets).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -58,9 +64,16 @@ describe("resolveAssets", () => {
           kind: "svg",
           mimeType: "image/svg+xml",
         }),
+        expect.objectContaining({
+          status: "ready",
+          id: "asset:flower-lotus",
+          kind: "svg",
+          mimeType: "image/svg+xml",
+        }),
       ]),
     );
     expect(result.assetData["asset:signal"]).toContain("<svg");
     expect(result.assetData["asset:search"]).toContain("<svg");
+    expect(result.assetData["asset:flower-lotus"]).toContain("<svg");
   });
 });

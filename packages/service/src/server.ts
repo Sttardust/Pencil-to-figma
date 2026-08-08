@@ -15,6 +15,7 @@ import {
 } from "./protocol.js";
 import { SessionManager } from "./session.js";
 import type { PenMcpClient } from "./pen/mcp-client.js";
+import { readPenVariables } from "./pen/variables.js";
 import {
   authoredDocumentHashes,
   classifyThreeWayDiff,
@@ -907,6 +908,7 @@ export class BridgeServer {
       documentId: penPath,
       useBridgeMetadata,
       components,
+      variables: await readPenVariables(penPath),
     });
   }
 

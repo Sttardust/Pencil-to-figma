@@ -270,4 +270,78 @@ describe("importPenDocument", () => {
       }),
     );
   });
+
+  it("preserves Pencil variable provenance while inlining authored values", () => {
+    const document = importPenDocument(
+      {
+        id: "root",
+        type: "frame",
+        fill: "$ink",
+        cornerRadius: "$radius-card",
+        children: [
+          {
+            id: "label",
+            type: "text",
+            content: "Hello",
+            fill: "$ink",
+            fontFamily: "$font-body",
+          },
+        ],
+      },
+      {
+        documentId: "test.pen",
+        variables: {
+          ink: { type: "color", value: "#1F2D2A" },
+          "font-body": { type: "string", value: "Inter" },
+          "radius-card": { type: "number", value: 16 },
+        },
+      },
+    );
+
+    expect(document.root).toMatchObject({
+      fills: [
+        {
+          type: "solid",
+          color: expect.objectContaining({
+            r: 31 / 255,
+            g: 45 / 255,
+            b: 42 / 255,
+          }),
+        },
+      ],
+      cornerRadii: [16, 16, 16, 16],
+      children: [
+        {
+          text: { style: { family: "Inter" } },
+        },
+      ],
+    });
+    expect(document.variables).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "pen-var:ink",
+          type: "color",
+          values: [
+            expect.objectContaining({
+              mode: {},
+              value: expect.objectContaining({ a: 1 }),
+            }),
+          ],
+        }),
+        expect.objectContaining({
+          id: "pen-var:font-body",
+          type: "string",
+          values: [{ mode: {}, value: "Inter" }],
+        }),
+      ]),
+    );
+    expect(document.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "PEN_VARIABLE_INLINED",
+          action: "flatten",
+        }),
+      ]),
+    );
+  });
 });

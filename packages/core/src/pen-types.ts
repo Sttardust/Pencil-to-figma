@@ -1,5 +1,12 @@
 export type PenSize = number | string;
 
+export interface PenVariableDefinition {
+  type: "boolean" | "number" | "string" | "color";
+  value: boolean | number | string;
+}
+
+export type PenVariableDefinitions = Record<string, PenVariableDefinition>;
+
 export interface PenNode {
   id: string;
   type: string;
@@ -29,7 +36,7 @@ export interface PenNode {
   strokeLinecap?: "butt" | "round" | "square";
   strokeLinejoin?: "miter" | "round" | "bevel";
   effect?: unknown;
-  cornerRadius?: number | [number, number, number, number];
+  cornerRadius?: number | string | [number, number, number, number];
   children?: PenNode[];
   content?: string;
   textGrowth?: "auto" | "fixed-width" | "fixed-width-height";
