@@ -99,7 +99,7 @@ export async function writeBridgeDocument(
         nodeCount: 0,
         operation: "unchanged",
         operations: plan.counts,
-        mappings: mappingsFromNodes(mapped.nodes),
+        mappings: mappingsFromNodes(mapped.nodes, rootBridgeIds(document)),
         warnings: document.warnings.map((warning) => warning.message),
       };
     }
@@ -110,7 +110,10 @@ export async function writeBridgeDocument(
     await prepareAssets(document, context);
     figma.commitUndo();
     try {
+      prepareLocalComponents(document, context);
+      await materializeComponentDependencies(document, context);
       await applySyncPlan(document, mappedRoot, plan, context);
+      discardUnusedPreparedComponents(context);
       figma.commitUndo();
     } catch (error) {
       figma.triggerUndo();
@@ -125,7 +128,7 @@ export async function writeBridgeDocument(
       nodeCount: plan.operations.length,
       operation: "updated",
       operations: plan.counts,
-      mappings: mappingsFromNodes(context.nodes),
+      mappings: mappingsFromNodes(context.nodes, rootBridgeIds(document)),
       warnings: [
         ...document.warnings.map((warning) => warning.message),
         ...context.warnings,
@@ -137,7 +140,10 @@ export async function writeBridgeDocument(
   await prepareAssets(document, context);
   let root: SceneNode | undefined;
   try {
+    prepareLocalComponents(document, context);
+    await materializeComponentDependencies(document, context);
     root = await createNode(document.root, figma.currentPage, context);
+    discardUnusedPreparedComponents(context);
     const center = figma.viewport.center;
     root.x = center.x - root.width / 2;
     root.y = center.y - root.height / 2;
@@ -145,9 +151,9 @@ export async function writeBridgeDocument(
     figma.viewport.scrollAndZoomIntoView([root]);
     return {
       rootId: root.id,
-      nodeCount: context.nodeCount,
+      nodeCount: rootBridgeIds(document).size,
       operation: "created",
-      mappings: mappingsFromNodes(context.nodes),
+      mappings: mappingsFromNodes(context.nodes, rootBridgeIds(document)),
       warnings: [
         ...document.warnings.map((warning) => warning.message),
         ...context.warnings,
@@ -155,6 +161,7 @@ export async function writeBridgeDocument(
     };
   } catch (error) {
     root?.remove();
+    removeCreatedComponents(context);
     throw error;
   }
 }
@@ -215,11 +222,22 @@ export async function writeBridgeNodeUpdates(
 
 function mappingsFromNodes(
   nodes: Map<string, SceneNode>,
+  includedBridgeIds?: ReadonlySet<string>,
 ): Array<{ bridgeId: string; figmaNodeId: string }> {
-  return [...nodes].map(([bridgeId, node]) => ({
-    bridgeId,
-    figmaNodeId: node.id,
-  }));
+  return [...nodes]
+    .filter(
+      ([bridgeId]) => !includedBridgeIds || includedBridgeIds.has(bridgeId),
+    )
+    .map(([bridgeId, node]) => ({
+      bridgeId,
+      figmaNodeId: node.id,
+    }));
+}
+
+function rootBridgeIds(document: BridgeDocument): Set<string> {
+  const bridgeIds = new Set<string>();
+  visit(document.root, (node) => bridgeIds.add(node.bridgeId));
+  return bridgeIds;
 }
 
 interface WriteContext {
@@ -229,6 +247,8 @@ interface WriteContext {
   nodeCount: number;
   warnings: string[];
   hashes: Record<string, string>;
+  preparedComponents: Map<string, ComponentNode>;
+  createdComponents: Set<ComponentNode>;
 }
 
 function prepareContext(
@@ -243,7 +263,81 @@ function prepareContext(
     nodeCount: 0,
     warnings: [],
     hashes,
+    preparedComponents: new Map(),
+    createdComponents: new Set(),
   };
+}
+
+function prepareLocalComponents(
+  document: BridgeDocument,
+  context: WriteContext,
+): void {
+  const prepare = (source: BridgeNode) => {
+    if (source.kind !== "component" || context.nodes.has(source.bridgeId))
+      return;
+    const existing = findMappedRoots(figma.currentPage, source.bridgeId).filter(
+      (node): node is ComponentNode => node.type === "COMPONENT",
+    );
+    if (existing.length > 1)
+      throw new Error(
+        `Duplicate component identity ${source.bridgeId}: ${existing.map((node) => node.id).join(", ")}`,
+      );
+    if (existing[0]) {
+      context.nodes.set(source.bridgeId, existing[0]);
+      return;
+    }
+    const component = figma.createComponent();
+    context.nodes.set(source.bridgeId, component);
+    context.preparedComponents.set(source.bridgeId, component);
+    context.createdComponents.add(component);
+  };
+  for (const component of document.components ?? []) visit(component, prepare);
+  visit(document.root, prepare);
+}
+
+async function materializeComponentDependencies(
+  document: BridgeDocument,
+  context: WriteContext,
+): Promise<void> {
+  for (const source of document.components ?? []) {
+    const existing = context.nodes.get(source.bridgeId);
+    if (existing && !context.preparedComponents.has(source.bridgeId)) {
+      if (existing.type !== "COMPONENT")
+        throw new Error(
+          `Component mapping is not a component: ${source.bridgeId}`,
+        );
+      const parent = existing.parent;
+      if (!parent || !("children" in parent))
+        throw new Error(`Component parent is missing: ${source.bridgeId}`);
+      applyNodeProperties(existing, source, parent, context);
+      continue;
+    }
+    await createNode(source, figma.currentPage, context);
+  }
+}
+
+function removePreparedComponents(context: WriteContext): void {
+  for (const component of context.preparedComponents.values()) {
+    if (component.parent) component.remove();
+    context.createdComponents.delete(component);
+  }
+  context.preparedComponents.clear();
+}
+
+function removeCreatedComponents(context: WriteContext): void {
+  for (const component of context.createdComponents)
+    if (component.parent) component.remove();
+  context.createdComponents.clear();
+  context.preparedComponents.clear();
+}
+
+function discardUnusedPreparedComponents(context: WriteContext): void {
+  if (!context.preparedComponents.size) return;
+  for (const [bridgeId] of context.preparedComponents)
+    context.warnings.push(
+      `COMPONENT_DEFINITION_SKIPPED: ${bridgeId} was nested inside a derived instance`,
+    );
+  removePreparedComponents(context);
 }
 
 async function prepareAssets(
@@ -272,6 +366,16 @@ async function preflightFonts(document: BridgeDocument): Promise<void> {
       fonts.set(`${font.family}\0${font.style}`, font);
     }
   });
+  for (const component of document.components ?? [])
+    visit(component, (node) => {
+      if (node.text) {
+        const font = {
+          family: node.text.style.family,
+          style: node.text.style.style,
+        };
+        fonts.set(`${font.family}\0${font.style}`, font);
+      }
+    });
   const failures: string[] = [];
   await Promise.all(
     [...fonts.values()].map(async (font) => {
@@ -292,8 +396,12 @@ async function createNode(
   context: WriteContext,
 ): Promise<SceneNode> {
   const node = createNodeShallow(source, parent, context);
-  if ("children" in node) {
+  if ("children" in node && node.type !== "INSTANCE") {
     for (const child of source.children) await createNode(child, node, context);
+  } else if (node.type === "INSTANCE" && source.children.length) {
+    context.warnings.push(
+      `INSTANCE_CHILDREN_DERIVED: ${source.name} uses its component's child structure`,
+    );
   }
   applySizingMode(node, source, parent);
   return node;
@@ -304,8 +412,11 @@ function createNodeShallow(
   parent: BaseNode & ChildrenMixin,
   context: WriteContext,
 ): SceneNode {
-  const node = createNativeNode(source, context);
+  const node =
+    context.preparedComponents.get(source.bridgeId) ??
+    createNativeNode(source, context);
   parent.appendChild(node);
+  context.preparedComponents.delete(source.bridgeId);
   context.nodes.set(source.bridgeId, node);
   context.nodeCount += 1;
   applyNodeProperties(node, source, parent, context);
@@ -355,7 +466,9 @@ function assertCompatibleNode(node: SceneNode, source: BridgeNode): void {
               : source.kind === "text"
                 ? "TEXT"
                 : source.kind === "instance"
-                  ? "INSTANCE"
+                  ? node.type === "FRAME"
+                    ? "FRAME"
+                    : "INSTANCE"
                   : undefined;
   if (expected && node.type !== expected)
     throw new Error(
@@ -462,8 +575,35 @@ function createNativeNode(
       const component = source.instance
         ? context.nodes.get(source.instance.componentBridgeId)
         : undefined;
-      if (component?.type === "COMPONENT") return component.createInstance();
-      context.warnings.push(`Flattened unresolved instance ${source.name}`);
+      if (component?.type === "COMPONENT") {
+        const instance = component.createInstance();
+        const overrides = source.instance?.overrides ?? {};
+        if (Object.keys(overrides).length > 0) {
+          if (source.source.app === "figma") {
+            const properties = Object.fromEntries(
+              Object.entries(overrides).filter(
+                (entry): entry is [string, string | boolean] =>
+                  typeof entry[1] === "string" || typeof entry[1] === "boolean",
+              ),
+            );
+            try {
+              instance.setProperties(properties);
+            } catch {
+              context.warnings.push(
+                `INSTANCE_OVERRIDES_SKIPPED: ${source.name} has incompatible component properties`,
+              );
+            }
+          } else {
+            context.warnings.push(
+              `INSTANCE_OVERRIDES_SKIPPED: ${source.name} keeps its component defaults`,
+            );
+          }
+        }
+        return instance;
+      }
+      context.warnings.push(
+        `INSTANCE_COMPONENT_UNRESOLVED: Flattened ${source.name}`,
+      );
       return figma.createFrame();
     }
   }

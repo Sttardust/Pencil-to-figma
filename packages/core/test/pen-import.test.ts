@@ -214,4 +214,60 @@ describe("importPenDocument", () => {
     expect(document.root.children[0]?.bridgeId).toBe("pen:originalChild");
     expect(document.root.children[0]?.source.nodeId).toBe("nativeChild");
   });
+
+  it("links refs to reusable frames by native identity, never by name", () => {
+    const document = importPenDocument(
+      {
+        id: "root",
+        type: "frame",
+        name: "Component fixture",
+        children: [
+          {
+            id: "instance",
+            type: "ref",
+            name: "Primary button",
+            ref: "nativeComponent",
+            descendants: { label: { content: "Continue" } },
+            children: [
+              { id: "derivedLabel", type: "text", content: "Continue" },
+            ],
+          },
+          {
+            id: "nativeComponent",
+            type: "frame",
+            name: "A completely different name",
+            reusable: true,
+            metadata: {
+              type: "pen-fig-bridge",
+              bridgeId: "figma:component:button",
+            },
+            children: [
+              { id: "componentLabel", type: "text", content: "Button" },
+            ],
+          },
+        ],
+      },
+      { documentId: "test.pen", useBridgeMetadata: true },
+    );
+
+    expect(document.root.children[0]).toMatchObject({
+      kind: "instance",
+      instance: {
+        componentBridgeId: "figma:component:button",
+        overrides: { label: { content: "Continue" } },
+      },
+      children: [],
+    });
+    expect(document.root.children[1]).toMatchObject({
+      bridgeId: "figma:component:button",
+      kind: "component",
+      component: { key: "nativeComponent" },
+    });
+    expect(document.warnings).toContainEqual(
+      expect.objectContaining({
+        code: "PEN_INSTANCE_OVERRIDES",
+        action: "skip",
+      }),
+    );
+  });
 });

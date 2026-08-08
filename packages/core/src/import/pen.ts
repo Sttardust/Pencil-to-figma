@@ -11,6 +11,7 @@ import type { PenNode, PenSize } from "../pen-types.js";
 export interface PenImportOptions {
   documentId: string;
   useBridgeMetadata?: boolean;
+  components?: PenNode[];
 }
 
 export function importPenDocument(
@@ -19,10 +20,35 @@ export function importPenDocument(
 ): BridgeDocument {
   const warnings: TransferWarning[] = [];
   const assets: BridgeAsset[] = [];
+  const componentNodes = options.components ?? [];
+  const componentBridgeIds = collectComponentBridgeIds(
+    [root, ...componentNodes],
+    options,
+  );
+  const importedRoot = importNode(
+    root,
+    options,
+    warnings,
+    assets,
+    componentBridgeIds,
+  );
+  removeDerivedInstanceChildren(
+    importedRoot,
+    new Set(componentBridgeIds.values()),
+  );
+  const components = componentNodes.map((component) =>
+    importNode(component, options, warnings, assets, componentBridgeIds),
+  );
+  for (const component of components)
+    removeDerivedInstanceChildren(
+      component,
+      new Set(componentBridgeIds.values()),
+    );
   const document: BridgeDocument = {
     version: 1,
     source: { app: "pen", documentId: options.documentId },
-    root: importNode(root, options, warnings, assets),
+    root: importedRoot,
+    ...(components.length ? { components } : {}),
     assets,
     variables: [],
     warnings,
@@ -35,15 +61,10 @@ function importNode(
   options: PenImportOptions,
   warnings: TransferWarning[],
   assets: BridgeAsset[],
+  componentBridgeIds: ReadonlyMap<string, string>,
 ): BridgeNode {
   if (!node.id || !node.type) throw new Error("Pen node is missing id or type");
-  const metadataBridgeId = node.metadata?.bridgeId;
-  const bridgeId =
-    options.useBridgeMetadata &&
-    typeof metadataBridgeId === "string" &&
-    metadataBridgeId
-      ? metadataBridgeId
-      : `pen:${node.id}`;
+  const bridgeId = bridgeIdForPenNode(node, options);
   const kind = mapKind(node, bridgeId, warnings);
   const width = mapSizing(node.width);
   const height = mapSizing(node.height);
@@ -52,7 +73,9 @@ function importNode(
       ? []
       : (node.children ?? [])
           .filter((child) => child.enabled !== false)
-          .map((child) => importNode(child, options, warnings, assets));
+          .map((child) =>
+            importNode(child, options, warnings, assets, componentBridgeIds),
+          );
 
   const result: BridgeNode = {
     bridgeId,
@@ -148,10 +171,20 @@ function importNode(
   } else if (kind === "component") {
     result.component = { key: node.id };
   } else if (kind === "instance") {
+    const ref = node.ref ?? "unknown";
     result.instance = {
-      componentBridgeId: `pen:${node.ref ?? "unknown"}`,
+      componentBridgeId: componentBridgeIds.get(ref) ?? `pen:${ref}`,
       overrides: node.descendants ?? {},
     };
+    if (Object.keys(node.descendants ?? {}).length)
+      warnings.push(
+        warning(
+          bridgeId,
+          "instance overrides",
+          "skip",
+          `Instance ${node.name ?? node.id} keeps its component defaults until Pencil descendant overrides are mapped`,
+        ),
+      );
   } else if (node.type === "icon" && node.icon) {
     const assetId = `pen-icon:${node.id}`;
     assets.push({
@@ -163,6 +196,45 @@ function importNode(
     result.icon = { assetId };
   }
   return result;
+}
+
+function collectComponentBridgeIds(
+  roots: PenNode[],
+  options: PenImportOptions,
+): Map<string, string> {
+  const componentBridgeIds = new Map<string, string>();
+  const visit = (node: PenNode) => {
+    if (node.reusable && node.type === "frame")
+      componentBridgeIds.set(node.id, bridgeIdForPenNode(node, options));
+    for (const child of node.children ?? []) visit(child);
+  };
+  for (const root of roots) visit(root);
+  return componentBridgeIds;
+}
+
+function bridgeIdForPenNode(node: PenNode, options: PenImportOptions): string {
+  const metadataBridgeId = node.metadata?.bridgeId;
+  return options.useBridgeMetadata &&
+    typeof metadataBridgeId === "string" &&
+    metadataBridgeId
+    ? metadataBridgeId
+    : `pen:${node.id}`;
+}
+
+function removeDerivedInstanceChildren(
+  node: BridgeNode,
+  localComponentBridgeIds: ReadonlySet<string>,
+): void {
+  if (
+    node.kind === "instance" &&
+    node.instance &&
+    localComponentBridgeIds.has(node.instance.componentBridgeId)
+  ) {
+    node.children = [];
+    return;
+  }
+  for (const child of node.children)
+    removeDerivedInstanceChildren(child, localComponentBridgeIds);
 }
 
 function mapKind(

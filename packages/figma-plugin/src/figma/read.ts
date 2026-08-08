@@ -39,6 +39,8 @@ export async function readSelectedFigmaDocument(): Promise<FigmaReadResult> {
   const root = readNode(selected, documentId, assets, warnings, fonts, () => {
     nodeCount += 1;
   });
+  removeDerivedInstanceChildren(root);
+  nodeCount = countBridgeNodes(root);
   const document = bridgeDocumentSchema.parse({
     version: 1,
     source: { app: "figma", documentId },
@@ -279,10 +281,43 @@ function readNode(
       componentBridgeId:
         component?.getPluginData(BRIDGE_ID_KEY) ||
         `figma:${component?.id ?? "unresolved"}`,
-      overrides: {},
+      overrides: Object.fromEntries(
+        Object.entries(node.componentProperties).map(([name, property]) => [
+          name,
+          property.value,
+        ]),
+      ),
     };
   }
   return result;
+}
+
+function removeDerivedInstanceChildren(root: BridgeNode): void {
+  const componentBridgeIds = new Set<string>();
+  const collect = (node: BridgeNode) => {
+    if (node.kind === "component") componentBridgeIds.add(node.bridgeId);
+    for (const child of node.children) collect(child);
+  };
+  collect(root);
+  const normalize = (node: BridgeNode) => {
+    if (
+      node.kind === "instance" &&
+      node.instance &&
+      componentBridgeIds.has(node.instance.componentBridgeId)
+    ) {
+      node.children = [];
+      return;
+    }
+    for (const child of node.children) normalize(child);
+  };
+  normalize(root);
+}
+
+function countBridgeNodes(node: BridgeNode): number {
+  return (
+    1 +
+    node.children.reduce((total, child) => total + countBridgeNodes(child), 0)
+  );
 }
 
 function mapKind(node: SceneNode): BridgeNode["kind"] {

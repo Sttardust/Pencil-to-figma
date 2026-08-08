@@ -136,6 +136,105 @@ describe("BridgeServer", () => {
     socket.close();
   });
 
+  it("bundles reusable Pencil components by ref identity", async () => {
+    const directory = await mkdtemp(
+      path.join(os.tmpdir(), "pen-fig-components-"),
+    );
+    temporaryDirectories.push(directory);
+    const penPath = path.join(directory, "components.pen");
+    const requested: string[] = [];
+    const pen = {
+      getAppState: async () => ({
+        text: `- Currently active canvas editor: \`${penPath}\``,
+      }),
+      getNode: async (nodeId: string): Promise<PenNode> => {
+        requested.push(nodeId);
+        if (nodeId === "screen")
+          return {
+            id: "screen",
+            type: "frame",
+            name: "Screen",
+            children: [
+              {
+                id: "buttonInstance",
+                type: "ref",
+                name: "Button instance",
+                ref: "buttonComponent",
+              },
+            ],
+          };
+        if (nodeId === "buttonComponent")
+          return {
+            id: "buttonComponent",
+            type: "frame",
+            name: "Button component",
+            reusable: true,
+            children: [
+              { id: "buttonLabel", type: "text", content: "Continue" },
+            ],
+          };
+        throw new Error(`Unexpected node ${nodeId}`);
+      },
+    } as PenMcpClient;
+    const server = new BridgeServer({ host: "127.0.0.1", port: 0, pen });
+    servers.push(server);
+    const port = await server.start();
+    const origin = `http://localhost:${port}`;
+    const paired = await fetch(`${origin}/pair`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        type: "pair",
+        protocol: 1,
+        code: server.pairingCode,
+      }),
+    }).then((response) => response.json());
+    const token = encodeURIComponent(String(paired.token));
+    await fetch(`${origin}/hello?token=${token}`, { method: "POST" });
+
+    const response = await fetch(`${origin}/pen/nodes/screen?token=${token}`);
+    expect(response.status).toBe(200);
+    const transferred = await response.json();
+    expect(transferred).toMatchObject({
+      type: "pen-document",
+      document: {
+        root: {
+          bridgeId: "pen:screen",
+          children: [
+            {
+              kind: "instance",
+              instance: { componentBridgeId: "pen:buttonComponent" },
+            },
+          ],
+        },
+        components: [
+          {
+            bridgeId: "pen:buttonComponent",
+            kind: "component",
+            children: [{ bridgeId: "pen:buttonLabel", kind: "text" }],
+          },
+        ],
+      },
+    });
+    expect(requested).toEqual(["screen", "buttonComponent"]);
+    const completed = await fetch(`${origin}/sync/complete?token=${token}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transferId: transferred.transferId,
+        mappings: [
+          { bridgeId: "pen:screen", figmaNodeId: "1:1" },
+          { bridgeId: "pen:buttonInstance", figmaNodeId: "1:2" },
+        ],
+      }),
+    });
+    expect(completed.status).toBe(200);
+    expect(await completed.json()).toMatchObject({
+      type: "sync-committed",
+      mappingCount: 2,
+    });
+  });
+
   it("adopts an existing Pencil copy and commits its Figma baseline", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "pen-fig-adopt-"));
     temporaryDirectories.push(directory);

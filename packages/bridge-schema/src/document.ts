@@ -67,6 +67,7 @@ export const bridgeDocumentSchema = z
     version: z.literal(1),
     source: sourceRefSchema.omit({ nodeId: true }),
     root: bridgeNodeSchema,
+    components: z.array(bridgeNodeSchema).max(100).optional(),
     assets: z.array(assetSchema),
     variables: z.array(variableSchema),
     warnings: z.array(warningSchema),

@@ -20,6 +20,7 @@ import {
   classifyThreeWayDiff,
   importPenDocument,
   snapshotBridgeDocument,
+  type PenNode,
 } from "@pen-fig/core";
 import { resolveAssets } from "./assets/resolve.js";
 import { ManifestRepository } from "./manifest/repository.js";
@@ -280,7 +281,10 @@ export class BridgeServer {
       if (nodeMatch?.[1]) {
         const penPath = await this.#requireActivePenPath();
         const node = await this.#pen.getNode(nodeMatch[1]);
-        const document = importPenDocument(node, { documentId: penPath });
+        const document = await this.#importPenDocumentWithComponents(
+          node,
+          penPath,
+        );
         const resolved = await resolveAssets(document);
         const transferId = randomUUID();
         this.#pruneTransfers();
@@ -873,6 +877,39 @@ export class BridgeServer {
     return penPath;
   }
 
+  async #importPenDocumentWithComponents(
+    root: PenNode,
+    penPath: string,
+    useBridgeMetadata = false,
+  ): Promise<BridgeDocument> {
+    const knownComponentIds = collectReusablePenIds(root);
+    const queued = collectPenRefs(root).filter(
+      (ref) => !knownComponentIds.has(ref),
+    );
+    const visited = new Set<string>();
+    const components: PenNode[] = [];
+    while (queued.length) {
+      const ref = queued.shift()!;
+      if (visited.has(ref) || knownComponentIds.has(ref)) continue;
+      visited.add(ref);
+      if (components.length >= 100)
+        throw new Error("Pencil component dependency limit exceeded (100)");
+      const component = await this.#pen.getNode(ref);
+      if (component.type !== "frame" || !component.reusable)
+        throw new Error(`Pencil ref ${ref} is not a reusable frame`);
+      components.push(component);
+      knownComponentIds.add(component.id);
+      for (const nestedRef of collectPenRefs(component))
+        if (!visited.has(nestedRef) && !knownComponentIds.has(nestedRef))
+          queued.push(nestedRef);
+    }
+    return importPenDocument(root, {
+      documentId: penPath,
+      useBridgeMetadata,
+      components,
+    });
+  }
+
   async #commitFigmaExportManifest(
     document: BridgeDocument,
     mappings: PenBridgeMapping[],
@@ -1142,6 +1179,26 @@ function visitBridgeNodes(
 ): void {
   callback(node);
   for (const child of node.children) visitBridgeNodes(child, callback);
+}
+
+function collectPenRefs(root: PenNode): string[] {
+  const refs = new Set<string>();
+  const visit = (node: PenNode) => {
+    if (node.type === "ref" && node.ref) refs.add(node.ref);
+    for (const child of node.children ?? []) visit(child);
+  };
+  visit(root);
+  return [...refs];
+}
+
+function collectReusablePenIds(root: PenNode): Set<string> {
+  const ids = new Set<string>();
+  const visit = (node: PenNode) => {
+    if (node.type === "frame" && node.reusable) ids.add(node.id);
+    for (const child of node.children ?? []) visit(child);
+  };
+  visit(root);
+  return ids;
 }
 
 function bridgeSubtreeIds(

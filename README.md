@@ -54,6 +54,11 @@ placeholder and removed automatically if a chunk fails. After adoption, mapped p
 and explicit conflict resolution can update that copy in place; structural conflict resolution is
 not enabled yet.
 
+Pencil → Figma imports also resolve local Pencil `ref` dependencies by native identity. Reusable
+frames become Figma components and resolvable refs become instances; dependency components are
+kept outside the screen's sync manifest. Pencil descendant overrides currently preserve the
+component default and return an explicit warning until override mapping is enabled.
+
 When modifying the plugin, run its watch build in another terminal:
 
 ```sh
