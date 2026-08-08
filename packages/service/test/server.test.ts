@@ -582,6 +582,158 @@ describe("BridgeServer", () => {
       manifest: { revision: 4, mappingCount: 2 },
     });
     expect(executeWriteCount).toBe(2);
+
+    adoptedRoot.children!.push({
+      id: "adoptedSubtitle",
+      type: "text",
+      content: "Added in Pencil",
+      metadata: { type: "pen-fig-bridge", bridgeId: "pen:subtitle" },
+    });
+    const structuralPreview = await fetch(
+      `${origin}/figma/sync/preview?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ document: updatedFigmaDocument }),
+      },
+    );
+    expect(await structuralPreview.json()).toMatchObject({
+      counts: { "pen-only": 1, added: 1 },
+      actions: { toPencil: 0, toFigma: 2 },
+    });
+
+    const prepareStructuralUpdate = await fetch(
+      `${origin}/figma/sync/apply?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          document: updatedFigmaDocument,
+          assetData: {},
+        }),
+      },
+    );
+    expect(prepareStructuralUpdate.status).toBe(200);
+    const preparedStructural = await prepareStructuralUpdate.json();
+    expect(preparedStructural).toMatchObject({
+      type: "figma-sync-resolution-prepared",
+      operation: "updated-figma",
+      direction: "pen",
+      structural: true,
+      bridgeIds: ["pen:root", "pen:subtitle"],
+    });
+
+    const structurallyUpdatedFigmaDocument =
+      structuredClone(updatedFigmaDocument);
+    const preparedSubtitle = (
+      preparedStructural.document as BridgeDocument
+    ).root.children.find((node) => node.bridgeId === "pen:subtitle")!;
+    structurallyUpdatedFigmaDocument.root.children.push({
+      ...structuredClone(preparedSubtitle),
+      source: {
+        app: "figma",
+        documentId: "figma-file",
+        nodeId: "figma-subtitle",
+      },
+    });
+    const completeStructuralUpdate = await fetch(
+      `${origin}/figma/sync/resolve/complete?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          resolutionId: preparedStructural.resolutionId,
+          document: structurallyUpdatedFigmaDocument,
+        }),
+      },
+    );
+    const completedStructural = await completeStructuralUpdate.json();
+    expect(completedStructural).toMatchObject({
+      type: "figma-sync-result",
+      ok: true,
+      operation: "updated-figma",
+      updatedNodeCount: 2,
+      updatedBridgeIds: ["pen:root", "pen:subtitle"],
+      manifest: { revision: 5, mappingCount: 3 },
+    });
+    expect(completeStructuralUpdate.status).toBe(200);
+
+    adoptedRoot.children!.reverse();
+    const prepareReorder = await fetch(
+      `${origin}/figma/sync/apply?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          document: structurallyUpdatedFigmaDocument,
+          assetData: {},
+        }),
+      },
+    ).then((response) => response.json());
+    expect(prepareReorder).toMatchObject({
+      type: "figma-sync-resolution-prepared",
+      structural: true,
+      bridgeIds: ["pen:root"],
+    });
+    const reorderedFigmaDocument = structuredClone(
+      structurallyUpdatedFigmaDocument,
+    );
+    reorderedFigmaDocument.root.children.reverse();
+    const completeReorder = await fetch(
+      `${origin}/figma/sync/resolve/complete?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          resolutionId: prepareReorder.resolutionId,
+          document: reorderedFigmaDocument,
+        }),
+      },
+    );
+    expect(completeReorder.status).toBe(200);
+    expect(await completeReorder.json()).toMatchObject({
+      operation: "updated-figma",
+      updatedBridgeIds: ["pen:root"],
+      manifest: { revision: 6, mappingCount: 3 },
+    });
+
+    adoptedRoot.children!.shift();
+    const prepareDeletion = await fetch(
+      `${origin}/figma/sync/apply?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          document: reorderedFigmaDocument,
+          assetData: {},
+        }),
+      },
+    ).then((response) => response.json());
+    expect(prepareDeletion).toMatchObject({
+      type: "figma-sync-resolution-prepared",
+      structural: true,
+      bridgeIds: ["pen:root", "pen:subtitle"],
+    });
+    const deletedFigmaDocument = structuredClone(reorderedFigmaDocument);
+    deletedFigmaDocument.root.children.shift();
+    const completeDeletion = await fetch(
+      `${origin}/figma/sync/resolve/complete?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          resolutionId: prepareDeletion.resolutionId,
+          document: deletedFigmaDocument,
+        }),
+      },
+    );
+    expect(completeDeletion.status).toBe(200);
+    expect(await completeDeletion.json()).toMatchObject({
+      operation: "updated-figma",
+      updatedBridgeIds: ["pen:root", "pen:subtitle"],
+      manifest: { revision: 7, mappingCount: 2 },
+    });
+    expect(executeWriteCount).toBe(2);
   });
 
   it("rejects requests before authentication", async () => {

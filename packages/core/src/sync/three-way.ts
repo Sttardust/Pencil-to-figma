@@ -9,6 +9,7 @@ export interface CurrentNodeSnapshot {
   bridgeId: string;
   nodeId: string;
   parentBridgeId: string | undefined;
+  index: number;
   authoredHash: string;
 }
 
@@ -48,16 +49,23 @@ export function snapshotBridgeDocument(
 ): CurrentNodeSnapshot[] {
   const hashes = authoredDocumentHashes(document);
   const snapshots: CurrentNodeSnapshot[] = [];
-  const visit = (node: BridgeNode, parentBridgeId: string | undefined) => {
+  const visit = (
+    node: BridgeNode,
+    parentBridgeId: string | undefined,
+    index: number,
+  ) => {
     snapshots.push({
       bridgeId: node.bridgeId,
       nodeId: node.source.nodeId,
       parentBridgeId,
+      index,
       authoredHash: hashes[node.bridgeId]!,
     });
-    for (const child of node.children) visit(child, node.bridgeId);
+    node.children.forEach((child, childIndex) =>
+      visit(child, node.bridgeId, childIndex),
+    );
   };
-  visit(document.root, undefined);
+  visit(document.root, undefined, 0);
   return snapshots;
 }
 

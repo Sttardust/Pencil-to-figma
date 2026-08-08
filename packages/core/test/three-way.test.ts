@@ -187,11 +187,13 @@ function current(
   bridgeId: string,
   authoredHash: string,
   parentBridgeId?: string,
+  index = 0,
 ): CurrentNodeSnapshot {
   return {
     bridgeId,
     nodeId: `${bridgeId}-native`,
     parentBridgeId,
+    index,
     authoredHash,
   };
 }

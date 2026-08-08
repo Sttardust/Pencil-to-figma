@@ -397,13 +397,18 @@ async function completePreparedFigmaUpdate(
     typeof prepared.document !== "object"
   )
     throw new Error("Bridge returned an invalid Figma update");
-  await writeBridgeNodeUpdates(
-    prepared.document,
-    prepared.bridgeIds as string[],
+  const assetData =
     prepared.assetData && typeof prepared.assetData === "object"
       ? (prepared.assetData as Record<string, string>)
-      : {},
-  );
+      : {};
+  if (prepared.structural === true)
+    await writeBridgeDocument(prepared.document, assetData);
+  else
+    await writeBridgeNodeUpdates(
+      prepared.document,
+      prepared.bridgeIds as string[],
+      assetData,
+    );
   const verified = await readSelectedFigmaDocument();
   const response = await fetch(
     `http://localhost:32145/figma/sync/resolve/complete?token=${encodeURIComponent(token)}`,

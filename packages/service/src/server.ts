@@ -63,6 +63,7 @@ export class BridgeServer {
       requiredFigmaChangeIds: string[];
       initialFigmaHashes: Record<string, string>;
       preparedPenHashes: Record<string, string>;
+      structural: boolean;
       manifestRevision: number;
       operation: "updated-figma" | "resolved-keep-pen";
       resolvedBridgeId?: string;
@@ -545,18 +546,20 @@ export class BridgeServer {
           throw new Error(
             "Both editors have independent changes; apply one direction at a time",
           );
-        const unsupportedStructural = state.diff.entries.filter(
-          (entry) =>
-            entry.classification === "added" ||
-            entry.classification === "deleted",
-        );
-        if (unsupportedStructural.length)
+        const structural = hasStructuralDifference(state.diff.entries);
+        if (structural && actions.toPencil)
           throw new Error(
-            `Structural sync is not enabled yet: ${unsupportedStructural[0]!.bridgeId}`,
+            "Figma-originated structural sync is not enabled yet",
           );
 
         const changedFigmaBridgeIds = state.diff.entries
-          .filter((entry) => entry.classification === "pen-only")
+          .filter(
+            (entry) =>
+              entry.classification === "pen-only" ||
+              ((entry.classification === "added" ||
+                entry.classification === "deleted") &&
+                entry.side === "pen"),
+          )
           .map((entry) => entry.bridgeId);
         if (actions.toFigma !== changedFigmaBridgeIds.length)
           throw new Error("Sync contains unsupported Figma operations");
@@ -576,6 +579,7 @@ export class BridgeServer {
             requiredFigmaChangeIds: changedFigmaBridgeIds,
             initialFigmaHashes: authoredDocumentHashes(syncRequest.document),
             preparedPenHashes: authoredDocumentHashes(state.penDocument),
+            structural,
             manifestRevision: state.manifest.revision,
             operation: "updated-figma",
             createdAt: Date.now(),
@@ -585,6 +589,7 @@ export class BridgeServer {
             ok: true,
             direction: "pen",
             operation: "updated-figma",
+            structural,
             resolutionId,
             bridgeIds: changedFigmaBridgeIds,
             document: resolved.document,
@@ -784,6 +789,7 @@ export class BridgeServer {
             resolutionRequest.document,
           ),
           preparedPenHashes: authoredDocumentHashes(state.penDocument),
+          structural: false,
           manifestRevision: state.manifest.revision,
           operation: "resolved-keep-pen",
           resolvedBridgeId: resolutionRequest.bridgeId,
@@ -838,15 +844,14 @@ export class BridgeServer {
             penNodeId: mapping.penNodeId,
           };
         });
-        const penMappings = collectMappedPenBridgeMappings(
-          penRoot,
-          currentMappings,
-        );
         const penDocument = await this.#importPenDocumentWithComponents(
           penRoot,
           penPath,
           true,
         );
+        const penMappings = pending.structural
+          ? collectPenDocumentMappings(penDocument)
+          : collectMappedPenBridgeMappings(penRoot, currentMappings);
         const penHashes = authoredDocumentHashes(penDocument);
         const figmaHashes = authoredDocumentHashes(completion.document);
         const resolutionIds = new Set(pending.bridgeIds);
@@ -873,14 +878,21 @@ export class BridgeServer {
           throw new Error(
             `Figma verification found no resolved change for ${missingFigmaChange}`,
           );
-        const manifest = await this.#commitPartialFigmaExportManifest(
-          completion.document,
-          penMappings,
-          penPath,
-          penDocument,
-          currentManifest,
-          pending.bridgeIds,
-        );
+        const manifest = pending.structural
+          ? await this.#commitFigmaExportManifest(
+              completion.document,
+              penMappings,
+              penPath,
+              penDocument,
+            )
+          : await this.#commitPartialFigmaExportManifest(
+              completion.document,
+              penMappings,
+              penPath,
+              penDocument,
+              currentManifest,
+              pending.bridgeIds,
+            );
         this.#resolutions.delete(completion.resolutionId);
         json(response, 200, {
           type: "figma-sync-result",
@@ -1209,6 +1221,33 @@ function countSyncDirections(
     }
   }
   return counts;
+}
+
+function hasStructuralDifference(
+  entries: ReturnType<typeof classifyThreeWayDiff>["entries"],
+): boolean {
+  return entries.some((entry) => {
+    if (entry.classification === "added") return true;
+    if (entry.classification === "deleted") return entry.side !== "both";
+    return Boolean(
+      entry.pen &&
+      entry.figma &&
+      (entry.pen.parentBridgeId !== entry.figma.parentBridgeId ||
+        entry.pen.index !== entry.figma.index),
+    );
+  });
+}
+
+function collectPenDocumentMappings(
+  document: BridgeDocument,
+): PenBridgeMapping[] {
+  const mappings: PenBridgeMapping[] = [];
+  visitBridgeNodes(document.root, (node) => {
+    if (node.source.app !== "pen")
+      throw new Error(`Bridge node ${node.bridgeId} has no Pencil source`);
+    mappings.push({ bridgeId: node.bridgeId, penNodeId: node.source.nodeId });
+  });
+  return mappings;
 }
 
 function extractActivePenPath(text: string): string | undefined {
