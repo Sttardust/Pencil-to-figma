@@ -171,10 +171,16 @@ describe("writeFigmaCopyToPen", () => {
       getTopLevelBounds: async () => undefined,
       executeWrite: async (input: string) => {
         calls.push(input);
-        const mapping = /Print\("MAP","\|","([^"]+)","\|",[A-Za-z0-9_]+\)/.exec(
-          input,
-        );
-        return mapping ? `MAP | ${mapping[1]} | p${nextId++}` : "OK";
+        const mappings = [
+          ...input.matchAll(
+            /Print\("MAP","\|","([^"]+)","\|",[A-Za-z0-9_]+\)/g,
+          ),
+        ];
+        return mappings.length
+          ? mappings
+              .map((mapping) => `MAP | ${mapping[1]} | p${nextId++}`)
+              .join("\n")
+          : "OK";
       },
     } as unknown as PenMcpClient;
 

@@ -31,10 +31,7 @@ export async function writeFigmaCopyToPen(
 ): Promise<PenExportResult> {
   const transferId = randomUUID();
   const assetPaths = await stageFigmaAssets(document, assetData, penPath);
-  const plan = planFigmaToPenCreate(document, {
-    assetPaths,
-    ...(document.components?.length ? { maxOperationsPerChunk: 1 } : {}),
-  });
+  const plan = planFigmaToPenCreate(document, { assetPaths });
   const nativeIds = new Map<string, string>();
   const sourceId = document.root.bridgeId.startsWith("pen:")
     ? document.root.bridgeId.slice(4)

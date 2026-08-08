@@ -48,38 +48,59 @@ export function planFigmaToPenCreate(
   options: PenPlanOptions = {},
 ): PenCreatePlan {
   const warnings = [...document.warnings];
-  const operations: PenWriteOperation[] = document.assets.map((asset) => ({
+  const assetOperations: PenWriteOperation[] = document.assets.map((asset) => ({
     type: "prepare-asset",
     assetId: asset.id,
     kind: asset.kind,
   }));
-  for (const component of document.components ?? [])
+  const groups: PenWriteOperation[][] = [];
+  for (const [index, component] of (document.components ?? []).entries()) {
+    const componentOperations: PenWriteOperation[] = [];
     visit(component, undefined, (node, parentBridgeId) => {
-      operations.push({
+      componentOperations.push({
         type: "insert",
         bridgeId: node.bridgeId,
         parentBridgeId,
         payload: toPenPayload(node, document, warnings, options.assetPaths),
       });
     });
+    groups.push(
+      index === 0
+        ? [...assetOperations, ...componentOperations]
+        : componentOperations,
+    );
+  }
+  const rootOperations: PenWriteOperation[] = groups.length
+    ? []
+    : [...assetOperations];
   visit(document.root, undefined, (node, parentBridgeId) => {
-    operations.push({
+    rootOperations.push({
       type: "insert",
       bridgeId: node.bridgeId,
       parentBridgeId,
       payload: toPenPayload(node, document, warnings, options.assetPaths),
     });
   });
-  operations.push({ type: "finalize-root", bridgeId: document.root.bridgeId });
+  rootOperations.push({
+    type: "finalize-root",
+    bridgeId: document.root.bridgeId,
+  });
+  groups.push(rootOperations);
+  const operations = groups.flat();
+  const chunks = groups
+    .flatMap((group) =>
+      chunkOperations(
+        group,
+        options.maxOperationsPerChunk ?? 20,
+        options.maxBytesPerChunk ?? 48 * 1024,
+      ),
+    )
+    .map((chunk, index) => ({ ...chunk, index }));
   return {
     mode: "create-copy",
     rootBridgeId: document.root.bridgeId,
     operations,
-    chunks: chunkOperations(
-      operations,
-      options.maxOperationsPerChunk ?? 20,
-      options.maxBytesPerChunk ?? 48 * 1024,
-    ),
+    chunks,
     counts: {
       assets: operations.filter(
         (operation) => operation.type === "prepare-asset",

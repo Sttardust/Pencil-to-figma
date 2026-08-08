@@ -158,6 +158,17 @@ describe("planFigmaToPenCreate", () => {
         "figma:component-label": { content: "Continue" },
       },
     });
+    expect(plan.chunks).toHaveLength(2);
+    expect(
+      plan.chunks[0]!.operations.filter(
+        (operation) => operation.type === "insert",
+      ).map((operation) => operation.bridgeId),
+    ).toEqual(["figma:component", "figma:component-label"]);
+    expect(
+      plan.chunks[1]!.operations.filter(
+        (operation) => operation.type === "insert",
+      ).map((operation) => operation.bridgeId),
+    ).toEqual(["pen:root", "figma:instance"]);
   });
 
   it("declares SVG wrapper rasterization", () => {
