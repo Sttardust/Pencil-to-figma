@@ -11,6 +11,7 @@ export interface PenNode {
   rotation?: number;
   opacity?: number;
   enabled?: boolean;
+  metadata?: { type: string; [key: string]: unknown };
   clip?: boolean;
   layout?: "none" | "horizontal" | "vertical";
   layoutPosition?: "auto" | "absolute";

@@ -20,6 +20,7 @@ export interface PenExportResult {
   chunkCount: number;
   assetCount: number;
   warnings: string[];
+  mappings: Array<{ bridgeId: string; penNodeId: string }>;
 }
 
 export async function writeFigmaCopyToPen(
@@ -123,6 +124,10 @@ export async function writeFigmaCopyToPen(
     chunkCount: plan.chunks.length,
     assetCount: plan.counts.assets,
     warnings: plan.warnings.map((warning) => warning.message),
+    mappings: [...nativeIds].map(([bridgeId, penNodeId]) => ({
+      bridgeId,
+      penNodeId,
+    })),
   };
 }
 

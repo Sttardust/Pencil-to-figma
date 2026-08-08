@@ -9,7 +9,11 @@ let pendingFigmaExport: FigmaReadResult | undefined;
 
 figma.showUI(__html__, { width: 360, height: 520, themeColors: true });
 
-figma.ui.onmessage = async (message: { type: string; token?: unknown }) => {
+figma.ui.onmessage = async (message: {
+  type: string;
+  token?: unknown;
+  penRootId?: unknown;
+}) => {
   if (message.type === "selection-summary") {
     await figma.currentPage.loadAsync();
     figma.ui.postMessage({
@@ -135,6 +139,49 @@ figma.ui.onmessage = async (message: { type: string; token?: unknown }) => {
         ok: false,
         message:
           error instanceof Error ? error.message : "Pencil export failed",
+      });
+    }
+  }
+
+  if (message.type === "adopt-figma-export") {
+    try {
+      if (!pendingFigmaExport)
+        throw new Error("Preview the selected Figma frame first");
+      if (typeof message.token !== "string" || !message.token)
+        throw new Error("Pair and authenticate first");
+      if (
+        typeof message.penRootId !== "string" ||
+        !/^[A-Za-z0-9]+$/.test(message.penRootId)
+      )
+        throw new Error("Enter a valid Pencil root ID");
+      const response = await fetch(
+        `http://localhost:32145/figma/export/adopt?token=${encodeURIComponent(message.token)}`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-pen-fig-token": message.token,
+          },
+          body: JSON.stringify({
+            document: pendingFigmaExport.document,
+            penRootId: message.penRootId,
+          }),
+        },
+      );
+      const result = (await response.json()) as Record<string, unknown>;
+      if (!response.ok)
+        throw new Error(
+          typeof result.message === "string"
+            ? result.message
+            : `Bridge error ${response.status}`,
+        );
+      figma.ui.postMessage(result);
+    } catch (error) {
+      figma.ui.postMessage({
+        type: "figma-export-adopted",
+        ok: false,
+        message:
+          error instanceof Error ? error.message : "Pencil adoption failed",
       });
     }
   }

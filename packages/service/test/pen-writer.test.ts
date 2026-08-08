@@ -71,7 +71,15 @@ describe("writeFigmaCopyToPen", () => {
       pen,
     );
 
-    expect(result).toMatchObject({ rootId: "p1", nodeCount: 2, assetCount: 1 });
+    expect(result).toMatchObject({
+      rootId: "p1",
+      nodeCount: 2,
+      assetCount: 1,
+      mappings: [
+        { bridgeId: "pen:root", penNodeId: "p1" },
+        { bridgeId: "pen:card", penNodeId: "p2" },
+      ],
+    });
     expect(calls.join("\n")).toContain('"x":613');
     expect(calls.join("\n")).toContain(".pen-fig-assets/");
     expect(await readdir(path.join(directory, ".pen-fig-assets"))).toHaveLength(

@@ -19,6 +19,11 @@ import { authoredDocumentHashes, importPenDocument } from "@pen-fig/core";
 import { resolveAssets } from "./assets/resolve.js";
 import { ManifestRepository } from "./manifest/repository.js";
 import { writeFigmaCopyToPen } from "./export/pen-writer.js";
+import {
+  buildFigmaExportManifest,
+  collectPenBridgeMappings,
+  type PenBridgeMapping,
+} from "./manifest/figma-export.js";
 
 export interface BridgeServerOptions {
   host: string;
@@ -335,11 +340,47 @@ export class BridgeServer {
           penPath,
           this.#pen,
         );
+        const { mappings, ...summary } = result;
+        const manifest = await this.#commitFigmaExportManifest(
+          exportRequest.document,
+          mappings,
+          penPath,
+        );
         json(response, 200, {
           type: "figma-export-result",
           ok: true,
           operation: "created-copy",
-          ...result,
+          ...summary,
+          manifest,
+        });
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/figma/export/adopt"
+      ) {
+        const adoptRequest = figmaAdoptRequestSchema.parse(
+          await readJsonBody(request, 5 * 1024 * 1024),
+        );
+        const penPath = await this.#requireActivePenPath();
+        const root = await this.#pen.getNode(adoptRequest.penRootId);
+        if (root.metadata?.bridgeId !== adoptRequest.document.root.bridgeId)
+          throw new Error(
+            `Pencil root ${root.id} does not match ${adoptRequest.document.root.bridgeId}`,
+          );
+        const mappings = collectPenBridgeMappings(root);
+        const manifest = await this.#commitFigmaExportManifest(
+          adoptRequest.document,
+          mappings,
+          penPath,
+        );
+        json(response, 200, {
+          type: "figma-export-adopted",
+          ok: true,
+          operation: "adopted-copy",
+          rootId: root.id,
+          nodeCount: mappings.length,
+          manifest,
         });
         return;
       }
@@ -366,6 +407,31 @@ export class BridgeServer {
       throw new Error("Pencil did not report an active .pen document");
     this.#activePenPath = penPath;
     return penPath;
+  }
+
+  async #commitFigmaExportManifest(
+    document: BridgeDocument,
+    mappings: PenBridgeMapping[],
+    penPath: string,
+  ): Promise<{
+    revision: number;
+    mappingCount: number;
+    manifestPath: string;
+  }> {
+    const manifestPath = sidecarPath(penPath);
+    const previous = await this.#manifests.read(manifestPath);
+    const manifest = buildFigmaExportManifest(
+      document,
+      mappings,
+      penPath,
+      previous,
+    );
+    await this.#manifests.writeAtomic(manifestPath, manifest);
+    return {
+      revision: manifest.revision,
+      mappingCount: manifest.mappings.length,
+      manifestPath,
+    };
   }
 
   #pruneTransfers(): void {
@@ -448,6 +514,13 @@ const figmaExportRequestSchema = z
         })
         .strict(),
     ),
+  })
+  .strict();
+
+const figmaAdoptRequestSchema = z
+  .object({
+    document: bridgeDocumentSchema,
+    penRootId: z.string().regex(/^[A-Za-z0-9]+$/),
   })
   .strict();
 

@@ -7,6 +7,8 @@ const output = required<HTMLElement>("output");
 const screenList = required<HTMLElement>("screen-list");
 const screenQuery = required<HTMLInputElement>("screen-query");
 const exportCopy = required<HTMLButtonElement>("export-copy");
+const adoptRootId = required<HTMLInputElement>("adopt-root-id");
+const adoptCopy = required<HTMLButtonElement>("adopt-copy");
 let token: string | undefined;
 let pendingExportPlan: any;
 let pendingImport:
@@ -47,6 +49,7 @@ required("selection").addEventListener("click", () =>
 required("preview-export").addEventListener("click", () => {
   pendingExportPlan = undefined;
   exportCopy.disabled = true;
+  adoptCopy.disabled = true;
   setStatus("Reading Figma…", true);
   parent.postMessage({ pluginMessage: { type: "preview-figma-export" } }, "*");
 });
@@ -69,6 +72,31 @@ exportCopy.addEventListener("click", () => {
       pluginMessage: {
         type: "execute-figma-export",
         token,
+      },
+    },
+    "*",
+  );
+});
+adoptCopy.addEventListener("click", () => {
+  const penRootId = adoptRootId.value.trim();
+  if (!token || !/^[A-Za-z0-9]+$/.test(penRootId)) {
+    detail.textContent = "Enter a valid existing Pencil root ID.";
+    return;
+  }
+  if (
+    !confirm(
+      `Adopt Pencil root ${penRootId} as the synchronized counterpart of this Figma frame?\n\nNo design nodes will be changed. The sidecar mapping and baseline will be updated atomically.`,
+    )
+  )
+    return;
+  adoptCopy.disabled = true;
+  setStatus("Adopting Pencil copy…", true);
+  parent.postMessage(
+    {
+      pluginMessage: {
+        type: "adopt-figma-export",
+        token,
+        penRootId,
       },
     },
     "*",
@@ -160,6 +188,7 @@ window.onmessage = (event) => {
         message.ok,
       );
       if (!message.ok) detail.textContent = message.message;
+      adoptCopy.disabled = !message.ok;
     }
     if (message.type === "figma-export-plan") {
       setStatus(
@@ -183,7 +212,17 @@ window.onmessage = (event) => {
       exportCopy.disabled = !pendingExportPlan;
       if (!message.ok) detail.textContent = message.message;
       else
-        detail.textContent = `Created ${message.nodeCount} editable nodes in Pencil as ${message.rootId}.`;
+        detail.textContent = `Created and mapped ${message.nodeCount} editable nodes in Pencil as ${message.rootId}.`;
+    }
+    if (message.type === "figma-export-adopted") {
+      setStatus(
+        message.ok ? "Pencil copy adopted" : "Pencil adoption failed",
+        message.ok,
+      );
+      adoptCopy.disabled = false;
+      if (!message.ok) detail.textContent = message.message;
+      else
+        detail.textContent = `Mapped ${message.nodeCount} nodes from Pencil root ${message.rootId} at manifest revision ${message.manifest.revision}.`;
     }
   }
 };

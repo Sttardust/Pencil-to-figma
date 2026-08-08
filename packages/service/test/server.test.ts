@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { BridgeServer } from "../src/server.js";
 import type { PenMcpClient } from "../src/pen/mcp-client.js";
+import { importPenDocument } from "@pen-fig/core";
+import type { BridgeDocument } from "@pen-fig/bridge-schema";
 
 const servers: BridgeServer[] = [];
 const temporaryDirectories: string[] = [];
@@ -134,6 +136,78 @@ describe("BridgeServer", () => {
     socket.close();
   });
 
+  it("adopts an existing Pencil copy and commits its Figma baseline", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "pen-fig-adopt-"));
+    temporaryDirectories.push(directory);
+    const penPath = path.join(directory, "test.pen");
+    const pen = {
+      getAppState: async () => ({
+        text: `- Currently active canvas editor: \`${penPath}\``,
+      }),
+      getNode: async () => ({
+        id: "adoptedRoot",
+        type: "frame",
+        metadata: { type: "pen-fig-export", bridgeId: "pen:root" },
+        children: [
+          {
+            id: "adoptedTitle",
+            type: "text",
+            metadata: { type: "pen-fig-bridge", bridgeId: "pen:title" },
+          },
+        ],
+      }),
+    } as PenMcpClient;
+    const server = new BridgeServer({ host: "127.0.0.1", port: 0, pen });
+    servers.push(server);
+    const port = await server.start();
+    const origin = `http://localhost:${port}`;
+    const paired = await fetch(`${origin}/pair`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        type: "pair",
+        protocol: 1,
+        code: server.pairingCode,
+      }),
+    }).then((response) => response.json());
+    const token = encodeURIComponent(String(paired.token));
+    await fetch(`${origin}/hello?token=${token}`, { method: "POST" });
+
+    const response = await fetch(
+      `${origin}/figma/export/adopt?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          document: figmaExportDocument(),
+          penRootId: "adoptedRoot",
+        }),
+      },
+    );
+    const adopted = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(adopted).toMatchObject({
+      type: "figma-export-adopted",
+      ok: true,
+      rootId: "adoptedRoot",
+      nodeCount: 2,
+      manifest: { revision: 0, mappingCount: 2 },
+    });
+    expect(
+      JSON.parse(
+        await readFile(path.join(directory, "test.pen-fig.json"), "utf8"),
+      ),
+    ).toMatchObject({
+      figmaDocumentId: "figma-file",
+      revision: 0,
+      mappings: [
+        { bridgeId: "pen:root", penNodeId: "adoptedRoot" },
+        { bridgeId: "pen:title", penNodeId: "adoptedTitle" },
+      ],
+    });
+  });
+
   it("rejects requests before authentication", async () => {
     const pen = {} as PenMcpClient;
     const server = new BridgeServer({ host: "127.0.0.1", port: 0, pen });
@@ -158,4 +232,29 @@ function onceMessage(socket: WebSocket): Promise<Record<string, any>> {
   return new Promise((resolve) =>
     socket.once("message", (data) => resolve(JSON.parse(data.toString()))),
   );
+}
+
+function figmaExportDocument(): BridgeDocument {
+  const document = importPenDocument(
+    {
+      id: "root",
+      type: "frame",
+      name: "Screen",
+      width: 393,
+      height: 844,
+      children: [{ id: "title", type: "text", content: "Hello", fontSize: 20 }],
+    },
+    { documentId: "/tmp/test.pen" },
+  );
+  document.source = { app: "figma", documentId: "figma-file" };
+  const visit = (node: BridgeDocument["root"]) => {
+    node.source = {
+      app: "figma",
+      documentId: "figma-file",
+      nodeId: node.bridgeId === "pen:root" ? "figma-root" : "figma-title",
+    };
+    for (const child of node.children) visit(child);
+  };
+  visit(document.root);
+  return document;
 }
