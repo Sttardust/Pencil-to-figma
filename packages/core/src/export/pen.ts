@@ -114,7 +114,7 @@ function toPenPayload(
   if (node === document.root) payload.placeholder = true;
   if (node.kind === "component") payload.reusable = true;
   if (node.kind === "instance" && node.instance) {
-    payload.ref = nativePenId(node.instance.componentBridgeId);
+    payload.ref = node.instance.componentBridgeId;
     payload.descendants = node.instance.overrides;
   }
   if (
@@ -325,10 +325,6 @@ function penBlendMode(value: Paint["blendMode"]): string {
 function assetRelativePath(assetId: string, fallbackExtension: string): string {
   const safe = assetId.replace(/[^A-Za-z0-9._-]+/g, "-");
   return `./.pen-fig-assets/${safe}.${fallbackExtension === "svg" ? "png" : "bin"}`;
-}
-
-function nativePenId(bridgeId: string): string {
-  return bridgeId.startsWith("pen:") ? bridgeId.slice(4) : bridgeId;
 }
 
 function visit(

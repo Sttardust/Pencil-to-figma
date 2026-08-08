@@ -188,6 +188,7 @@ function preparePayload(
   if (payload.type === "ref" && typeof payload.ref === "string") {
     const mapped = nativeIds.get(payload.ref);
     if (mapped) payload.ref = mapped;
+    else if (payload.ref.startsWith("pen:")) payload.ref = payload.ref.slice(4);
     else if (payload.ref.startsWith("figma:"))
       throw new Error(`Unresolved Figma component ${payload.ref}`);
   }
