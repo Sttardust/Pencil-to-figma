@@ -944,6 +944,64 @@ describe("BridgeServer", () => {
       nodeCount: 4,
       manifest: { revision: 0, mappingCount: 2 },
     });
+
+    const unchangedPreview = await fetch(
+      `${origin}/figma/sync/preview?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ document }),
+      },
+    ).then((preview) => preview.json());
+    expect(unchangedPreview).toMatchObject({
+      type: "figma-sync-preview",
+      ok: true,
+      counts: {
+        unchanged: 2,
+        "pen-only": 0,
+        "figma-only": 0,
+        conflicted: 0,
+        added: 0,
+        deleted: 0,
+        unmapped: 0,
+      },
+      structural: false,
+    });
+
+    const edited = structuredClone(document);
+    edited.root.children[0]!.instance!.overrides = {
+      "pen:label": { content: "Join" },
+    };
+    const changedPreview = await fetch(
+      `${origin}/figma/sync/preview?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ document: edited }),
+      },
+    ).then((preview) => preview.json());
+    expect(changedPreview).toMatchObject({
+      type: "figma-sync-preview",
+      ok: true,
+      counts: {
+        unchanged: 1,
+        "pen-only": 0,
+        "figma-only": 1,
+        conflicted: 0,
+        added: 0,
+        deleted: 0,
+        unmapped: 0,
+      },
+      actions: { toPencil: 1, toFigma: 0, conflicts: 0, unmapped: 0 },
+      structural: false,
+      changes: [
+        {
+          bridgeId: "pen:instance",
+          classification: "figma-only",
+          side: "figma",
+        },
+      ],
+    });
   });
 
   it("resolves reorder conflicts by keeping either editor", async () => {

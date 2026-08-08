@@ -508,11 +508,20 @@ export class BridgeServer {
           throw new Error(
             `Figma root mapping points to ${rootMapping.figmaNodeId}, not ${syncRequest.document.root.source.nodeId}`,
           );
+        const penMappings = manifest.mappings.map((mapping) => {
+          if (!mapping.penNodeId)
+            throw new Error(`Pencil mapping missing ${mapping.bridgeId}`);
+          return {
+            bridgeId: mapping.bridgeId,
+            penNodeId: mapping.penNodeId,
+          };
+        });
         const penRoot = await this.#pen.getNode(rootMapping.penNodeId);
         const penDocument = await this.#importPenDocumentWithComponents(
           penRoot,
           penPath,
           true,
+          penMappings,
         );
         if (penDocument.root.bridgeId !== syncRequest.document.root.bridgeId)
           throw new Error("Mapped Pencil root bridge identity does not match");
@@ -711,6 +720,7 @@ export class BridgeServer {
           verifiedRoot,
           penPath,
           true,
+          verifiedMappings,
         );
         const committed = structural
           ? await this.#commitFigmaExportManifest(
@@ -855,6 +865,7 @@ export class BridgeServer {
               verifiedRoot,
               penPath,
               true,
+              verifiedMappings,
             );
           const verifiedHashes = authoredDocumentHashes(verifiedPenDocument);
           if (structural)
@@ -969,6 +980,7 @@ export class BridgeServer {
           penRoot,
           penPath,
           true,
+          currentMappings,
         );
         const penMappings = pending.structural
           ? collectPenDocumentMappings(penDocument)
@@ -1238,11 +1250,20 @@ export class BridgeServer {
       throw new Error("The selected Figma root is not fully mapped");
     if (rootMapping.figmaNodeId !== document.root.source.nodeId)
       throw new Error("The selected Figma root does not own this mapping");
+    const penMappings = manifest.mappings.map((mapping) => {
+      if (!mapping.penNodeId)
+        throw new Error(`Pencil mapping missing ${mapping.bridgeId}`);
+      return {
+        bridgeId: mapping.bridgeId,
+        penNodeId: mapping.penNodeId,
+      };
+    });
     const penRoot = await this.#pen.getNode(rootMapping.penNodeId);
     const penDocument = await this.#importPenDocumentWithComponents(
       penRoot,
       penPath,
       true,
+      penMappings,
     );
     if (penDocument.root.bridgeId !== document.root.bridgeId)
       throw new Error("Mapped Pencil root bridge identity does not match");
