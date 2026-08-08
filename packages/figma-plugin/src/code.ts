@@ -253,7 +253,11 @@ figma.ui.onmessage = async (message: {
             ? result.message
             : `Bridge error ${response.status}`,
         );
-      figma.ui.postMessage(result);
+      figma.ui.postMessage(
+        result.type === "figma-sync-resolution-prepared"
+          ? await completePreparedFigmaUpdate(result, message.token)
+          : result,
+      );
     } catch (error) {
       figma.ui.postMessage({
         type: "figma-sync-result",
@@ -300,48 +304,9 @@ figma.ui.onmessage = async (message: {
         figma.ui.postMessage(prepared);
         return;
       }
-      if (
-        typeof prepared.resolutionId !== "string" ||
-        !Array.isArray(prepared.bridgeIds) ||
-        !prepared.bridgeIds.every((bridgeId) => typeof bridgeId === "string") ||
-        !prepared.document ||
-        typeof prepared.document !== "object"
-      )
-        throw new Error("Bridge returned an invalid conflict resolution");
-      await writeBridgeNodeUpdates(
-        prepared.document,
-        prepared.bridgeIds as string[],
-        prepared.assetData && typeof prepared.assetData === "object"
-          ? (prepared.assetData as Record<string, string>)
-          : {},
+      figma.ui.postMessage(
+        await completePreparedFigmaUpdate(prepared, message.token),
       );
-      const verified = await readSelectedFigmaDocument();
-      const completionResponse = await fetch(
-        `http://localhost:32145/figma/sync/resolve/complete?token=${encodeURIComponent(message.token)}`,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-pen-fig-token": message.token,
-          },
-          body: JSON.stringify({
-            resolutionId: prepared.resolutionId,
-            document: verified.document,
-          }),
-        },
-      );
-      const completed = (await completionResponse.json()) as Record<
-        string,
-        unknown
-      >;
-      if (!completionResponse.ok)
-        throw new Error(
-          typeof completed.message === "string"
-            ? completed.message
-            : `Bridge error ${completionResponse.status}`,
-        );
-      pendingFigmaExport = verified;
-      figma.ui.postMessage(completed);
     } catch (error) {
       figma.ui.postMessage({
         type: "figma-sync-result",
@@ -390,3 +355,48 @@ figma.ui.onmessage = async (message: {
     }
   }
 };
+
+async function completePreparedFigmaUpdate(
+  prepared: Record<string, unknown>,
+  token: string,
+): Promise<Record<string, unknown>> {
+  if (
+    typeof prepared.resolutionId !== "string" ||
+    !Array.isArray(prepared.bridgeIds) ||
+    !prepared.bridgeIds.every((bridgeId) => typeof bridgeId === "string") ||
+    !prepared.document ||
+    typeof prepared.document !== "object"
+  )
+    throw new Error("Bridge returned an invalid Figma update");
+  await writeBridgeNodeUpdates(
+    prepared.document,
+    prepared.bridgeIds as string[],
+    prepared.assetData && typeof prepared.assetData === "object"
+      ? (prepared.assetData as Record<string, string>)
+      : {},
+  );
+  const verified = await readSelectedFigmaDocument();
+  const response = await fetch(
+    `http://localhost:32145/figma/sync/resolve/complete?token=${encodeURIComponent(token)}`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-pen-fig-token": token,
+      },
+      body: JSON.stringify({
+        resolutionId: prepared.resolutionId,
+        document: verified.document,
+      }),
+    },
+  );
+  const completed = (await response.json()) as Record<string, unknown>;
+  if (!response.ok)
+    throw new Error(
+      typeof completed.message === "string"
+        ? completed.message
+        : `Bridge error ${response.status}`,
+    );
+  pendingFigmaExport = verified;
+  return completed;
+}

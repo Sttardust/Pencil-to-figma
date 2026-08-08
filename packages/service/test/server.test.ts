@@ -380,6 +380,60 @@ describe("BridgeServer", () => {
       manifest: { revision: 3, mappingCount: 2 },
     });
     expect(executeWriteCount).toBe(2);
+
+    adoptedRoot.children![0]!.content = "Pencil-only update";
+    const preparePencilUpdate = await fetch(
+      `${origin}/figma/sync/apply?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          document: resolvedFigmaDocument,
+          assetData: {},
+        }),
+      },
+    );
+    expect(preparePencilUpdate.status).toBe(200);
+    const preparedUpdate = await preparePencilUpdate.json();
+    expect(preparedUpdate).toMatchObject({
+      type: "figma-sync-resolution-prepared",
+      ok: true,
+      operation: "updated-figma",
+      direction: "pen",
+      resolutionId: expect.any(String),
+      bridgeIds: ["pen:title"],
+      document: {
+        root: {
+          children: [{ text: { characters: "Pencil-only update" } }],
+        },
+      },
+    });
+    expect(executeWriteCount).toBe(2);
+
+    const updatedFigmaDocument = figmaExportDocument();
+    updatedFigmaDocument.root.children[0]!.text!.characters =
+      "Pencil-only update";
+    const completePencilUpdate = await fetch(
+      `${origin}/figma/sync/resolve/complete?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          resolutionId: preparedUpdate.resolutionId,
+          document: updatedFigmaDocument,
+        }),
+      },
+    );
+    expect(completePencilUpdate.status).toBe(200);
+    expect(await completePencilUpdate.json()).toMatchObject({
+      type: "figma-sync-result",
+      ok: true,
+      operation: "updated-figma",
+      updatedNodeCount: 1,
+      updatedBridgeIds: ["pen:title"],
+      manifest: { revision: 4, mappingCount: 2 },
+    });
+    expect(executeWriteCount).toBe(2);
   });
 
   it("rejects requests before authentication", async () => {

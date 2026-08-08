@@ -61,6 +61,8 @@ export class BridgeServer {
       initialFigmaHashes: Record<string, string>;
       preparedPenHashes: Record<string, string>;
       manifestRevision: number;
+      operation: "updated-figma" | "resolved-keep-pen";
+      resolvedBridgeId?: string;
       createdAt: number;
     }
   >();
@@ -497,57 +499,28 @@ export class BridgeServer {
           await readJsonBody(request, 50 * 1024 * 1024),
         );
         const penPath = await this.#requireActivePenPath();
-        const manifestPath = sidecarPath(penPath);
-        const manifest = await this.#manifests.read(manifestPath);
-        if (!manifest) throw new Error("No sync manifest exists for this file");
-        if (manifest.penDocumentId !== penPath)
-          throw new Error("Sync manifest belongs to a different Pencil file");
-        const rootMapping = manifest.mappings.find(
-          (mapping) => mapping.bridgeId === syncRequest.document.root.bridgeId,
-        );
-        if (!rootMapping?.penNodeId || !rootMapping.figmaNodeId)
-          throw new Error("The selected Figma root is not fully mapped");
-        if (rootMapping.figmaNodeId !== syncRequest.document.root.source.nodeId)
-          throw new Error("The selected Figma root does not own this mapping");
-        const penRoot = await this.#pen.getNode(rootMapping.penNodeId);
-        const penDocument = importPenDocument(penRoot, {
-          documentId: penPath,
-          useBridgeMetadata: true,
-        });
-        if (penDocument.root.bridgeId !== syncRequest.document.root.bridgeId)
-          throw new Error("Mapped Pencil root bridge identity does not match");
-        const penSnapshots = snapshotBridgeDocument(penDocument);
-        const figmaSnapshots = snapshotBridgeDocument(syncRequest.document);
-        const relevantBridgeIds = new Set([
-          ...penSnapshots.map((snapshot) => snapshot.bridgeId),
-          ...figmaSnapshots.map((snapshot) => snapshot.bridgeId),
-        ]);
-        const baseline = manifest.mappings.filter((mapping) =>
-          relevantBridgeIds.has(mapping.bridgeId),
+        const state = await this.#readMappedSyncState(
+          syncRequest.document,
+          penPath,
         );
         if (
-          baseline.some(
+          state.baseline.some(
             (mapping) => !mapping.penBaselineHash || !mapping.figmaBaselineHash,
           )
         )
           throw new Error(
             "Adopt this Pencil root again to upgrade its baseline",
           );
-        const diff = classifyThreeWayDiff(
-          baseline,
-          penSnapshots,
-          figmaSnapshots,
-        );
-        const actions = countSyncDirections(diff.entries);
+        const actions = countSyncDirections(state.diff.entries);
         if (actions.conflicts || actions.unmapped)
           throw new Error(
             "Sync has conflicts or unmapped nodes; no writes applied",
           );
-        if (actions.toFigma)
+        if (actions.toPencil && actions.toFigma)
           throw new Error(
-            "Pencil also has changes; apply or resolve those before writing Pencil",
+            "Both editors have independent changes; apply one direction at a time",
           );
-        const unsupportedStructural = diff.entries.filter(
+        const unsupportedStructural = state.diff.entries.filter(
           (entry) =>
             entry.classification === "added" ||
             entry.classification === "deleted",
@@ -556,51 +529,96 @@ export class BridgeServer {
           throw new Error(
             `Structural sync is not enabled yet: ${unsupportedStructural[0]!.bridgeId}`,
           );
-        const changedBridgeIds = diff.entries
+
+        const changedFigmaBridgeIds = state.diff.entries
+          .filter((entry) => entry.classification === "pen-only")
+          .map((entry) => entry.bridgeId);
+        if (actions.toFigma !== changedFigmaBridgeIds.length)
+          throw new Error("Sync contains unsupported Figma operations");
+        if (changedFigmaBridgeIds.length > 40)
+          throw new Error(
+            `Pencil update has ${changedFigmaBridgeIds.length} nodes; the atomic limit is 40`,
+          );
+        if (changedFigmaBridgeIds.length) {
+          const resolved = await resolveAssets(state.penDocument);
+          const resolutionId = randomUUID();
+          this.#pruneTransfers();
+          this.#resolutions.set(resolutionId, {
+            penPath,
+            rootBridgeId: syncRequest.document.root.bridgeId,
+            penRootId: state.rootMapping.penNodeId,
+            bridgeIds: changedFigmaBridgeIds,
+            requiredFigmaChangeIds: changedFigmaBridgeIds,
+            initialFigmaHashes: authoredDocumentHashes(syncRequest.document),
+            preparedPenHashes: authoredDocumentHashes(state.penDocument),
+            manifestRevision: state.manifest.revision,
+            operation: "updated-figma",
+            createdAt: Date.now(),
+          });
+          json(response, 200, {
+            type: "figma-sync-resolution-prepared",
+            ok: true,
+            direction: "pen",
+            operation: "updated-figma",
+            resolutionId,
+            bridgeIds: changedFigmaBridgeIds,
+            document: resolved.document,
+            assetData: resolved.assetData,
+          });
+          return;
+        }
+
+        const changedPenBridgeIds = state.diff.entries
           .filter((entry) => entry.classification === "figma-only")
           .map((entry) => entry.bridgeId);
-        if (actions.toPencil !== changedBridgeIds.length)
+        if (actions.toPencil !== changedPenBridgeIds.length)
           throw new Error("Sync contains unsupported Pencil operations");
-        if (!changedBridgeIds.length) {
+        if (!changedPenBridgeIds.length) {
           json(response, 200, {
             type: "figma-sync-result",
             ok: true,
             operation: "unchanged",
             updatedNodeCount: 0,
-            manifestRevision: manifest.revision,
+            manifestRevision: state.manifest.revision,
           });
           return;
         }
-        const penMappings: PenBridgeMapping[] = baseline.map((mapping) => {
-          if (!mapping.penNodeId)
-            throw new Error(`Pencil mapping missing ${mapping.bridgeId}`);
-          return {
-            bridgeId: mapping.bridgeId,
-            penNodeId: mapping.penNodeId,
-          };
-        });
+        const penMappings: PenBridgeMapping[] = state.baseline.map(
+          (mapping) => {
+            if (!mapping.penNodeId)
+              throw new Error(`Pencil mapping missing ${mapping.bridgeId}`);
+            return {
+              bridgeId: mapping.bridgeId,
+              penNodeId: mapping.penNodeId,
+            };
+          },
+        );
         const update = await writeFigmaUpdatesToPen(
           syncRequest.document,
-          changedBridgeIds,
+          changedPenBridgeIds,
           penMappings,
-          penRoot,
+          state.penRoot,
           syncRequest.assetData,
           penPath,
           this.#pen,
         );
-        const verifiedRoot = await this.#pen.getNode(rootMapping.penNodeId);
+        const verifiedRoot = await this.#pen.getNode(
+          state.rootMapping.penNodeId,
+        );
         const verifiedMappings = collectPenBridgeMappings(verifiedRoot);
-        if (verifiedMappings.length !== figmaSnapshots.length)
+        if (verifiedMappings.length !== state.baseline.length)
           throw new Error("Pencil verification found a mapping count mismatch");
         const verifiedPenDocument = importPenDocument(verifiedRoot, {
           documentId: penPath,
           useBridgeMetadata: true,
         });
-        const committed = await this.#commitFigmaExportManifest(
+        const committed = await this.#commitPartialFigmaExportManifest(
           syncRequest.document,
           verifiedMappings,
           penPath,
           verifiedPenDocument,
+          state.manifest,
+          changedPenBridgeIds,
         );
         json(response, 200, {
           type: "figma-sync-result",
@@ -733,6 +751,8 @@ export class BridgeServer {
           ),
           preparedPenHashes: authoredDocumentHashes(state.penDocument),
           manifestRevision: state.manifest.revision,
+          operation: "resolved-keep-pen",
+          resolvedBridgeId: resolutionRequest.bridgeId,
           createdAt: Date.now(),
         });
         json(response, 200, {
@@ -754,7 +774,7 @@ export class BridgeServer {
           await readJsonBody(request, 5 * 1024 * 1024),
         );
         const pending = this.#resolutions.get(completion.resolutionId);
-        if (!pending) throw new Error("Conflict resolution expired");
+        if (!pending) throw new Error("Pending Figma update expired");
         const penPath = await this.#requireActivePenPath();
         if (penPath !== pending.penPath)
           throw new Error("Conflict resolution belongs to another Pencil file");
@@ -819,8 +839,10 @@ export class BridgeServer {
         json(response, 200, {
           type: "figma-sync-result",
           ok: true,
-          operation: "resolved-keep-pen",
-          resolvedBridgeId: pending.bridgeIds[0],
+          operation: pending.operation,
+          ...(pending.resolvedBridgeId
+            ? { resolvedBridgeId: pending.resolvedBridgeId }
+            : { updatedBridgeIds: pending.bridgeIds }),
           updatedNodeCount: pending.bridgeIds.length,
           manifest,
         });

@@ -125,15 +125,19 @@ previewSync.addEventListener("click", () => {
 });
 applySync.addEventListener("click", () => {
   if (!token || !pendingSyncPreview) return;
-  const count = pendingSyncPreview.actions.toPencil;
+  const toPencil = pendingSyncPreview.actions.toPencil;
+  const toFigma = pendingSyncPreview.actions.toFigma;
+  const count = toPencil || toFigma;
+  const source = toPencil ? "Figma" : "Pencil";
+  const target = toPencil ? "Pencil" : "Figma";
   if (
     !confirm(
-      `Apply ${count} Figma-only node update${count === 1 ? "" : "s"} to the mapped Pencil copy?\n\nThe updates run in one atomic Pencil transaction.`,
+      `Apply ${count} ${source}-only node update${count === 1 ? "" : "s"} to ${target}?\n\nThe updates run in one atomic, undoable ${target} transaction.`,
     )
   )
     return;
   applySync.disabled = true;
-  setStatus("Updating Pencil…", true);
+  setStatus(`Updating ${target}…`, true);
   parent.postMessage(
     { pluginMessage: { type: "apply-mapped-sync", token } },
     "*",
@@ -298,11 +302,16 @@ window.onmessage = (event) => {
       if (pendingConflict) {
         conflictSummary.textContent = `${conflicts.length} conflict${conflicts.length === 1 ? "" : "s"} found. Resolve ${pendingConflict.bridgeId} by choosing which editor wins. The other editor will be updated atomically.`;
       }
+      if (message.actions.toPencil > 0 && message.actions.toFigma === 0)
+        applySync.textContent = "Apply Figma changes to Pencil…";
+      else if (message.actions.toFigma > 0 && message.actions.toPencil === 0)
+        applySync.textContent = "Apply Pencil changes to Figma…";
+      else applySync.textContent = "Apply mapped changes…";
       applySync.disabled = !(
         message.ok &&
         !message.baselineUpgradeRequired &&
-        message.actions.toPencil > 0 &&
-        message.actions.toFigma === 0 &&
+        ((message.actions.toPencil > 0 && message.actions.toFigma === 0) ||
+          (message.actions.toFigma > 0 && message.actions.toPencil === 0)) &&
         message.actions.conflicts === 0 &&
         message.actions.unmapped === 0 &&
         message.counts.added === 0 &&
@@ -324,7 +333,9 @@ window.onmessage = (event) => {
               ? "Kept Pencil version"
               : message.operation === "resolved-keep-figma"
                 ? "Kept Figma version"
-                : "Pencil updated"
+                : message.operation === "updated-figma"
+                  ? "Figma updated"
+                  : "Pencil updated"
           : "Sync apply failed",
         message.ok,
       );
@@ -334,8 +345,10 @@ window.onmessage = (event) => {
         keepFigma.disabled = false;
         cancelConflict.disabled = false;
         applySync.disabled = !(
-          pendingSyncPreview?.actions?.toPencil > 0 &&
-          pendingSyncPreview?.actions?.toFigma === 0 &&
+          ((pendingSyncPreview?.actions?.toPencil > 0 &&
+            pendingSyncPreview?.actions?.toFigma === 0) ||
+            (pendingSyncPreview?.actions?.toFigma > 0 &&
+              pendingSyncPreview?.actions?.toPencil === 0)) &&
           pendingSyncPreview?.actions?.conflicts === 0
         );
       } else {
@@ -345,7 +358,7 @@ window.onmessage = (event) => {
         detail.textContent =
           message.operation === "unchanged"
             ? "No Pencil updates were required."
-            : `${message.operation === "resolved-keep-pen" ? "Updated Figma from Pencil" : "Updated Pencil from Figma"} for ${message.updatedNodeCount} node${message.updatedNodeCount === 1 ? "" : "s"}; manifest revision ${message.manifest.revision}.`;
+            : `${message.operation === "resolved-keep-pen" || message.operation === "updated-figma" ? "Updated Figma from Pencil" : "Updated Pencil from Figma"} for ${message.updatedNodeCount} node${message.updatedNodeCount === 1 ? "" : "s"}; manifest revision ${message.manifest.revision}.`;
       }
     }
   }
