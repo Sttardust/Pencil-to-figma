@@ -38,4 +38,14 @@ describe("authoredDocumentHashes", () => {
     expect(changed["pen:root"]).not.toBe(baseline["pen:root"]);
     expect(changed["pen:two"]).toBe(baseline["pen:two"]);
   });
+
+  it("hashes Unicode design text without browser encoding globals", () => {
+    const document = importPenDocument(
+      { id: "unicode", type: "text", content: "ሰላም 🌸" },
+      { documentId: "test.pen" },
+    );
+    expect(authoredDocumentHashes(document)["pen:unicode"]).toMatch(
+      /^[a-f0-9]{64}$/,
+    );
+  });
 });
