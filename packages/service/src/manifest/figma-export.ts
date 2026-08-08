@@ -29,6 +29,51 @@ export function collectPenBridgeMappings(root: PenNode): PenBridgeMapping[] {
   return mappings;
 }
 
+export function collectMappedPenBridgeMappings(
+  root: PenNode,
+  expectedMappings: PenBridgeMapping[],
+): PenBridgeMapping[] {
+  const bridgeIdByPenNodeId = new Map<string, string>();
+  const expectedBridgeIds = new Set<string>();
+  for (const mapping of expectedMappings) {
+    if (expectedBridgeIds.has(mapping.bridgeId))
+      throw new Error(`Duplicate Pencil bridge identity ${mapping.bridgeId}`);
+    if (bridgeIdByPenNodeId.has(mapping.penNodeId))
+      throw new Error(`Duplicate Pencil node identity ${mapping.penNodeId}`);
+    expectedBridgeIds.add(mapping.bridgeId);
+    bridgeIdByPenNodeId.set(mapping.penNodeId, mapping.bridgeId);
+  }
+
+  const mappings: PenBridgeMapping[] = [];
+  const visitedBridgeIds = new Set<string>();
+  const visit = (node: PenNode) => {
+    const bridgeId = bridgeIdByPenNodeId.get(node.id);
+    if (!bridgeId)
+      throw new Error(`Pencil node ${node.id} is not in the sync manifest`);
+    const metadataBridgeId = node.metadata?.bridgeId;
+    if (
+      typeof metadataBridgeId === "string" &&
+      metadataBridgeId &&
+      metadataBridgeId !== bridgeId
+    )
+      throw new Error(
+        `Pencil node ${node.id} identity ${metadataBridgeId} does not match ${bridgeId}`,
+      );
+    if (visitedBridgeIds.has(bridgeId))
+      throw new Error(`Duplicate Pencil bridge identity ${bridgeId}`);
+    visitedBridgeIds.add(bridgeId);
+    mappings.push({ bridgeId, penNodeId: node.id });
+    for (const child of node.children ?? []) visit(child);
+  };
+  visit(root);
+
+  const missing = expectedMappings.find(
+    (mapping) => !visitedBridgeIds.has(mapping.bridgeId),
+  );
+  if (missing) throw new Error(`Pencil mapping missing ${missing.bridgeId}`);
+  return mappings;
+}
+
 export function buildFigmaExportManifest(
   document: BridgeDocument,
   penMappings: PenBridgeMapping[],

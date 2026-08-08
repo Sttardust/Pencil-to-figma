@@ -48,6 +48,33 @@ describe("writeFigmaUpdatesToPen", () => {
     expect(calls[0]).not.toContain('"type":"text"');
   });
 
+  it("updates native Pencil nodes using sidecar identities", async () => {
+    const directory = await temporaryDirectory();
+    const calls: string[] = [];
+    const pen = {
+      executeWrite: async (input: string) => {
+        calls.push(input);
+        return "OK\n\n## Print output\nUPDATED | pen:title | nativeTitle";
+      },
+    } as unknown as PenMcpClient;
+    const nativeRoot = currentPenRoot();
+    delete nativeRoot.metadata;
+    delete nativeRoot.children![0]!.metadata;
+
+    const result = await writeFigmaUpdatesToPen(
+      figmaDocument("After"),
+      ["pen:title"],
+      mappings(),
+      nativeRoot,
+      {},
+      path.join(directory, "design.pen"),
+      pen,
+    );
+
+    expect(result.updatedBridgeIds).toEqual(["pen:title"]);
+    expect(calls[0]).toContain('Update("nativeTitle"');
+  });
+
   it("rejects structural and native-type changes before writing", async () => {
     const directory = await temporaryDirectory();
     let writes = 0;

@@ -29,6 +29,7 @@ import { writeFigmaCopyToPen } from "./export/pen-writer.js";
 import { writeFigmaUpdatesToPen } from "./export/pen-updater.js";
 import {
   buildFigmaExportManifest,
+  collectMappedPenBridgeMappings,
   collectPenBridgeMappings,
   type PenBridgeMapping,
 } from "./manifest/figma-export.js";
@@ -629,7 +630,10 @@ export class BridgeServer {
         const verifiedRoot = await this.#pen.getNode(
           state.rootMapping.penNodeId,
         );
-        const verifiedMappings = collectPenBridgeMappings(verifiedRoot);
+        const verifiedMappings = collectMappedPenBridgeMappings(
+          verifiedRoot,
+          penMappings,
+        );
         if (verifiedMappings.length !== state.baseline.length)
           throw new Error("Pencil verification found a mapping count mismatch");
         const verifiedPenDocument = await this.#importPenDocumentWithComponents(
@@ -732,7 +736,10 @@ export class BridgeServer {
           const verifiedRoot = await this.#pen.getNode(
             state.rootMapping.penNodeId,
           );
-          const verifiedMappings = collectPenBridgeMappings(verifiedRoot);
+          const verifiedMappings = collectMappedPenBridgeMappings(
+            verifiedRoot,
+            penMappings,
+          );
           const verifiedPenDocument =
             await this.#importPenDocumentWithComponents(
               verifiedRoot,
@@ -823,7 +830,18 @@ export class BridgeServer {
         )
           throw new Error("Resolved Figma root mapping does not match");
         const penRoot = await this.#pen.getNode(pending.penRootId);
-        const penMappings = collectPenBridgeMappings(penRoot);
+        const currentMappings = currentManifest.mappings.map((mapping) => {
+          if (!mapping.penNodeId)
+            throw new Error(`Pencil mapping missing ${mapping.bridgeId}`);
+          return {
+            bridgeId: mapping.bridgeId,
+            penNodeId: mapping.penNodeId,
+          };
+        });
+        const penMappings = collectMappedPenBridgeMappings(
+          penRoot,
+          currentMappings,
+        );
         const penDocument = await this.#importPenDocumentWithComponents(
           penRoot,
           penPath,

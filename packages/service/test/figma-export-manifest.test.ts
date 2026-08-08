@@ -3,6 +3,7 @@ import type { BridgeDocument, BridgeManifest } from "@pen-fig/bridge-schema";
 import { authoredDocumentHashes, importPenDocument } from "@pen-fig/core";
 import {
   buildFigmaExportManifest,
+  collectMappedPenBridgeMappings,
   collectPenBridgeMappings,
 } from "../src/manifest/figma-export.js";
 
@@ -109,6 +110,25 @@ describe("Figma export manifests", () => {
         ],
       }),
     ).toThrow("Duplicate Pencil bridge identity pen:same");
+  });
+
+  it("resolves native Pencil identities from an existing sidecar mapping", () => {
+    expect(
+      collectMappedPenBridgeMappings(
+        {
+          id: "native-root",
+          type: "frame",
+          children: [{ id: "native-title", type: "text" }],
+        },
+        [
+          { bridgeId: "pen:root", penNodeId: "native-root" },
+          { bridgeId: "pen:title", penNodeId: "native-title" },
+        ],
+      ),
+    ).toEqual([
+      { bridgeId: "pen:root", penNodeId: "native-root" },
+      { bridgeId: "pen:title", penNodeId: "native-title" },
+    ]);
   });
 });
 

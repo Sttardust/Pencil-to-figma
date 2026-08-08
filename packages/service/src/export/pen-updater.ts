@@ -7,7 +7,10 @@ import {
 import type { FigmaExportAssetData } from "./pen-writer.js";
 import { stageFigmaAssets } from "./pen-writer.js";
 import type { PenMcpClient } from "../pen/mcp-client.js";
-import type { PenBridgeMapping } from "../manifest/figma-export.js";
+import {
+  collectMappedPenBridgeMappings,
+  type PenBridgeMapping,
+} from "../manifest/figma-export.js";
 
 const MAX_UPDATE_OPERATIONS = 40;
 const MAX_UPDATE_BYTES = 48 * 1024;
@@ -37,7 +40,8 @@ export async function writeFigmaUpdatesToPen(
     throw new Error(
       `Pencil update has ${changedBridgeIds.length} operations; the atomic limit is ${MAX_UPDATE_OPERATIONS}`,
     );
-  assertStructureUnchanged(document, currentRoot);
+  const currentMappings = collectMappedPenBridgeMappings(currentRoot, mappings);
+  assertStructureUnchanged(document, currentRoot, currentMappings);
   const assetPaths = await stageFigmaAssets(document, assetData, penPath);
   const plan = planFigmaToPenCreate(document, { assetPaths });
   const inserts = new Map(
@@ -51,7 +55,7 @@ export async function writeFigmaUpdatesToPen(
   const penByBridgeId = new Map(
     mappings.map((mapping) => [mapping.bridgeId, mapping.penNodeId]),
   );
-  const currentByBridgeId = flattenPenNodes(currentRoot);
+  const currentByBridgeId = flattenPenNodes(currentRoot, currentMappings);
   const statements: string[] = [];
 
   for (const bridgeId of changedBridgeIds) {
@@ -112,6 +116,7 @@ function sanitizeUpdatePayload(
 function assertStructureUnchanged(
   document: BridgeDocument,
   currentRoot: PenNode,
+  mappings: PenBridgeMapping[],
 ): void {
   const expected: Array<{
     bridgeId: string;
@@ -129,15 +134,17 @@ function assertStructureUnchanged(
     );
   };
   visitBridge(document.root, undefined, 0);
+  const bridgeIdByPenNodeId = new Map(
+    mappings.map((mapping) => [mapping.penNodeId, mapping.bridgeId]),
+  );
   const actual: typeof expected = [];
   const visitPen = (
     node: PenNode,
     parentBridgeId: string | undefined,
     index: number,
   ) => {
-    const bridgeId = node.metadata?.bridgeId;
-    if (typeof bridgeId !== "string" || !bridgeId)
-      throw new Error(`Pencil node ${node.id} has no bridge identity`);
+    const bridgeId = bridgeIdByPenNodeId.get(node.id);
+    if (!bridgeId) throw new Error(`Pencil node ${node.id} is not mapped`);
     actual.push({ bridgeId, parentBridgeId, index });
     (node.children ?? []).forEach((child, childIndex) =>
       visitPen(child, bridgeId, childIndex),
@@ -160,12 +167,17 @@ function assertStructureUnchanged(
   }
 }
 
-function flattenPenNodes(root: PenNode): Map<string, PenNode> {
+function flattenPenNodes(
+  root: PenNode,
+  mappings: PenBridgeMapping[],
+): Map<string, PenNode> {
   const result = new Map<string, PenNode>();
+  const bridgeIdByPenNodeId = new Map(
+    mappings.map((mapping) => [mapping.penNodeId, mapping.bridgeId]),
+  );
   const visit = (node: PenNode) => {
-    const bridgeId = node.metadata?.bridgeId;
-    if (typeof bridgeId !== "string" || !bridgeId)
-      throw new Error(`Pencil node ${node.id} has no bridge identity`);
+    const bridgeId = bridgeIdByPenNodeId.get(node.id);
+    if (!bridgeId) throw new Error(`Pencil node ${node.id} is not mapped`);
     if (result.has(bridgeId))
       throw new Error(`Duplicate Pencil bridge identity ${bridgeId}`);
     result.set(bridgeId, node);
