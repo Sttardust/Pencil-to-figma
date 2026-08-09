@@ -16,6 +16,7 @@ import {
   VARIABLE_ID_KEY,
   VARIABLE_MODE_MAP_KEY,
 } from "./identity.js";
+import { longestTextSegment } from "./text.js";
 
 export interface FigmaReadResult {
   document: BridgeDocument;
@@ -370,6 +371,10 @@ function readNode(
 ): BridgeNode {
   counted();
   const bridgeId = node.getPluginData(BRIDGE_ID_KEY) || `figma:${node.id}`;
+  const mixedText =
+    node.type === "TEXT"
+      ? readMixedTextFallback(node, bridgeId, warnings)
+      : undefined;
   const generatedSvgWrapper = isGeneratedSvgWrapper(node);
   const storedKind = node.getPluginData(BRIDGE_KIND_KEY);
   const result: BridgeNode = {
@@ -440,7 +445,7 @@ function readNode(
   const fills =
     node.type === "INSTANCE"
       ? []
-      : readPaints(node, bridgeId, assets, warnings);
+      : readPaints(node, bridgeId, assets, warnings, mixedText?.fills);
   if (fills.length) result.fills = fills;
   const stroke =
     node.type === "INSTANCE"
@@ -456,15 +461,20 @@ function readNode(
   if (variableBindings) result.variableBindings = variableBindings;
 
   if (node.type === "TEXT") {
+    const fontName = mixedText?.fontName ?? node.fontName;
+    const fontSize = mixedText?.fontSize ?? node.fontSize;
+    const lineHeight = mixedText?.lineHeight ?? node.lineHeight;
+    const letterSpacing = mixedText?.letterSpacing ?? node.letterSpacing;
+    const textDecoration = mixedText?.textDecoration ?? node.textDecoration;
     if (
-      node.fontName === figma.mixed ||
-      node.fontSize === figma.mixed ||
-      node.lineHeight === figma.mixed ||
-      node.letterSpacing === figma.mixed ||
-      node.textDecoration === figma.mixed
+      fontName === figma.mixed ||
+      fontSize === figma.mixed ||
+      lineHeight === figma.mixed ||
+      letterSpacing === figma.mixed ||
+      textDecoration === figma.mixed
     )
-      throw new Error(`Mixed text styling is not supported yet: ${node.name}`);
-    fonts.add(`${node.fontName.family} ${node.fontName.style}`);
+      throw new Error(`Could not resolve mixed text styling: ${node.name}`);
+    fonts.add(`${fontName.family} ${fontName.style}`);
     result.text = {
       characters: node.characters,
       resize:
@@ -474,29 +484,29 @@ function readNode(
             ? "height"
             : "fixed",
       style: {
-        family: node.fontName.family,
-        style: node.fontName.style,
-        weight: weightFromStyle(node.fontName.style),
-        size: node.fontSize,
+        family: fontName.family,
+        style: fontName.style,
+        weight: weightFromStyle(fontName.style),
+        size: fontSize,
         lineHeight:
-          node.lineHeight.unit === "AUTO"
+          lineHeight.unit === "AUTO"
             ? { unit: "auto" }
             : {
-                unit: node.lineHeight.unit === "PIXELS" ? "pixels" : "percent",
-                value: node.lineHeight.value,
+                unit: lineHeight.unit === "PIXELS" ? "pixels" : "percent",
+                value: lineHeight.value,
               },
         letterSpacing:
-          node.letterSpacing.unit === "PIXELS"
-            ? node.letterSpacing.value
-            : (node.letterSpacing.value / 100) * node.fontSize,
+          letterSpacing.unit === "PIXELS"
+            ? letterSpacing.value
+            : (letterSpacing.value / 100) * fontSize,
         horizontalAlign: node.textAlignHorizontal.toLowerCase() as
           "left" | "center" | "right" | "justify",
         verticalAlign: node.textAlignVertical.toLowerCase() as
           "top" | "center" | "bottom",
         decoration:
-          node.textDecoration === "UNDERLINE"
+          textDecoration === "UNDERLINE"
             ? "underline"
-            : node.textDecoration === "STRIKETHROUGH"
+            : textDecoration === "STRIKETHROUGH"
               ? "strikethrough"
               : "none",
       },
@@ -532,6 +542,53 @@ function readNode(
     };
   }
   return result;
+}
+
+type MixedTextFallback = Pick<
+  StyledTextSegment,
+  | "fontName"
+  | "fontSize"
+  | "lineHeight"
+  | "letterSpacing"
+  | "textDecoration"
+  | "fills"
+>;
+
+function readMixedTextFallback(
+  node: TextNode,
+  bridgeId: string,
+  warnings: TransferWarning[],
+): MixedTextFallback | undefined {
+  const hasMixedStyle =
+    node.fontName === figma.mixed ||
+    node.fontSize === figma.mixed ||
+    node.lineHeight === figma.mixed ||
+    node.letterSpacing === figma.mixed ||
+    node.textDecoration === figma.mixed ||
+    node.fills === figma.mixed;
+  if (!hasMixedStyle) return undefined;
+  const segments = node.getStyledTextSegments([
+    "fontName",
+    "fontSize",
+    "lineHeight",
+    "letterSpacing",
+    "textDecoration",
+    "fills",
+  ]);
+  const selected = longestTextSegment(segments);
+  if (!selected)
+    throw new Error(
+      `Mixed text layer has no readable style ranges: ${node.name}`,
+    );
+  warnings.push(
+    warning(
+      bridgeId,
+      "mixed text styles",
+      "flatten",
+      `Flattened ${segments.length} style ranges on ${node.name} using the longest range`,
+    ),
+  );
+  return selected;
 }
 
 function readVariableBindings(
@@ -826,9 +883,12 @@ function readPaints(
   bridgeId: string,
   assets: BridgeAsset[],
   warnings: TransferWarning[],
+  mixedTextFills?: ReadonlyArray<PaintStyle["paints"][number]>,
 ): Paint[] {
-  if (!("fills" in node) || node.fills === figma.mixed) return [];
-  return node.fills.flatMap((paint, index) =>
+  if (!("fills" in node)) return [];
+  const fills = node.fills === figma.mixed ? mixedTextFills : node.fills;
+  if (!fills) return [];
+  return fills.flatMap((paint, index) =>
     mapPaint(paint, bridgeId, index, assets, warnings),
   );
 }

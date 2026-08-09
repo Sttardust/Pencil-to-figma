@@ -80,6 +80,10 @@ Fit map directly to Pencil. Figma Crop transforms and Tile settings are retained
 when returning to Figma; exports to Pencil use Fill with an explicit warning because Pencil has no
 matching crop/tile behavior. Pencil Stretch similarly uses Figma Fill with an explicit warning.
 
+Figma text layers with mixed range styling no longer abort an export. The bridge selects the style
+and fill from the range covering the most characters, keeps the complete text editable, and emits
+a `FIGMA_MIXED_TEXT_STYLES` flattening warning. Uniform text remains lossless.
+
 If an authored font is unavailable to Figma, the plugin selects the closest loadable family and
 weight (for example, Fraunces falls back to Georgia), reports the substitution, and stores separate
 Pencil and Figma baseline hashes so the fallback does not appear as a user edit during sync.
