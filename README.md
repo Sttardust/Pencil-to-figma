@@ -14,10 +14,14 @@ Windows and Linux packaging are intentionally out of scope for this phase. The b
 the matching Pencil MCP executable from either `/Applications` or `~/Applications`; an explicit
 `PEN_FIG_PEN_MCP_PATH` override remains available for nonstandard installations.
 
-The repository still uses a developer LaunchAgent that starts Node.js from this checkout. Before a
-public Figma Community release, this service must be packaged as a signed and notarized macOS
-companion application that includes its own runtime and installer. End users will not be expected
-to install Node.js, clone this repository, or run terminal commands.
+The npm development workflow uses a LaunchAgent that starts Node.js from this checkout. Public
+distribution instead uses the self-contained macOS companion packaging, which includes its own
+runtime and native installer. End users will not be expected to install Node.js, clone this
+repository, or run terminal commands. A public download must still be signed with the project's
+Apple Developer identity and notarized.
+
+See [docs/macos-companion.md](docs/macos-companion.md) for Intel and Apple-silicon builds, local
+installation, signing, and notarization.
 
 ## Prerequisites
 
@@ -156,5 +160,5 @@ npm audit
 | `PEN_FIG_PORT`         | Local bridge port                  | `32145`                        |
 | `PEN_FIG_PEN_MCP_PATH` | Override the Pencil MCP executable | Auto-detected macOS app bundle |
 
-The Figma development manifest currently permits only `http://localhost:32145`. If the port is
-changed, update its `devAllowedDomains` entry as well.
+The Figma manifest permits only `http://localhost:32145`, where the installed macOS companion
+listens. If the port is changed, update its `allowedDomains` entry as well.

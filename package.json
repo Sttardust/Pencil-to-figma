@@ -12,6 +12,7 @@
     "dev:plugin": "npm --workspace @pen-fig/figma-plugin run dev",
     "service:install": "tsx scripts/macos-service.ts install",
     "service:uninstall": "tsx scripts/macos-service.ts uninstall",
+    "companion:build": "npm --workspace @pen-fig/macos-companion run build:app --",
     "doctor": "npm --workspace @pen-fig/cli run doctor",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

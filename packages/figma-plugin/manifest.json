@@ -7,7 +7,8 @@
   "ui": "dist/ui.html",
   "documentAccess": "dynamic-page",
   "networkAccess": {
-    "allowedDomains": ["none"],
-    "devAllowedDomains": ["http://localhost:32145"]
+    "allowedDomains": ["http://localhost:32145"],
+    "reasoning": "Connects only to the Pencil Bridge companion app installed on this Mac. Design data stays on the local device.",
+    "devAllowedDomains": []
   }
 }
