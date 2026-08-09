@@ -3,6 +3,7 @@ import {
   type BridgeAsset,
   type BridgeDocument,
   type BridgeNode,
+  type BridgeVariable,
   type Effect,
   type Paint,
   type TransferWarning,
@@ -12,6 +13,8 @@ import {
   BRIDGE_KIND_KEY,
   INSTANCE_OVERRIDE_MAP_KEY,
   SVG_ASSET_KEY,
+  VARIABLE_ID_KEY,
+  VARIABLE_MODE_MAP_KEY,
 } from "./identity.js";
 
 export interface FigmaReadResult {
@@ -25,6 +28,11 @@ export interface FigmaAssetData {
   base64: string;
   mimeType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
   byteLength: number;
+}
+
+interface NativeVariableReadContext {
+  bridgeIdByFigmaId: ReadonlyMap<string, string>;
+  variablesByBridgeId: ReadonlyMap<string, BridgeVariable>;
 }
 
 export async function readSelectedFigmaDocument(
@@ -43,6 +51,7 @@ export async function readSelectedFigmaDocument(
   const warnings: TransferWarning[] = [];
   const fonts = new Set<string>();
   const dependencies = await loadComponentDependencies(selected);
+  const nativeVariables = await readNativeVariables();
   let nodeCount = 0;
   const root = readNode(
     selected,
@@ -51,6 +60,7 @@ export async function readSelectedFigmaDocument(
     warnings,
     fonts,
     dependencies.instanceComponents,
+    nativeVariables,
     () => {
       nodeCount += 1;
     },
@@ -66,6 +76,7 @@ export async function readSelectedFigmaDocument(
         warnings,
         fonts,
         dependencies.instanceComponents,
+        nativeVariables,
         () => {
           nodeCount += 1;
         },
@@ -78,13 +89,16 @@ export async function readSelectedFigmaDocument(
       (total, component) => total + countBridgeNodes(component),
       0,
     );
+  const referencedVariableIds = collectReferencedVariableIds(root, components);
   const document = bridgeDocumentSchema.parse({
     version: 1,
     source: { app: "figma", documentId },
     root,
     ...(components.length ? { components } : {}),
     assets,
-    variables: [],
+    variables: [...referencedVariableIds]
+      .map((bridgeId) => nativeVariables.variablesByBridgeId.get(bridgeId))
+      .filter((variable): variable is BridgeVariable => Boolean(variable)),
     warnings,
   });
   return {
@@ -96,6 +110,117 @@ export async function readSelectedFigmaDocument(
         ? {}
         : await collectAssetData(document.assets),
   };
+}
+
+async function readNativeVariables(): Promise<NativeVariableReadContext> {
+  const [variables, collections] = await Promise.all([
+    figma.variables.getLocalVariablesAsync(),
+    figma.variables.getLocalVariableCollectionsAsync(),
+  ]);
+  const collectionsById = new Map(
+    collections.map((collection) => [collection.id, collection]),
+  );
+  const bridgeIdByFigmaId = new Map<string, string>();
+  const variablesByBridgeId = new Map<string, BridgeVariable>();
+  for (const variable of variables) {
+    const type = fromFigmaVariableType(variable.resolvedType);
+    const collection = collectionsById.get(variable.variableCollectionId);
+    if (!type || !collection) continue;
+    const bridgeId =
+      variable.getPluginData(VARIABLE_ID_KEY) || `figma-var:${variable.id}`;
+    const modeRecords = readVariableModeRecords(collection);
+    const values: BridgeVariable["values"] = [];
+    for (const mode of collection.modes) {
+      const value = toBridgeVariableValue(
+        variable.valuesByMode[mode.modeId],
+        type,
+      );
+      if (value === undefined) continue;
+      values.push({
+        mode: modeRecords.get(mode.modeId) ?? { figma: mode.name },
+        value,
+      });
+    }
+    if (!values.length) continue;
+    bridgeIdByFigmaId.set(variable.id, bridgeId);
+    variablesByBridgeId.set(bridgeId, {
+      id: bridgeId,
+      name: variable.name,
+      type,
+      values,
+    });
+  }
+  return { bridgeIdByFigmaId, variablesByBridgeId };
+}
+
+function readVariableModeRecords(
+  collection: VariableCollection,
+): Map<string, Record<string, string>> {
+  const result = new Map<string, Record<string, string>>();
+  try {
+    const stored = JSON.parse(
+      collection.getPluginData(VARIABLE_MODE_MAP_KEY) || "{}",
+    ) as Record<string, string>;
+    for (const [signature, modeId] of Object.entries(stored)) {
+      const mode = JSON.parse(signature) as unknown;
+      if (isStringRecord(mode)) result.set(modeId, mode);
+    }
+  } catch {
+    // Unmanaged collections fall back to their visible Figma mode names.
+  }
+  if (collection.modes.length === 1 && !result.size)
+    result.set(collection.modes[0]!.modeId, {});
+  return result;
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.values(value as Record<string, unknown>).every(
+      (entry) => typeof entry === "string",
+    )
+  );
+}
+
+function fromFigmaVariableType(
+  type: VariableResolvedDataType,
+): BridgeVariable["type"] | undefined {
+  return type === "BOOLEAN"
+    ? "boolean"
+    : type === "COLOR"
+      ? "color"
+      : type === "FLOAT"
+        ? "number"
+        : type === "STRING"
+          ? "string"
+          : undefined;
+}
+
+function toBridgeVariableValue(
+  value: VariableValue | undefined,
+  type: BridgeVariable["type"],
+): BridgeVariable["values"][number]["value"] | undefined {
+  if (type === "boolean") return typeof value === "boolean" ? value : undefined;
+  if (type === "number") return typeof value === "number" ? value : undefined;
+  if (type === "string") return typeof value === "string" ? value : undefined;
+  if (
+    value &&
+    typeof value === "object" &&
+    "r" in value &&
+    "g" in value &&
+    "b" in value
+  ) {
+    const color = value as RGB | RGBA;
+    return {
+      r: color.r,
+      g: color.g,
+      b: color.b,
+      a: "a" in color ? color.a : 1,
+    };
+  }
+  return undefined;
 }
 
 async function loadComponentDependencies(root: SceneNode): Promise<{
@@ -240,6 +365,7 @@ function readNode(
   warnings: TransferWarning[],
   fonts: Set<string>,
   instanceComponents: ReadonlyMap<string, ComponentNode | null>,
+  nativeVariables: NativeVariableReadContext,
   counted: () => void,
 ): BridgeNode {
   counted();
@@ -289,6 +415,7 @@ function readNode(
           warnings,
           fonts,
           instanceComponents,
+          nativeVariables,
           counted,
         ),
       );
@@ -325,6 +452,8 @@ function readNode(
   if (effects.length) result.effects = effects;
   const radii = node.type === "INSTANCE" ? undefined : readCornerRadii(node);
   if (radii) result.cornerRadii = radii;
+  const variableBindings = readVariableBindings(node, nativeVariables);
+  if (variableBindings) result.variableBindings = variableBindings;
 
   if (node.type === "TEXT") {
     if (
@@ -403,6 +532,79 @@ function readNode(
     };
   }
   return result;
+}
+
+function readVariableBindings(
+  node: SceneNode,
+  context: NativeVariableReadContext,
+): BridgeNode["variableBindings"] | undefined {
+  const result: NonNullable<BridgeNode["variableBindings"]> = {};
+  if ("fills" in node && node.fills !== figma.mixed) {
+    const fills: Record<string, string> = {};
+    node.fills.forEach((paint, index) => {
+      const bridgeId =
+        paint.type === "SOLID" && paint.boundVariables?.color
+          ? context.bridgeIdByFigmaId.get(paint.boundVariables.color.id)
+          : undefined;
+      if (bridgeId) fills[String(index)] = bridgeId;
+    });
+    if (Object.keys(fills).length) result.fills = fills;
+  }
+  if ("strokes" in node) {
+    const strokes: Record<string, string> = {};
+    node.strokes.forEach((paint, index) => {
+      const bridgeId =
+        paint.type === "SOLID" && paint.boundVariables?.color
+          ? context.bridgeIdByFigmaId.get(paint.boundVariables.color.id)
+          : undefined;
+      if (bridgeId) strokes[String(index)] = bridgeId;
+    });
+    if (Object.keys(strokes).length) result.strokes = strokes;
+  }
+  if (node.type === "TEXT") {
+    const fontFamilyId = firstAliasId(node.boundVariables?.fontFamily);
+    const bridgeId = fontFamilyId
+      ? context.bridgeIdByFigmaId.get(fontFamilyId)
+      : undefined;
+    if (bridgeId) result.fontFamily = bridgeId;
+  }
+  const cornerIds = [
+    firstAliasId(node.boundVariables?.cornerRadius),
+    firstAliasId(node.boundVariables?.topLeftRadius),
+    firstAliasId(node.boundVariables?.topRightRadius),
+    firstAliasId(node.boundVariables?.bottomRightRadius),
+    firstAliasId(node.boundVariables?.bottomLeftRadius),
+  ].filter((id): id is string => Boolean(id));
+  if (cornerIds.length && cornerIds.every((id) => id === cornerIds[0])) {
+    const bridgeId = context.bridgeIdByFigmaId.get(cornerIds[0]!);
+    if (bridgeId) result.cornerRadius = bridgeId;
+  }
+  return Object.keys(result).length ? result : undefined;
+}
+
+function firstAliasId(
+  value: VariableAlias | readonly VariableAlias[] | undefined,
+): string | undefined {
+  if (!value) return undefined;
+  return "id" in value ? value.id : value[0]?.id;
+}
+
+function collectReferencedVariableIds(
+  root: BridgeNode,
+  components: BridgeNode[],
+): Set<string> {
+  const ids = new Set<string>();
+  const collect = (node: BridgeNode) => {
+    const bindings = node.variableBindings;
+    for (const id of Object.values(bindings?.fills ?? {})) ids.add(id);
+    for (const id of Object.values(bindings?.strokes ?? {})) ids.add(id);
+    if (bindings?.fontFamily) ids.add(bindings.fontFamily);
+    if (bindings?.cornerRadius) ids.add(bindings.cornerRadius);
+    for (const child of node.children) collect(child);
+  };
+  collect(root);
+  for (const component of components) collect(component);
+  return ids;
 }
 
 function readInstanceOverrides(

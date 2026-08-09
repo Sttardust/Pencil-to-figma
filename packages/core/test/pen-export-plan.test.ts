@@ -101,6 +101,49 @@ describe("planFigmaToPenCreate", () => {
     });
   });
 
+  it("preserves managed Pencil variable references in reverse payloads", () => {
+    const document = importPenDocument(
+      {
+        id: "variable-root",
+        type: "frame",
+        fill: "$surface",
+        cornerRadius: "$radius-card",
+        children: [
+          {
+            id: "variable-label",
+            type: "text",
+            content: "Hello",
+            fill: "$ink",
+            fontFamily: "$font-body",
+          },
+        ],
+      },
+      {
+        documentId: "test.pen",
+        variables: {
+          surface: { type: "color", value: "#ffffff" },
+          ink: { type: "color", value: "#112233" },
+          "radius-card": { type: "number", value: 16 },
+          "font-body": { type: "string", value: "Inter" },
+        },
+      },
+    );
+    document.source = { app: "figma", documentId: "figma-local" };
+
+    const inserts = planFigmaToPenCreate(document).operations.filter(
+      (operation) => operation.type === "insert",
+    );
+
+    expect(inserts[0]?.payload).toMatchObject({
+      fill: "$surface",
+      cornerRadius: "$radius-card",
+    });
+    expect(inserts[1]?.payload).toMatchObject({
+      fill: "$ink",
+      fontFamily: "$font-body",
+    });
+  });
+
   it("plans external component definitions before their instances", () => {
     const document = fixture();
     document.components = [

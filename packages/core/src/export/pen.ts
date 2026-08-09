@@ -159,12 +159,27 @@ function toPenPayload(
       payload.layoutIncludeStroke = node.layout.includeStroke;
     }
   }
-  if (node.fills?.length)
-    payload.fill = node.fills.map((paint) => penPaint(paint, assetPaths));
-  if (node.stroke) {
-    payload.stroke = node.stroke.paints.map((paint) =>
-      penPaint(paint, assetPaths),
+  if (node.fills?.length) {
+    const fillVariable = directPenVariableReference(
+      node.variableBindings?.fills?.["0"],
+      document,
     );
+    payload.fill =
+      fillVariable && node.fills.length === 1 && node.fills[0]?.type === "solid"
+        ? fillVariable
+        : node.fills.map((paint) => penPaint(paint, assetPaths));
+  }
+  if (node.stroke) {
+    const strokeVariable = directPenVariableReference(
+      node.variableBindings?.strokes?.["0"],
+      document,
+    );
+    payload.stroke =
+      strokeVariable &&
+      node.stroke.paints.length === 1 &&
+      node.stroke.paints[0]?.type === "solid"
+        ? strokeVariable
+        : node.stroke.paints.map((paint) => penPaint(paint, assetPaths));
     const weights = node.stroke.weights;
     payload.strokeWidth =
       weights.top === weights.right &&
@@ -183,7 +198,12 @@ function toPenPayload(
     payload.strokeLinejoin = node.stroke.join;
   }
   if (node.effects?.length) payload.effect = node.effects.map(penEffect);
-  if (node.cornerRadii) payload.cornerRadius = node.cornerRadii;
+  if (node.cornerRadii)
+    payload.cornerRadius =
+      directPenVariableReference(
+        node.variableBindings?.cornerRadius,
+        document,
+      ) ?? node.cornerRadii;
   if (node.kind === "text" && node.text) {
     payload.content = node.text.characters;
     payload.textGrowth =
@@ -192,7 +212,9 @@ function toPenPayload(
         : node.text.resize === "height"
           ? "fixed-width"
           : "fixed-width-height";
-    payload.fontFamily = node.text.style.family;
+    payload.fontFamily =
+      directPenVariableReference(node.variableBindings?.fontFamily, document) ??
+      node.text.style.family;
     payload.fontStyle = node.text.style.style;
     payload.fontWeight = node.text.style.weight;
     payload.fontSize = node.text.style.size;
@@ -237,6 +259,15 @@ function toPenPayload(
     });
   }
   return withoutUndefined(payload);
+}
+
+function directPenVariableReference(
+  variableId: string | undefined,
+  document: BridgeDocument,
+): string | undefined {
+  if (!variableId?.startsWith("pen-var:")) return undefined;
+  const variable = document.variables.find((entry) => entry.id === variableId);
+  return variable ? `$${variable.name}` : undefined;
 }
 
 function penType(node: BridgeNode): string {
