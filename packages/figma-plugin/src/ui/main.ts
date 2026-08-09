@@ -59,7 +59,6 @@ required("preview-export").addEventListener("click", () => {
   pendingExportPlan = undefined;
   exportCopy.disabled = true;
   adoptCopy.disabled = true;
-  previewSync.disabled = true;
   applySync.disabled = true;
   pendingSyncPreview = undefined;
   hideConflict();
@@ -204,6 +203,7 @@ window.onmessage = (event) => {
               2,
             );
             setStatus("Imported and mapped", true);
+            previewSync.disabled = false;
           })
           .catch((error) => {
             setStatus("Imported — mapping save failed", false);
@@ -254,7 +254,6 @@ window.onmessage = (event) => {
       );
       if (!message.ok) detail.textContent = message.message;
       adoptCopy.disabled = !message.ok;
-      previewSync.disabled = !message.ok;
     }
     if (message.type === "figma-export-plan") {
       setStatus(
@@ -287,8 +286,10 @@ window.onmessage = (event) => {
       );
       adoptCopy.disabled = false;
       if (!message.ok) detail.textContent = message.message;
-      else
+      else {
         detail.textContent = `Mapped ${message.nodeCount} nodes from Pencil root ${message.rootId} at manifest revision ${message.manifest.revision}.`;
+        previewSync.disabled = false;
+      }
     }
     if (message.type === "figma-sync-preview") {
       setStatus(
@@ -455,6 +456,7 @@ async function connect(code: string): Promise<void> {
     detail.textContent = ready.penState;
     actions.hidden = false;
     form.hidden = true;
+    previewSync.disabled = false;
   } catch (error) {
     showError(error);
   }
