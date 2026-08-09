@@ -290,6 +290,45 @@ describe("planFigmaToPenCreate", () => {
     });
   });
 
+  it("preserves image blend modes and explicitly flattens crop for Pencil", () => {
+    const document = fixture();
+    document.root.children[0]!.fills = [
+      {
+        type: "image",
+        visible: true,
+        opacity: 0.75,
+        blendMode: "screen",
+        assetId: "figma-image:crop",
+        scaleMode: "crop",
+        transform: [
+          [1, 0, 0.1],
+          [0, 1, 0.2],
+        ],
+      },
+    ];
+
+    const plan = planFigmaToPenCreate(document);
+    const title = plan.operations.find(
+      (operation) =>
+        operation.type === "insert" && operation.bridgeId === "pen:title",
+    );
+    expect(title?.type === "insert" ? title.payload : undefined).toMatchObject({
+      fill: [
+        expect.objectContaining({
+          type: "image",
+          mode: "fill",
+          blendMode: "screen",
+        }),
+      ],
+    });
+    expect(plan.warnings).toContainEqual(
+      expect.objectContaining({
+        code: "FIGMA_IMAGE_SCALE_FLATTENED",
+        action: "flatten",
+      }),
+    );
+  });
+
   it("rejects an operation larger than the byte ceiling", () => {
     const document = fixture();
     document.root.children[0]!.text!.characters = "x".repeat(1000);

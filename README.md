@@ -74,6 +74,12 @@ substituted because Figma cannot load it, that font binding is skipped so the vi
 preserved. Pencil icons from Lucide, Material Symbols Rounded, and Phosphor are packaged as SVG
 assets.
 
+Supported paint blend modes now transfer in both directions instead of being reset to Normal,
+including multiply, screen, overlay, burn/dodge, contrast, and color modes. Figma image Fill and
+Fit map directly to Pencil. Figma Crop transforms and Tile settings are retained in the bridge and
+when returning to Figma; exports to Pencil use Fill with an explicit warning because Pencil has no
+matching crop/tile behavior. Pencil Stretch similarly uses Figma Fill with an explicit warning.
+
 If an authored font is unavailable to Figma, the plugin selects the closest loadable family and
 weight (for example, Fraunces falls back to Georgia), reports the substitution, and stores separate
 Pencil and Figma baseline hashes so the fallback does not appear as a user edit during sync.

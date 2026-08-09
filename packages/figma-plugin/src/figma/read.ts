@@ -897,9 +897,25 @@ function mapPaint(
         scaleMode:
           paint.scaleMode === "FIT"
             ? "fit"
-            : paint.scaleMode === "TILE"
-              ? "tile"
-              : "fill",
+            : paint.scaleMode === "CROP"
+              ? "crop"
+              : paint.scaleMode === "TILE"
+                ? "tile"
+                : "fill",
+        ...(paint.scaleMode === "CROP" && paint.imageTransform
+          ? {
+              transform: [
+                [...paint.imageTransform[0]],
+                [...paint.imageTransform[1]],
+              ],
+            }
+          : {}),
+        ...(paint.scaleMode === "TILE" && paint.scalingFactor !== undefined
+          ? { scalingFactor: paint.scalingFactor }
+          : {}),
+        ...(paint.rotation !== undefined && paint.rotation !== 0
+          ? { rotation: paint.rotation }
+          : {}),
       },
     ];
   }
@@ -1011,9 +1027,11 @@ function mapBlendMode(value: BlendMode | undefined): Paint["blendMode"] {
     "normal",
     "darken",
     "multiply",
+    "linear-burn",
     "color-burn",
     "lighten",
     "screen",
+    "linear-dodge",
     "color-dodge",
     "overlay",
     "soft-light",

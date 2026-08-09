@@ -65,8 +65,55 @@ describe("importPenDocument", () => {
       .fills?.[0];
     expect(fill).toMatchObject({
       type: "solid",
-      color: { r: 0x11 / 255, g: 0x22 / 255, b: 0x33 / 255, a: 0x88 / 255 },
+      opacity: 0x88 / 255,
+      color: { r: 0x11 / 255, g: 0x22 / 255, b: 0x33 / 255, a: 1 },
     });
+  });
+
+  it("preserves supported paint blend modes and warns about image stretch", () => {
+    const document = importPenDocument(
+      {
+        id: "paint-root",
+        type: "frame",
+        fill: {
+          type: "color",
+          color: "#33669980",
+          opacity: 0.5,
+          blendMode: "softLight",
+        },
+        children: [
+          {
+            id: "photo",
+            type: "rectangle",
+            fill: {
+              type: "image",
+              url: "./photo.png",
+              mode: "stretch",
+              blendMode: "multiply",
+            },
+          },
+        ],
+      },
+      { documentId: "test.pen" },
+    );
+
+    expect(document.root.fills?.[0]).toMatchObject({
+      type: "solid",
+      opacity: 0.5 * (0x80 / 255),
+      blendMode: "soft-light",
+      color: { a: 1 },
+    });
+    expect(document.root.children[0]?.fills?.[0]).toMatchObject({
+      type: "image",
+      scaleMode: "stretch",
+      blendMode: "multiply",
+    });
+    expect(document.warnings).toContainEqual(
+      expect.objectContaining({
+        code: "PEN_IMAGE_STRETCH_MODE",
+        action: "flatten",
+      }),
+    );
   });
 
   it("fails on unknown node types", () => {

@@ -5,9 +5,11 @@ export const blendModeSchema = z.enum([
   "normal",
   "darken",
   "multiply",
+  "linear-burn",
   "color-burn",
   "lighten",
   "screen",
+  "linear-dodge",
   "color-dodge",
   "overlay",
   "soft-light",
@@ -51,7 +53,15 @@ export const paintSchema = z.discriminatedUnion("type", [
       type: z.literal("image"),
       ...paintBase,
       assetId: z.string().min(1),
-      scaleMode: z.enum(["fill", "fit", "stretch", "tile"]),
+      scaleMode: z.enum(["fill", "fit", "stretch", "crop", "tile"]),
+      transform: z
+        .tuple([
+          z.tuple([finiteNumberSchema, finiteNumberSchema, finiteNumberSchema]),
+          z.tuple([finiteNumberSchema, finiteNumberSchema, finiteNumberSchema]),
+        ])
+        .optional(),
+      scalingFactor: finiteNumberSchema.positive().optional(),
+      rotation: finiteNumberSchema.optional(),
     })
     .strict(),
 ]);

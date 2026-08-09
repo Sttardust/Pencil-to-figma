@@ -167,7 +167,9 @@ function toPenPayload(
     payload.fill =
       fillVariable && node.fills.length === 1 && node.fills[0]?.type === "solid"
         ? fillVariable
-        : node.fills.map((paint) => penPaint(paint, assetPaths));
+        : node.fills.map((paint) =>
+            penPaint(paint, assetPaths, warnings, node),
+          );
   }
   if (node.stroke) {
     const strokeVariable = directPenVariableReference(
@@ -179,7 +181,9 @@ function toPenPayload(
       node.stroke.paints.length === 1 &&
       node.stroke.paints[0]?.type === "solid"
         ? strokeVariable
-        : node.stroke.paints.map((paint) => penPaint(paint, assetPaths));
+        : node.stroke.paints.map((paint) =>
+            penPaint(paint, assetPaths, warnings, node),
+          );
     const weights = node.stroke.weights;
     payload.strokeWidth =
       weights.top === weights.right &&
@@ -290,6 +294,8 @@ function penSizing(sizing: BridgeNode["width"]): number | string {
 function penPaint(
   paint: Paint,
   assetPaths: Readonly<Record<string, string>> | undefined,
+  warnings: TransferWarning[],
+  node: BridgeNode,
 ): unknown {
   if (paint.type === "solid")
     return {
@@ -311,6 +317,19 @@ function penPaint(
         position: stop.position,
       })),
     };
+  const unsupportedScaleMode =
+    paint.scaleMode === "crop" || paint.scaleMode === "tile";
+  if (unsupportedScaleMode) {
+    const message = `Figma ${paint.scaleMode} image mode on ${node.name} will use Pencil Fill`;
+    if (!warnings.some((warning) => warning.message === message))
+      warnings.push({
+        code: "FIGMA_IMAGE_SCALE_FLATTENED",
+        nodeBridgeId: node.bridgeId,
+        construct: "image scale mode",
+        action: "flatten",
+        message,
+      });
+  }
   return {
     type: "image",
     enabled: paint.visible,
@@ -318,8 +337,9 @@ function penPaint(
     opacity: paint.opacity,
     url:
       assetPaths?.[paint.assetId] ?? assetRelativePath(paint.assetId, "image"),
-    mode:
-      paint.scaleMode === "stretch"
+    mode: unsupportedScaleMode
+      ? "fill"
+      : paint.scaleMode === "stretch"
         ? "stretch"
         : paint.scaleMode === "fit"
           ? "fit"

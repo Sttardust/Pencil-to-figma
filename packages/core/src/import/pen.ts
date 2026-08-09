@@ -463,45 +463,55 @@ function mapPaint(
   property: "fill" | "stroke",
   preserveDirectVariable: boolean,
 ): Paint[] {
-  if (typeof value === "string")
+  if (typeof value === "string") {
+    const color = parseHex(
+      resolveColorVariable(
+        value,
+        variables,
+        warnings,
+        bridgeId,
+        property,
+        !preserveDirectVariable,
+      ),
+    );
     return [
       {
         type: "solid",
         visible: true,
-        opacity: 1,
+        opacity: color.a,
         blendMode: "normal",
-        color: parseHex(
-          resolveColorVariable(
-            value,
-            variables,
-            warnings,
-            bridgeId,
-            property,
-            !preserveDirectVariable,
-          ),
-        ),
+        color: { ...color, a: 1 },
       },
     ];
+  }
   if (!value || typeof value !== "object") return [];
   const paint = value as Record<string, unknown>;
   if (paint.enabled === false) return [];
   if (paint.type === "color" && typeof paint.color === "string") {
+    const color = parseHex(
+      resolveColorVariable(
+        paint.color,
+        variables,
+        warnings,
+        bridgeId,
+        property,
+        !preserveDirectVariable,
+      ),
+    );
+    const authoredOpacity =
+      typeof paint.opacity === "number" ? paint.opacity : 1;
     return [
       {
         type: "solid",
         visible: true,
-        opacity: 1,
-        blendMode: "normal",
-        color: parseHex(
-          resolveColorVariable(
-            paint.color,
-            variables,
-            warnings,
-            bridgeId,
-            property,
-            !preserveDirectVariable,
-          ),
+        opacity: authoredOpacity * color.a,
+        blendMode: mapPenBlendMode(
+          paint.blendMode,
+          bridgeId,
+          `${property} paint`,
+          warnings,
         ),
+        color: { ...color, a: 1 },
       },
     ];
   }
@@ -512,7 +522,12 @@ function mapPaint(
         type: "gradient",
         visible: true,
         opacity: typeof paint.opacity === "number" ? paint.opacity : 1,
-        blendMode: "normal",
+        blendMode: mapPenBlendMode(
+          paint.blendMode,
+          bridgeId,
+          `${property} gradient`,
+          warnings,
+        ),
         gradientType:
           paint.gradientType === "radial" || paint.gradientType === "angular"
             ? paint.gradientType
@@ -548,19 +563,45 @@ function mapPaint(
       kind: "image",
       sourceUri: paint.url,
     });
+    const scaleMode =
+      paint.mode === "fit" ||
+      paint.mode === "stretch" ||
+      paint.mode === "crop" ||
+      paint.mode === "tile"
+        ? paint.mode
+        : "fill";
+    if (scaleMode === "stretch")
+      warnings.push(
+        warning(
+          bridgeId,
+          "image stretch mode",
+          "flatten",
+          "Pencil stretch image mode will use Figma Fill because Figma has no stretch mode",
+        ),
+      );
+    const transform = readPaintTransform(
+      paint.imageTransform ?? paint.transform,
+    );
     return [
       {
         type: "image",
         visible: true,
         opacity: typeof paint.opacity === "number" ? paint.opacity : 1,
-        blendMode: "normal",
+        blendMode: mapPenBlendMode(
+          paint.blendMode,
+          bridgeId,
+          `${property} image`,
+          warnings,
+        ),
         assetId,
-        scaleMode:
-          paint.mode === "fit"
-            ? "fit"
-            : paint.mode === "stretch"
-              ? "stretch"
-              : "fill",
+        scaleMode,
+        ...(transform ? { transform } : {}),
+        ...(typeof paint.scalingFactor === "number"
+          ? { scalingFactor: paint.scalingFactor }
+          : {}),
+        ...(typeof paint.rotation === "number"
+          ? { rotation: paint.rotation }
+          : {}),
       },
     ];
   }
@@ -576,6 +617,69 @@ function mapPaint(
     return [];
   }
   throw new Error(`Unknown Pen paint on ${bridgeId}`);
+}
+
+function mapPenBlendMode(
+  value: unknown,
+  bridgeId: string,
+  construct: string,
+  warnings: TransferWarning[],
+): Paint["blendMode"] {
+  if (value === undefined) return "normal";
+  const normalized = String(value)
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .replace(/[\s_]+/g, "-")
+    .toLowerCase();
+  const supported: Paint["blendMode"][] = [
+    "normal",
+    "darken",
+    "multiply",
+    "linear-burn",
+    "color-burn",
+    "lighten",
+    "screen",
+    "linear-dodge",
+    "color-dodge",
+    "overlay",
+    "soft-light",
+    "hard-light",
+    "difference",
+    "exclusion",
+    "hue",
+    "saturation",
+    "color",
+    "luminosity",
+  ];
+  if (supported.includes(normalized as Paint["blendMode"]))
+    return normalized as Paint["blendMode"];
+  warnings.push(
+    warning(
+      bridgeId,
+      `${construct} blend mode`,
+      "flatten",
+      `Unsupported Pencil blend mode ${String(value)} will use Normal`,
+    ),
+  );
+  return "normal";
+}
+
+function readPaintTransform(
+  value: unknown,
+): [[number, number, number], [number, number, number]] | undefined {
+  if (!Array.isArray(value) || value.length !== 2) return undefined;
+  const rows = value as unknown[];
+  if (
+    !rows.every(
+      (row) =>
+        Array.isArray(row) &&
+        row.length === 3 &&
+        row.every(
+          (entry) => typeof entry === "number" && Number.isFinite(entry),
+        ),
+    )
+  )
+    return undefined;
+  return value as [[number, number, number], [number, number, number]];
 }
 
 function importPenVariables(
@@ -868,7 +972,12 @@ function mapEffects(
         offset: effect.offset ?? { x: 0, y: 0 },
         radius: effect.blur ?? 0,
         spread: effect.spread ?? 0,
-        blendMode: "normal" as const,
+        blendMode: mapPenBlendMode(
+          effect.blendMode,
+          bridgeId,
+          "shadow",
+          warnings,
+        ),
       });
       continue;
     }

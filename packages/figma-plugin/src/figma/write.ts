@@ -58,6 +58,7 @@ export async function previewBridgeDocument(
   const document = bridgeDocumentSchema.parse(input);
   await figma.currentPage.loadAsync();
   const fontWarnings = await preflightFonts(document);
+  normalizePaintsForFigma(document);
   const mappedRoots = findMappedRoots(
     figma.currentPage,
     document.root.bridgeId,
@@ -95,6 +96,7 @@ export async function writeBridgeDocument(
   const document = bridgeDocumentSchema.parse(input);
   await figma.currentPage.loadAsync();
   const fontWarnings = await preflightFonts(document);
+  normalizePaintsForFigma(document);
   const hashes = authoredDocumentHashes(document);
   const mappedRoots = findMappedRoots(
     figma.currentPage,
@@ -218,6 +220,7 @@ export async function writeBridgeNodeUpdates(
     if (!sources.has(bridgeId) || !mapped.nodes.has(bridgeId))
       throw new Error(`Conflict mapping missing ${bridgeId}`);
   await preflightFonts(document);
+  normalizePaintsForFigma(document);
   const hashes = authoredDocumentHashes(document);
   const context = prepareContext(document, assetData, hashes);
   for (const [bridgeId, node] of mapped.nodes)
@@ -675,6 +678,21 @@ async function preflightFonts(document: BridgeDocument): Promise<string[]> {
   return warnings;
 }
 
+function normalizePaintsForFigma(document: BridgeDocument): void {
+  const normalize = (node: BridgeNode) => {
+    for (const paint of [
+      ...(node.fills ?? []),
+      ...(node.stroke?.paints ?? []),
+    ]) {
+      if (paint.type === "image" && paint.scaleMode === "stretch")
+        paint.scaleMode = "fill";
+    }
+  };
+  visit(document.root, normalize);
+  for (const component of document.components ?? [])
+    visit(component, normalize);
+}
+
 async function loadFontWithTimeout(font: FontName): Promise<void> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -1051,7 +1069,7 @@ function applyGeometry(
         offset: effect.offset,
         radius: effect.radius,
         spread: effect.spread,
-        blendMode: "NORMAL",
+        blendMode: toFigmaBlendMode(effect.blendMode),
       };
     });
   }
@@ -1283,7 +1301,7 @@ function toFigmaPaint(
       type: "SOLID",
       visible: paint.visible,
       opacity: paint.opacity * paint.color.a,
-      blendMode: "NORMAL",
+      blendMode: toFigmaBlendMode(paint.blendMode),
       color: paint.color,
     };
   }
@@ -1297,7 +1315,7 @@ function toFigmaPaint(
             : "GRADIENT_LINEAR",
       visible: paint.visible,
       opacity: paint.opacity,
-      blendMode: "NORMAL",
+      blendMode: toFigmaBlendMode(paint.blendMode),
       gradientStops: paint.stops.map((stop) => ({
         position: stop.position,
         color: stop.color,
@@ -1312,17 +1330,33 @@ function toFigmaPaint(
     type: "IMAGE",
     visible: paint.visible,
     opacity: paint.opacity,
-    blendMode: "NORMAL",
+    blendMode: toFigmaBlendMode(paint.blendMode),
     imageHash,
     scaleMode:
       paint.scaleMode === "fit"
         ? "FIT"
-        : paint.scaleMode === "stretch"
-          ? "FILL"
+        : paint.scaleMode === "crop"
+          ? "CROP"
           : paint.scaleMode === "tile"
             ? "TILE"
             : "FILL",
+    ...(paint.scaleMode === "crop" && paint.transform
+      ? { imageTransform: paint.transform }
+      : {}),
+    ...(paint.scaleMode === "tile" && paint.scalingFactor !== undefined
+      ? { scalingFactor: paint.scalingFactor }
+      : {}),
+    ...((paint.scaleMode === "fill" ||
+      paint.scaleMode === "fit" ||
+      paint.scaleMode === "tile") &&
+    paint.rotation !== undefined
+      ? { rotation: paint.rotation }
+      : {}),
   };
+}
+
+function toFigmaBlendMode(value: BridgePaint["blendMode"]): BlendMode {
+  return value.replaceAll("-", "_").toUpperCase() as BlendMode;
 }
 
 function tintSvg(
@@ -1347,7 +1381,7 @@ function toSolidPaint(
     type: "SOLID",
     visible: paint.visible,
     opacity: paint.opacity * paint.color.a,
-    blendMode: "NORMAL",
+    blendMode: toFigmaBlendMode(paint.blendMode),
     color: paint.color,
   };
 }
