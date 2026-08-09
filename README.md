@@ -92,6 +92,11 @@ If an authored font is unavailable to Figma, the plugin selects the closest load
 weight (for example, Fraunces falls back to Georgia), reports the substitution, and stores separate
 Pencil and Figma baseline hashes so the fallback does not appear as a user edit during sync.
 
+The plugin UI groups transfers by direction and reduces each transfer to review and send. Mapped
+design comparison uses plain Pencil/Figma change counts and destination-specific update actions.
+Technical response JSON, native IDs, adoption, and diagnostic tools are hidden by default under
+explicit details panels and remain available for troubleshooting or sharing a test result.
+
 When modifying the plugin, run its watch build in another terminal:
 
 ```sh

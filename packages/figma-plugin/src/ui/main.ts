@@ -1,22 +1,48 @@
+import {
+  editableNodeSummary,
+  friendlyWarning,
+  presentSync,
+} from "./presentation.js";
+
 const form = required<HTMLFormElement>("pair-form");
-const input = required<HTMLInputElement>("pair-code");
+const pairInput = required<HTMLInputElement>("pair-code");
 const statusBadge = required<HTMLElement>("status");
+const connection = required<HTMLElement>("connection");
+const workspace = required<HTMLElement>("workspace");
 const detail = required<HTMLElement>("detail");
-const actions = required<HTMLElement>("actions");
 const output = required<HTMLElement>("output");
 const screenList = required<HTMLElement>("screen-list");
 const screenQuery = required<HTMLInputElement>("screen-query");
-const exportCopy = required<HTMLButtonElement>("export-copy");
+const importReview = required<HTMLElement>("import-review");
+const importReviewTitle = required<HTMLElement>("import-review-title");
+const importReviewSummary = required<HTMLElement>("import-review-summary");
+const importWarnings = required<HTMLElement>("import-warnings");
+const confirmImport = required<HTMLButtonElement>("confirm-import");
+const prepareExport = required<HTMLButtonElement>("prepare-export");
+const exportReview = required<HTMLElement>("export-review");
+const exportReviewTitle = required<HTMLElement>("export-review-title");
+const exportReviewSummary = required<HTMLElement>("export-review-summary");
+const exportWarnings = required<HTMLElement>("export-warnings");
+const confirmExport = required<HTMLButtonElement>("confirm-export");
 const adoptRootId = required<HTMLInputElement>("adopt-root-id");
 const adoptCopy = required<HTMLButtonElement>("adopt-copy");
-const previewSync = required<HTMLButtonElement>("preview-sync");
+const compareSync = required<HTMLButtonElement>("compare-sync");
+const syncReview = required<HTMLElement>("sync-review");
+const syncReviewTitle = required<HTMLElement>("sync-review-title");
+const syncReviewSummary = required<HTMLElement>("sync-review-summary");
+const comparison = required<HTMLElement>("comparison");
+const pencilChangeCount = required<HTMLElement>("pencil-change-count");
+const figmaChangeCount = required<HTMLElement>("figma-change-count");
 const applySync = required<HTMLButtonElement>("apply-sync");
 const conflictPanel = required<HTMLElement>("conflict-panel");
 const conflictSummary = required<HTMLElement>("conflict-summary");
 const keepPencil = required<HTMLButtonElement>("keep-pencil");
 const keepFigma = required<HTMLButtonElement>("keep-figma");
 const cancelConflict = required<HTMLButtonElement>("cancel-conflict");
+const copyJson = required<HTMLButtonElement>("copy-json");
+
 let token: string | undefined;
+let pendingExportPreview: any;
 let pendingExportPlan: any;
 let pendingSyncPreview: any;
 let pendingConflict: any;
@@ -30,79 +56,85 @@ let pendingImport:
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
-  void connect(input.value.trim().toUpperCase());
+  void connect(pairInput.value.trim().toUpperCase());
 });
 
-required("screens").addEventListener("click", () => {
-  void request("/pen/screens", { method: "GET" })
-    .then((message) => renderScreens(message.text))
-    .catch(showError);
-});
-required("search-screens").addEventListener("click", () => {
-  const query = screenQuery.value.trim();
-  if (!query) return;
-  const directId = /^id:([A-Za-z0-9]+)$/i.exec(query)?.[1];
-  if (directId) {
-    void importScreen(directId);
-    return;
-  }
-  void request(`/pen/screen-search?query=${encodeURIComponent(query)}`, {
-    method: "GET",
-  })
-    .then((message) => renderScreens(message.text))
-    .catch(showError);
-});
-required("selection").addEventListener("click", () =>
-  parent.postMessage({ pluginMessage: { type: "selection-summary" } }, "*"),
+required("screens").addEventListener("click", () => void loadScreens());
+required("search-screens").addEventListener(
+  "click",
+  () => void searchScreens(),
 );
-required("preview-export").addEventListener("click", () => {
-  pendingExportPlan = undefined;
-  exportCopy.disabled = true;
-  adoptCopy.disabled = true;
-  applySync.disabled = true;
-  pendingSyncPreview = undefined;
-  hideConflict();
-  setStatus("Reading Figma…", true);
-  parent.postMessage({ pluginMessage: { type: "preview-figma-export" } }, "*");
+screenQuery.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    void searchScreens();
+  }
 });
-required("plan-export").addEventListener("click", () => {
-  setStatus("Planning Pencil export…", true);
-  parent.postMessage({ pluginMessage: { type: "plan-figma-export" } }, "*");
-});
-exportCopy.addEventListener("click", () => {
-  if (!pendingExportPlan || !token) return;
-  const counts = pendingExportPlan.counts;
-  const warningCount = pendingExportPlan.warnings?.length ?? 0;
-  const confirmed = confirm(
-    `Create a new Pencil copy with ${counts.inserts} editable nodes and ${counts.assets} assets?\n\nThis will run ${pendingExportPlan.chunks.length} validated chunks.${warningCount ? `\n\n${warningCount} conversion warnings are listed in the plan.` : ""}`,
-  );
-  if (!confirmed) return;
-  exportCopy.disabled = true;
-  setStatus("Writing Pencil copy…", true);
+
+confirmImport.addEventListener("click", () => {
+  if (!pendingImport) return;
+  confirmImport.disabled = true;
+  setStatus("Sending to Figma…", "working");
+  setActivity("Creating the editable Figma design…");
   parent.postMessage(
     {
       pluginMessage: {
-        type: "execute-figma-export",
-        token,
+        type: "apply-document",
+        document: pendingImport.document,
+        assetData: pendingImport.assetData,
       },
     },
     "*",
   );
 });
+
+required("cancel-import").addEventListener("click", () => {
+  pendingImport = undefined;
+  importReview.hidden = true;
+  setStatus("Connected", "success");
+  setActivity("Transfer cancelled. No Figma layers were changed.");
+});
+
+prepareExport.addEventListener("click", () => {
+  pendingExportPreview = undefined;
+  pendingExportPlan = undefined;
+  exportReview.hidden = true;
+  adoptCopy.disabled = true;
+  prepareExport.disabled = true;
+  setStatus("Reviewing selection…", "working");
+  setActivity("Reading the selected Figma frame and checking its contents…");
+  parent.postMessage({ pluginMessage: { type: "preview-figma-export" } }, "*");
+});
+
+confirmExport.addEventListener("click", () => {
+  if (!pendingExportPlan || !token) return;
+  confirmExport.disabled = true;
+  setStatus("Sending to Pencil…", "working");
+  setActivity("Creating a new editable copy in open canvas space…");
+  parent.postMessage(
+    { pluginMessage: { type: "execute-figma-export", token } },
+    "*",
+  );
+});
+
+required("cancel-export").addEventListener("click", () => {
+  pendingExportPlan = undefined;
+  exportReview.hidden = true;
+  setStatus("Connected", "success");
+  setActivity("Transfer cancelled. No Pencil layers were changed.");
+});
+
 adoptCopy.addEventListener("click", () => {
   const penRootId = adoptRootId.value.trim();
   if (!token || !/^[A-Za-z0-9]+$/.test(penRootId)) {
-    detail.textContent = "Enter a valid existing Pencil root ID.";
+    setActivity("Enter the Pencil page ID you want to link.");
     return;
   }
-  if (
-    !confirm(
-      `Adopt Pencil root ${penRootId} as the synchronized counterpart of this Figma frame?\n\nNo design nodes will be changed. The sidecar mapping and baseline will be updated atomically.`,
-    )
-  )
-    return;
   adoptCopy.disabled = true;
-  setStatus("Adopting Pencil copy…", true);
+  setStatus("Linking copy…", "working");
+  setActivity(
+    "Saving the relationship between the selected Figma frame and Pencil copy…",
+  );
   parent.postMessage(
     {
       pluginMessage: {
@@ -114,273 +146,445 @@ adoptCopy.addEventListener("click", () => {
     "*",
   );
 });
-previewSync.addEventListener("click", () => {
+
+compareSync.addEventListener("click", () => {
   if (!token) return;
-  setStatus("Comparing both editors…", true);
+  compareSync.disabled = true;
+  syncReview.hidden = true;
+  hideConflict();
+  setStatus("Comparing…", "working");
+  setActivity(
+    "Comparing the selected Figma frame with its linked Pencil design…",
+  );
   parent.postMessage(
     { pluginMessage: { type: "preview-mapped-sync", token } },
     "*",
   );
 });
+
 applySync.addEventListener("click", () => {
   if (!token || !pendingSyncPreview) return;
-  const toPencil = pendingSyncPreview.actions.toPencil;
-  const toFigma = pendingSyncPreview.actions.toFigma;
-  const count = toPencil || toFigma;
-  const source = toPencil ? "Figma" : "Pencil";
-  const target = toPencil ? "Pencil" : "Figma";
-  if (
-    !confirm(
-      `Apply ${count} ${source}-only node update${count === 1 ? "" : "s"} to ${target}?\n\nThe updates run in one atomic, undoable ${target} transaction.`,
-    )
-  )
-    return;
   applySync.disabled = true;
-  setStatus(`Updating ${target}…`, true);
+  const target = Number(pendingSyncPreview.actions?.toPencil ?? 0)
+    ? "Pencil"
+    : "Figma";
+  setStatus(`Updating ${target}…`, "working");
+  setActivity(
+    `Applying the reviewed changes to ${target} in one undoable update…`,
+  );
   parent.postMessage(
     { pluginMessage: { type: "apply-mapped-sync", token } },
     "*",
   );
 });
+
 keepPencil.addEventListener("click", () => resolveConflict("pen"));
 keepFigma.addEventListener("click", () => resolveConflict("figma"));
 cancelConflict.addEventListener("click", () => {
   hideConflict();
   pendingSyncPreview = undefined;
-  applySync.disabled = true;
-  setStatus("Conflict cancelled", true);
-  detail.textContent =
-    "No writes were made. Preview mapped sync again when you are ready.";
-  output.textContent = JSON.stringify(
-    {
-      type: "figma-sync-result",
-      ok: true,
-      operation: "cancelled",
-      writes: 0,
-    },
-    null,
-    2,
-  );
+  applySync.hidden = true;
+  setStatus("Connected", "success");
+  setActivity("No changes were made. You can compare again when ready.");
+  setTechnical({
+    type: "figma-sync-result",
+    ok: true,
+    operation: "cancelled",
+    writes: 0,
+  });
 });
+
+required("selection").addEventListener("click", () =>
+  parent.postMessage({ pluginMessage: { type: "selection-summary" } }, "*"),
+);
 required("write-test").addEventListener("click", () =>
   parent.postMessage({ pluginMessage: { type: "reversible-write-test" } }, "*"),
 );
 
+copyJson.addEventListener("click", () => void copyTechnicalJson());
+
 window.onmessage = (event) => {
   const message = event.data.pluginMessage;
-  if (message) {
-    output.textContent = JSON.stringify(message, null, 2);
-    if (message.type === "import-result") {
-      if (!message.ok) {
-        setStatus("Import failed", false);
-        detail.textContent = message.message;
-      } else {
-        const completedImport = pendingImport;
-        pendingImport = undefined;
-        if (!completedImport) {
-          setStatus("Imported — mapping not saved", false);
-          return;
-        }
-        setStatus("Saving mapping…", true);
-        void request("/sync/complete", {
-          method: "POST",
-          body: JSON.stringify({
-            transferId: completedImport.transferId,
-            mappings: message.mappings,
-            ...(message.figmaBaselineHashes &&
-            typeof message.figmaBaselineHashes === "object"
-              ? { figmaBaselineHashes: message.figmaBaselineHashes }
-              : {}),
-            ...(message.figmaDocumentId
-              ? { figmaDocumentId: message.figmaDocumentId }
-              : {}),
-          }),
-        })
-          .then((committed) => {
-            output.textContent = JSON.stringify(
-              { ...message, manifest: committed },
-              null,
-              2,
-            );
-            setStatus("Imported and mapped", true);
-            previewSync.disabled = false;
-          })
-          .catch((error) => {
-            setStatus("Imported — mapping save failed", false);
-            detail.textContent =
-              error instanceof Error ? error.message : "Mapping save failed";
-          });
-      }
-    }
-    if (message.type === "import-preview") {
-      if (!message.ok) {
-        setStatus("Preview failed", false);
-        detail.textContent = message.message;
-        return;
-      }
-      const pending = pendingImport;
-      if (!pending) return;
-      const counts = message.operations;
-      const summary =
-        message.operation === "created"
-          ? `Create ${counts.create} editable nodes?`
-          : message.operation === "unchanged"
-            ? "No authored changes were found. Select the existing import?"
-            : `Apply ${message.nodeCount} operations to the existing import?\n\nCreate: ${counts.create}\nUpdate: ${counts.update}\nMove/reorder: ${counts.move}\nDelete: ${counts.delete}`;
-      const warningText = message.warnings.length
-        ? `\n\nWarnings:\n${message.warnings.map((warning: string) => `• ${warning}`).join("\n")}`
-        : "";
-      if (!confirm(`${summary}${warningText}`)) {
-        pendingImport = undefined;
-        setStatus("Connected — cancelled", true);
-        return;
-      }
-      setStatus("Writing Figma…", true);
-      parent.postMessage(
-        {
-          pluginMessage: {
-            type: "apply-document",
-            document: pending.document,
-            assetData: pending.assetData,
-          },
-        },
-        "*",
-      );
-    }
-    if (message.type === "figma-export-preview") {
-      setStatus(
-        message.ok ? "Export preview ready" : "Export preview failed",
-        message.ok,
-      );
-      if (!message.ok) detail.textContent = message.message;
-      adoptCopy.disabled = !message.ok;
-    }
-    if (message.type === "figma-export-plan") {
-      setStatus(
-        message.ok ? "Pencil export plan ready" : "Export planning failed",
-        message.ok,
-      );
-      if (!message.ok) {
-        pendingExportPlan = undefined;
-        exportCopy.disabled = true;
-        detail.textContent = message.message;
-      } else {
-        pendingExportPlan = message;
-        exportCopy.disabled = false;
-      }
-    }
-    if (message.type === "figma-export-result") {
-      setStatus(
-        message.ok ? "Pencil copy created" : "Pencil export failed",
-        message.ok,
-      );
-      exportCopy.disabled = !pendingExportPlan;
-      if (!message.ok) detail.textContent = message.message;
-      else
-        detail.textContent = `Created and mapped ${message.nodeCount} editable nodes in Pencil as ${message.rootId}.`;
-    }
-    if (message.type === "figma-export-adopted") {
-      setStatus(
-        message.ok ? "Pencil copy adopted" : "Pencil adoption failed",
-        message.ok,
-      );
-      adoptCopy.disabled = false;
-      if (!message.ok) detail.textContent = message.message;
-      else {
-        detail.textContent = `Mapped ${message.nodeCount} nodes from Pencil root ${message.rootId} at manifest revision ${message.manifest.revision}.`;
-        previewSync.disabled = false;
-      }
-    }
-    if (message.type === "figma-sync-preview") {
-      setStatus(
-        message.ok
-          ? message.canApplyWithoutResolution
-            ? "Sync preview ready"
-            : "Sync needs attention"
-          : "Sync preview failed",
-        Boolean(message.ok),
-      );
-      pendingSyncPreview = message.ok ? message : undefined;
-      const conflicts = message.ok ? (message.conflictRoots ?? []) : [];
-      pendingConflict = conflicts[0];
-      conflictPanel.hidden = !pendingConflict;
-      if (pendingConflict) {
-        conflictSummary.textContent = `${conflicts.length} conflict${conflicts.length === 1 ? "" : "s"} found. Resolve ${pendingConflict.bridgeId} by choosing which editor wins. The other editor will be updated atomically.`;
-      }
-      if (message.actions.toPencil > 0 && message.actions.toFigma === 0)
-        applySync.textContent = "Apply Figma changes to Pencil…";
-      else if (message.actions.toFigma > 0 && message.actions.toPencil === 0)
-        applySync.textContent = "Apply Pencil changes to Figma…";
-      else applySync.textContent = "Apply mapped changes…";
-      applySync.disabled = !canApplySyncPreview(message);
-      if (!message.ok) detail.textContent = message.message;
-      else if (message.baselineUpgradeRequired)
-        detail.textContent =
-          "This mapping predates dual baselines. Adopt the same Pencil root once more, then preview again.";
-      else if (message.unsupportedReason)
-        detail.textContent = message.unsupportedReason;
-      else
-        detail.textContent = `To Pencil: ${message.actions.toPencil}. To Figma: ${message.actions.toFigma}. Conflicts: ${message.actions.conflicts}.`;
-    }
-    if (message.type === "figma-sync-result") {
-      setStatus(
-        message.ok
-          ? message.operation === "unchanged"
-            ? "Already synchronized"
-            : message.operation === "resolved-keep-pen"
-              ? "Kept Pencil version"
-              : message.operation === "resolved-keep-figma"
-                ? "Kept Figma version"
-                : message.operation === "updated-figma"
-                  ? "Figma updated"
-                  : "Pencil updated"
-          : "Sync apply failed",
-        message.ok,
-      );
-      if (!message.ok) {
-        detail.textContent = message.message;
-        keepPencil.disabled = false;
-        keepFigma.disabled = false;
-        cancelConflict.disabled = false;
-        applySync.disabled = !canApplySyncPreview(pendingSyncPreview);
-      } else {
-        pendingSyncPreview = undefined;
-        applySync.disabled = true;
-        hideConflict();
-        detail.textContent =
-          message.operation === "unchanged"
-            ? "No Pencil updates were required."
-            : `${message.operation === "resolved-keep-pen" || message.operation === "updated-figma" ? "Updated Figma from Pencil" : "Updated Pencil from Figma"} for ${message.updatedNodeCount} node${message.updatedNodeCount === 1 ? "" : "s"}; manifest revision ${message.manifest.revision}.`;
-      }
-    }
+  if (!message) return;
+  setTechnical(message);
+
+  if (message.type === "selection-summary") {
+    const count = Array.isArray(message.nodes) ? message.nodes.length : 0;
+    setActivity(
+      count === 1
+        ? `Selected “${message.nodes[0]?.name ?? "Untitled"}”.`
+        : `${count} Figma layers are selected. Transfers require one complete frame or component.`,
+    );
   }
+
+  if (message.type === "write-test-result") {
+    setStatus(
+      message.ok ? "Write access works" : "Write test failed",
+      message.ok ? "success" : "error",
+    );
+    setActivity(
+      message.ok
+        ? "Figma write access is working. The temporary test layer was removed."
+        : "Figma did not allow the reversible write test.",
+    );
+  }
+
+  if (message.type === "import-preview") handleImportPreview(message);
+  if (message.type === "import-result") handleImportResult(message);
+  if (message.type === "figma-export-preview")
+    handleFigmaExportPreview(message);
+  if (message.type === "figma-export-plan") handleFigmaExportPlan(message);
+  if (message.type === "figma-export-result") handleFigmaExportResult(message);
+  if (message.type === "figma-export-adopted") handleAdoptResult(message);
+  if (message.type === "figma-sync-preview") handleSyncPreview(message);
+  if (message.type === "figma-sync-result") handleSyncResult(message);
 };
 
-function canApplySyncPreview(message: any): boolean {
-  if (!message?.ok || message.baselineUpgradeRequired) return false;
-  const toPencil = Number(message.actions?.toPencil ?? 0);
-  const toFigma = Number(message.actions?.toFigma ?? 0);
-  return Boolean(
-    message.canApplyWithoutResolution &&
-    ((toPencil > 0 && toFigma === 0) || (toFigma > 0 && toPencil === 0)) &&
-    message.actions?.conflicts === 0 &&
-    message.actions?.unmapped === 0,
+function handleImportPreview(message: any): void {
+  if (!message.ok) {
+    pendingImport = undefined;
+    confirmImport.disabled = false;
+    importReview.hidden = true;
+    showOperationError(
+      message.message ?? "This Pencil screen could not be reviewed.",
+    );
+    return;
+  }
+  const counts = message.operations ?? {};
+  importReviewTitle.textContent =
+    message.operation === "created"
+      ? "Ready to create a Figma copy"
+      : message.operation === "unchanged"
+        ? "This screen is already in Figma"
+        : "Ready to update the Figma copy";
+  importReviewSummary.textContent =
+    message.operation === "created"
+      ? `${editableNodeSummary(Number(counts.create ?? message.nodeCount ?? 0))} will be created in open canvas space.`
+      : message.operation === "unchanged"
+        ? "No design changes were found. Continue to select and refresh its saved link."
+        : `${message.nodeCount} change${message.nodeCount === 1 ? "" : "s"} will be applied to the existing Figma copy.`;
+  renderWarnings(importWarnings, message.warnings);
+  confirmImport.textContent =
+    message.operation === "unchanged" ? "Open existing copy" : "Send to Figma";
+  confirmImport.disabled = false;
+  importReview.hidden = false;
+  setStatus("Ready to send", "success");
+  setActivity("Review the summary, then send when you are ready.");
+}
+
+function handleImportResult(message: any): void {
+  confirmImport.disabled = false;
+  if (!message.ok) {
+    showOperationError(
+      message.message ?? "The Pencil screen could not be sent to Figma.",
+    );
+    return;
+  }
+  const completedImport = pendingImport;
+  pendingImport = undefined;
+  importReview.hidden = true;
+  if (!completedImport) {
+    setStatus("Sent, but not linked", "error");
+    setActivity(
+      "The Figma copy was created, but its sync link could not be saved.",
+    );
+    return;
+  }
+  setStatus("Saving link…", "working");
+  setActivity("The Figma design is ready. Saving its Pencil connection…");
+  void request("/sync/complete", {
+    method: "POST",
+    body: JSON.stringify({
+      transferId: completedImport.transferId,
+      mappings: message.mappings,
+      ...(message.figmaBaselineHashes &&
+      typeof message.figmaBaselineHashes === "object"
+        ? { figmaBaselineHashes: message.figmaBaselineHashes }
+        : {}),
+      ...(message.figmaDocumentId
+        ? { figmaDocumentId: message.figmaDocumentId }
+        : {}),
+    }),
+  })
+    .then((committed) => {
+      setTechnical({ ...message, manifest: committed });
+      setStatus("Sent to Figma", "success");
+      const mappedCount = Array.isArray(message.mappings)
+        ? message.mappings.length
+        : Number(message.nodeCount ?? 0);
+      setActivity(
+        `${editableNodeSummary(mappedCount)} are ready in Figma and linked for future comparisons.`,
+      );
+    })
+    .catch((error) => {
+      setStatus("Sent, but link failed", "error");
+      setActivity(errorMessage(error, "The sync link could not be saved."));
+    });
+}
+
+function handleFigmaExportPreview(message: any): void {
+  if (!message.ok) {
+    prepareExport.disabled = false;
+    pendingExportPreview = undefined;
+    showOperationError(
+      message.message ??
+        "Select one complete Figma frame or component and try again.",
+    );
+    return;
+  }
+  pendingExportPreview = message;
+  adoptCopy.disabled = false;
+  setStatus("Preparing summary…", "working");
+  setActivity(
+    "The frame is readable. Checking the transfer size and warnings…",
   );
+  parent.postMessage({ pluginMessage: { type: "plan-figma-export" } }, "*");
+}
+
+function handleFigmaExportPlan(message: any): void {
+  prepareExport.disabled = false;
+  if (!message.ok) {
+    pendingExportPlan = undefined;
+    exportReview.hidden = true;
+    showOperationError(
+      message.message ?? "The Pencil transfer could not be prepared.",
+    );
+    return;
+  }
+  pendingExportPlan = message;
+  const counts = message.counts ?? {};
+  const name = pendingExportPreview?.root?.name ?? "Selected frame";
+  exportReviewTitle.textContent = `Send “${name}” to Pencil?`;
+  exportReviewSummary.textContent = `${editableNodeSummary(Number(counts.inserts ?? 0))} and ${Number(counts.assets ?? 0)} asset${Number(counts.assets ?? 0) === 1 ? "" : "s"} will be placed in open canvas space.`;
+  renderWarnings(exportWarnings, message.warnings);
+  confirmExport.disabled = false;
+  exportReview.hidden = false;
+  setStatus("Ready to send", "success");
+  setActivity("Review the summary, then send when you are ready.");
+}
+
+function handleFigmaExportResult(message: any): void {
+  confirmExport.disabled = false;
+  if (!message.ok) {
+    showOperationError(
+      message.message ?? "The Figma frame could not be sent to Pencil.",
+    );
+    return;
+  }
+  exportReview.hidden = true;
+  setStatus("Sent to Pencil", "success");
+  setActivity(
+    `${editableNodeSummary(Number(message.nodeCount ?? 0))} were created in Pencil and placed away from existing pages.`,
+  );
+}
+
+function handleAdoptResult(message: any): void {
+  adoptCopy.disabled = false;
+  if (!message.ok) {
+    showOperationError(
+      message.message ?? "The existing Pencil copy could not be linked.",
+    );
+    return;
+  }
+  setStatus("Copy linked", "success");
+  setActivity(
+    "The existing Pencil and Figma designs are now linked for comparison.",
+  );
+}
+
+function handleSyncPreview(message: any): void {
+  compareSync.disabled = false;
+  pendingSyncPreview = message.ok ? message : undefined;
+  const presented = presentSync(message);
+  syncReviewTitle.textContent = presented.title;
+  syncReviewSummary.textContent = presented.summary;
+  pencilChangeCount.textContent = String(presented.pencilChanges);
+  figmaChangeCount.textContent = String(presented.figmaChanges);
+  comparison.hidden =
+    presented.pencilChanges === 0 && presented.figmaChanges === 0;
+  applySync.hidden = !presented.canApply;
+  applySync.disabled = !presented.canApply;
+  applySync.textContent = presented.applyLabel ?? "Apply changes";
+  syncReview.hidden = false;
+
+  const conflicts = message.ok ? (message.conflictRoots ?? []) : [];
+  pendingConflict = conflicts[0];
+  conflictPanel.hidden = !pendingConflict;
+  if (pendingConflict)
+    conflictSummary.textContent = `${conflicts.length} area${conflicts.length === 1 ? " was" : "s were"} changed in both apps. Choose the version that should replace the other one.`;
+
+  setStatus(
+    !message.ok
+      ? "Comparison failed"
+      : pendingConflict
+        ? "Choose a version"
+        : "Comparison ready",
+    !message.ok ? "error" : pendingConflict ? "neutral" : "success",
+  );
+  setActivity(presented.summary);
+}
+
+function handleSyncResult(message: any): void {
+  if (!message.ok) {
+    showOperationError(
+      message.message ?? "The reviewed changes could not be applied.",
+    );
+    if (pendingSyncPreview) {
+      const presented = presentSync(pendingSyncPreview);
+      applySync.hidden = !presented.canApply;
+      applySync.disabled = !presented.canApply;
+    }
+    keepPencil.disabled = false;
+    keepFigma.disabled = false;
+    cancelConflict.disabled = false;
+    return;
+  }
+  pendingSyncPreview = undefined;
+  applySync.hidden = true;
+  hideConflict();
+  const destination =
+    message.operation === "resolved-keep-pen" ||
+    message.operation === "updated-figma"
+      ? "Figma"
+      : "Pencil";
+  const unchanged = message.operation === "unchanged";
+  syncReviewTitle.textContent = unchanged
+    ? "Everything matches"
+    : `${destination} updated`;
+  syncReviewSummary.textContent = unchanged
+    ? "Pencil and Figma already contain the same editable design."
+    : `${message.updatedNodeCount} changed layer${message.updatedNodeCount === 1 ? " was" : "s were"} applied to ${destination}.`;
+  syncReview.hidden = false;
+  comparison.hidden = true;
+  setStatus(
+    unchanged ? "Already matched" : `${destination} updated`,
+    "success",
+  );
+  setActivity(syncReviewSummary.textContent ?? "The designs are synchronized.");
+}
+
+async function loadScreens(): Promise<void> {
+  setStatus("Loading screens…", "working");
+  setActivity("Reading the available top-level Pencil screens…");
+  try {
+    const message = await request("/pen/screens", { method: "GET" });
+    renderScreens(message.text);
+    setStatus("Screens ready", "success");
+  } catch (error) {
+    showOperationError(
+      errorMessage(error, "Pencil screens could not be loaded."),
+    );
+  }
+}
+
+async function searchScreens(): Promise<void> {
+  const query = screenQuery.value.trim();
+  if (!query) {
+    setActivity("Enter a screen name or browse all Pencil screens.");
+    return;
+  }
+  const directId = /^id:([A-Za-z0-9]+)$/i.exec(query)?.[1];
+  if (directId) {
+    await importScreen(directId);
+    return;
+  }
+  setStatus("Searching…", "working");
+  try {
+    const message = await request(
+      `/pen/screen-search?query=${encodeURIComponent(query)}`,
+      { method: "GET" },
+    );
+    renderScreens(message.text);
+    setStatus("Search ready", "success");
+  } catch (error) {
+    showOperationError(errorMessage(error, "The Pencil search failed."));
+  }
+}
+
+function renderScreens(text: string): void {
+  screenList.replaceChildren();
+  const screens = String(text ?? "")
+    .split("\n")
+    .map((line) => /^([A-Za-z0-9]+)\s+\|\s+(.+?)\s*$/.exec(line))
+    .filter((match): match is RegExpExecArray => Boolean(match));
+  if (!screens.length) {
+    const empty = document.createElement("p");
+    empty.textContent = "No matching Pencil screens were found.";
+    screenList.append(empty);
+    setActivity("No matching screens were found. Try a shorter name.");
+    return;
+  }
+  for (const match of screens) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = match[2] ?? "Untitled";
+    button.addEventListener("click", () => void importScreen(match[1]!));
+    screenList.append(button);
+  }
+  setActivity(
+    `${screens.length} Pencil screen${screens.length === 1 ? "" : "s"} found. Choose one to review.`,
+  );
+}
+
+async function importScreen(nodeId: string): Promise<void> {
+  try {
+    importReview.hidden = true;
+    setStatus("Reviewing screen…", "working");
+    setActivity(
+      "Reading the Pencil screen and checking what Figma will create…",
+    );
+    const message = await request(`/pen/nodes/${nodeId}`, { method: "GET" });
+    pendingImport = {
+      document: message.document,
+      assetData: message.assetData ?? {},
+      transferId: message.transferId,
+    };
+    parent.postMessage(
+      {
+        pluginMessage: { type: "preview-document", document: message.document },
+      },
+      "*",
+    );
+  } catch (error) {
+    pendingImport = undefined;
+    showOperationError(
+      errorMessage(error, "The Pencil screen could not be reviewed."),
+    );
+  }
+}
+
+async function connect(code: string): Promise<void> {
+  if (!/^[A-Z0-9]{6}$/.test(code)) {
+    setStatus("Check the code", "error");
+    setActivity("Enter the six-character code shown by the bridge service.");
+    return;
+  }
+  setStatus("Connecting…", "working");
+  try {
+    const paired = await request("/pair", {
+      method: "POST",
+      body: JSON.stringify({ type: "pair", protocol: 1, code }),
+      authenticated: false,
+    });
+    token = paired.token;
+    await request("/hello", { method: "POST" });
+    connection.hidden = true;
+    workspace.hidden = false;
+    setStatus("Connected", "success");
+    setActivity("Pencil is ready. Choose what you want to move.");
+  } catch (error) {
+    showConnectionError(errorMessage(error, "Connection failed."));
+  }
 }
 
 function resolveConflict(direction: "pen" | "figma"): void {
   if (!token || !pendingConflict) return;
   const winner = direction === "pen" ? "Pencil" : "Figma";
-  if (
-    !confirm(
-      `Keep the ${winner} version for ${pendingConflict.bridgeId}?\n\nThe conflicting mapped subtree in the other editor will be updated in one undoable transaction.`,
-    )
-  )
-    return;
   keepPencil.disabled = true;
   keepFigma.disabled = true;
   cancelConflict.disabled = true;
-  setStatus(`Keeping ${winner}…`, true);
+  setStatus(`Using ${winner}…`, "working");
+  setActivity(`Updating the other app with the ${winner} version…`);
   parent.postMessage(
     {
       pluginMessage: {
@@ -402,63 +606,14 @@ function hideConflict(): void {
   cancelConflict.disabled = false;
 }
 
-function renderScreens(text: string): void {
-  screenList.replaceChildren();
-  const screens = text
-    .split("\n")
-    .map((line) => /^([A-Za-z0-9]+)\s+\|\s+(.+?)\s*$/.exec(line))
-    .filter((match): match is RegExpExecArray => Boolean(match));
-  for (const match of screens) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = `${match[2] ?? "Untitled"} · ${match[1] ?? "?"}`;
-    button.addEventListener("click", () => void importScreen(match[1]!));
-    screenList.append(button);
-  }
-}
-
-async function importScreen(nodeId: string): Promise<void> {
-  try {
-    setStatus("Reading Pen…", true);
-    const message = await request(`/pen/nodes/${nodeId}`, { method: "GET" });
-    const document = message.document;
-    pendingImport = {
-      document,
-      assetData: message.assetData ?? {},
-      transferId: message.transferId,
-    };
-    setStatus("Planning changes…", true);
-    parent.postMessage(
-      {
-        pluginMessage: {
-          type: "preview-document",
-          document,
-        },
-      },
-      "*",
-    );
-  } catch (error) {
-    showError(error);
-  }
-}
-
-async function connect(code: string): Promise<void> {
-  setStatus("Connecting…", false);
-  try {
-    const paired = await request("/pair", {
-      method: "POST",
-      body: JSON.stringify({ type: "pair", protocol: 1, code }),
-      authenticated: false,
-    });
-    token = paired.token;
-    const ready = await request("/hello", { method: "POST" });
-    setStatus("Connected", true);
-    detail.textContent = ready.penState;
-    actions.hidden = false;
-    form.hidden = true;
-    previewSync.disabled = false;
-  } catch (error) {
-    showError(error);
+function renderWarnings(target: HTMLElement, warnings: unknown): void {
+  target.replaceChildren();
+  if (!Array.isArray(warnings)) return;
+  const messages = [...new Set(warnings.map(friendlyWarning))];
+  for (const message of messages) {
+    const item = document.createElement("li");
+    item.textContent = message;
+    target.append(item);
   }
 }
 
@@ -480,23 +635,57 @@ async function request(
     ...(options.body ? { body: options.body } : {}),
   });
   const message = await response.json();
-  output.textContent = JSON.stringify(message, null, 2);
+  setTechnical(message);
   if (!response.ok)
     throw new Error(message.message ?? `Bridge error ${response.status}`);
   return message;
 }
 
-function showError(error: unknown): void {
-  setStatus("Disconnected", false);
-  detail.textContent =
-    error instanceof Error ? error.message : "Connection failed";
-  actions.hidden = true;
-  form.hidden = false;
+function setTechnical(message: unknown): void {
+  output.textContent = JSON.stringify(message, null, 2);
 }
 
-function setStatus(text: string, connected: boolean): void {
+async function copyTechnicalJson(): Promise<void> {
+  const value = output.textContent ?? "";
+  try {
+    await navigator.clipboard.writeText(value);
+    copyJson.textContent = "Copied";
+    setTimeout(() => (copyJson.textContent = "Copy JSON"), 1_200);
+  } catch {
+    setActivity(
+      "Copy was blocked. Open the JSON details and select the text manually.",
+    );
+  }
+}
+
+function showConnectionError(message: string): void {
+  token = undefined;
+  connection.hidden = false;
+  workspace.hidden = true;
+  setStatus("Not connected", "error");
+  const connectionHelp = connection.querySelector("p");
+  if (connectionHelp) connectionHelp.textContent = message;
+}
+
+function showOperationError(message: string): void {
+  setStatus("Needs attention", "error");
+  setActivity(message);
+}
+
+function setActivity(message: string): void {
+  detail.textContent = message;
+}
+
+function setStatus(
+  text: string,
+  tone: "success" | "working" | "error" | "neutral",
+): void {
   statusBadge.textContent = text;
-  statusBadge.className = `badge ${connected ? "connected" : "disconnected"}`;
+  statusBadge.className = `badge ${tone}`;
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }
 
 function required<T extends HTMLElement = HTMLElement>(id: string): T {

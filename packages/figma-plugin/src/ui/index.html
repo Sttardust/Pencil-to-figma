@@ -9,74 +9,178 @@
   </head>
   <body>
     <main>
-      <header>
-        <h1>Pencil Bridge</h1>
-        <span id="status" class="badge disconnected">Disconnected</span>
+      <header class="app-header">
+        <div>
+          <h1>Pencil ↔ Figma</h1>
+          <p class="subtitle">Move editable designs between both apps.</p>
+        </div>
+        <span id="status" class="badge neutral">Not connected</span>
       </header>
-      <p id="detail">
-        Start the local bridge service, then enter its pairing code.
-      </p>
-      <form id="pair-form">
-        <label for="pair-code">Pairing code</label>
-        <div class="row">
-          <input
-            id="pair-code"
-            maxlength="6"
-            autocomplete="off"
-            placeholder="A1B2C3"
-          />
-          <button type="submit">Connect</button>
-        </div>
-      </form>
-      <section id="actions" hidden>
-        <div class="row">
-          <input id="screen-query" placeholder="Search or id:Frbpv" />
-          <button id="search-screens" type="button">Search</button>
-        </div>
-        <button id="screens" type="button">Read Pen screens</button>
-        <button id="selection" type="button" class="secondary">
-          Read Figma selection
-        </button>
-        <button id="preview-export" type="button" class="secondary">
-          Preview selection for Pencil
-        </button>
-        <button id="plan-export" type="button" class="secondary">
-          Plan export to Pencil
-        </button>
-        <button id="export-copy" type="button" disabled>
-          Export copy to Pencil…
-        </button>
-        <div class="row">
-          <input id="adopt-root-id" placeholder="Existing Pencil root ID" />
-          <button id="adopt-copy" type="button" class="secondary" disabled>
-            Adopt
-          </button>
-        </div>
-        <button id="preview-sync" type="button" class="secondary" disabled>
-          Preview mapped sync
-        </button>
-        <button id="apply-sync" type="button" disabled>
-          Apply mapped changes…
-        </button>
-        <aside id="conflict-panel" class="conflict-panel" hidden>
-          <strong>Both editors changed this design</strong>
-          <p id="conflict-summary"></p>
-          <div class="conflict-actions">
-            <button id="keep-pencil" type="button">Keep Pencil</button>
-            <button id="keep-figma" type="button" class="secondary">
-              Keep Figma
-            </button>
-            <button id="cancel-conflict" type="button" class="quiet">
-              Cancel
+
+      <section id="connection" class="connection-card">
+        <h2>Connect to Pencil</h2>
+        <p>Start the bridge service and enter the six-character code.</p>
+        <form id="pair-form">
+          <label for="pair-code">Pairing code</label>
+          <div class="row">
+            <input
+              id="pair-code"
+              class="pair-code"
+              maxlength="6"
+              autocomplete="off"
+              placeholder="A1B2C3"
+            />
+            <button type="submit">Connect</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="workspace" class="workspace" hidden>
+        <section class="transfer-card pencil-card">
+          <div class="direction-label">
+            <span class="app-dot pencil-dot"></span>
+            Pencil → Figma
+          </div>
+          <h2>Bring a Pencil screen into Figma</h2>
+          <p>Find a screen, review what will be created, then send it.</p>
+          <div class="row">
+            <input
+              id="screen-query"
+              placeholder="Search screens or enter id:XW8AE"
+            />
+            <button id="search-screens" type="button" class="secondary">
+              Find
             </button>
           </div>
-        </aside>
-        <button id="write-test" type="button" class="secondary">
-          Test reversible write
-        </button>
+          <button id="screens" type="button" class="secondary full-width">
+            Browse Pencil screens
+          </button>
+          <div id="screen-list" class="screen-list"></div>
+          <div id="import-review" class="review-panel" hidden>
+            <div>
+              <strong id="import-review-title">Ready to send</strong>
+              <p id="import-review-summary"></p>
+            </div>
+            <ul id="import-warnings" class="warning-list"></ul>
+            <div class="review-actions">
+              <button id="confirm-import" type="button">Send to Figma</button>
+              <button id="cancel-import" type="button" class="quiet">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section class="transfer-card figma-card">
+          <div class="direction-label">
+            <span class="app-dot figma-dot"></span>
+            Figma → Pencil
+          </div>
+          <h2>Send the selected Figma frame to Pencil</h2>
+          <p>Select one complete frame or component in Figma first.</p>
+          <button id="prepare-export" type="button" class="full-width">
+            Review selected frame
+          </button>
+          <div id="export-review" class="review-panel" hidden>
+            <div>
+              <strong id="export-review-title">Ready to send</strong>
+              <p id="export-review-summary"></p>
+            </div>
+            <ul id="export-warnings" class="warning-list"></ul>
+            <div class="review-actions">
+              <button id="confirm-export" type="button">
+                Send copy to Pencil
+              </button>
+              <button id="cancel-export" type="button" class="quiet">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section class="transfer-card sync-card">
+          <div class="direction-label">
+            <span class="app-dot sync-dot"></span>
+            Keep both versions aligned
+          </div>
+          <h2>Compare a synced design</h2>
+          <p>
+            Select its complete Figma frame. We will show which app changed.
+          </p>
+          <button id="compare-sync" type="button" class="secondary full-width">
+            Compare Pencil and Figma
+          </button>
+          <div id="sync-review" class="review-panel" hidden>
+            <strong id="sync-review-title"></strong>
+            <p id="sync-review-summary"></p>
+            <div id="comparison" class="comparison" hidden>
+              <div>
+                <span>Changed in Pencil</span>
+                <strong id="pencil-change-count">0</strong>
+              </div>
+              <div>
+                <span>Changed in Figma</span>
+                <strong id="figma-change-count">0</strong>
+              </div>
+            </div>
+            <button id="apply-sync" type="button" class="full-width" hidden>
+              Apply changes
+            </button>
+          </div>
+          <aside id="conflict-panel" class="conflict-panel" hidden>
+            <strong>Changed in both apps</strong>
+            <p id="conflict-summary"></p>
+            <div class="conflict-actions">
+              <button id="keep-pencil" type="button">Use Pencil</button>
+              <button id="keep-figma" type="button" class="secondary">
+                Use Figma
+              </button>
+              <button id="cancel-conflict" type="button" class="quiet">
+                Decide later
+              </button>
+            </div>
+          </aside>
+        </section>
+
+        <section class="activity-card" aria-live="polite">
+          <span class="section-label">Latest activity</span>
+          <p id="detail">Connected. Choose what you want to move.</p>
+        </section>
+
+        <details class="advanced-panel">
+          <summary>Advanced options</summary>
+          <div class="advanced-content">
+            <p>
+              Use these only when reconnecting an existing copy or diagnosing
+              the plugin.
+            </p>
+            <label for="adopt-root-id">Existing Pencil page ID</label>
+            <div class="row">
+              <input id="adopt-root-id" placeholder="Example: BLdoF" />
+              <button id="adopt-copy" type="button" class="secondary" disabled>
+                Link copy
+              </button>
+            </div>
+            <button id="selection" type="button" class="quiet full-width">
+              Inspect Figma selection
+            </button>
+            <button id="write-test" type="button" class="quiet full-width">
+              Test Figma write access
+            </button>
+          </div>
+        </details>
+
+        <details id="technical-details" class="technical-panel">
+          <summary>View JSON details</summary>
+          <div class="technical-toolbar">
+            <span>Latest bridge response</span>
+            <button id="copy-json" type="button" class="quiet">
+              Copy JSON
+            </button>
+          </div>
+          <pre id="output">No technical details yet.</pre>
+        </details>
       </section>
-      <div id="screen-list" class="screen-list"></div>
-      <pre id="output" aria-live="polite"></pre>
     </main>
     <script>
       /* __SCRIPT__ */
