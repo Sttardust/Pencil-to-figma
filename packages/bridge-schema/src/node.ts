@@ -51,6 +51,15 @@ export const layoutSchema = z
   })
   .strict();
 
+export const variableBindingsSchema = z
+  .object({
+    fills: z.record(z.string(), bridgeIdSchema).optional(),
+    strokes: z.record(z.string(), bridgeIdSchema).optional(),
+    fontFamily: bridgeIdSchema.optional(),
+    cornerRadius: bridgeIdSchema.optional(),
+  })
+  .strict();
+
 export interface BridgeNode {
   bridgeId: string;
   kind:
@@ -99,6 +108,7 @@ export interface BridgeNode {
     | { componentBridgeId: string; overrides: Record<string, unknown> }
     | undefined;
   icon?: { assetId: string } | undefined;
+  variableBindings?: z.infer<typeof variableBindingsSchema> | undefined;
   children: BridgeNode[];
 }
 
@@ -174,6 +184,7 @@ export const bridgeNodeSchema: z.ZodType<BridgeNode> = z.lazy(() =>
         .strict()
         .optional(),
       icon: z.object({ assetId: bridgeIdSchema }).strict().optional(),
+      variableBindings: variableBindingsSchema.optional(),
       children: z.array(bridgeNodeSchema),
     })
     .strict()

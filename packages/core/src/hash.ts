@@ -33,6 +33,7 @@ export function authoredNodeHash(node: BridgeNode): string {
     component: node.component,
     instance: node.instance,
     icon: node.icon,
+    variableBindings: node.variableBindings,
     childOrder: node.children.map((child) => child.bridgeId),
   };
   return bytesToHex(sha256(utf8ToBytes(canonicalStringify(authored))));

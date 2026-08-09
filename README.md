@@ -66,10 +66,13 @@ Mapped sync also preserves those instance text overrides in both directions: Fig
 property edits are translated to native Pencil descendant IDs, and Pencil descendant edits are
 applied through the corresponding Figma component property without detaching the instance.
 
-Saved Pencil variables are retained in the bridge document and their current values are inlined
-for colors, font families, and corner radii so Figma receives the same appearance. Imports report
-this flattening explicitly until native Figma variable binding is enabled. Pencil icons from
-Lucide, Material Symbols Rounded, and Phosphor are packaged as SVG assets.
+Saved Pencil variables are retained in the bridge document. Direct solid fill, stroke, font-family,
+and uniform corner-radius references create or reuse native variables in a local `Pencil Variables`
+collection and bind the imported Figma layers to them. Unsupported nested uses, such as gradient
+stops and effect colors, still inline the current value with an explicit warning. If a font is
+substituted because Figma cannot load it, that font binding is skipped so the visible fallback is
+preserved. Pencil icons from Lucide, Material Symbols Rounded, and Phosphor are packaged as SVG
+assets.
 
 If an authored font is unavailable to Figma, the plugin selects the closest loadable family and
 weight (for example, Fraunces falls back to Georgia), reports the substitution, and stores separate

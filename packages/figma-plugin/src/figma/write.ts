@@ -2,7 +2,7 @@ import {
   bridgeDocumentSchema,
   type BridgeDocument,
   type BridgeNode,
-  type Paint,
+  type Paint as BridgePaint,
 } from "@pen-fig/bridge-schema";
 import {
   authoredDocumentHashes,
@@ -15,6 +15,9 @@ import {
   BRIDGE_KIND_KEY,
   INSTANCE_OVERRIDE_MAP_KEY,
   SVG_ASSET_KEY,
+  VARIABLE_COLLECTION_SOURCE_KEY,
+  VARIABLE_ID_KEY,
+  VARIABLE_MODE_MAP_KEY,
   findMappedRoots,
   readMappedSubtree,
 } from "./identity.js";
@@ -129,6 +132,7 @@ export async function writeBridgeDocument(
     for (const [bridgeId, node] of mapped.nodes)
       context.nodes.set(bridgeId, node);
     await prepareAssets(document, context);
+    await prepareVariables(document, context);
     figma.commitUndo();
     try {
       prepareLocalComponents(document, context);
@@ -160,6 +164,7 @@ export async function writeBridgeDocument(
   const context = prepareContext(document, assetData, hashes);
   context.warnings.push(...fontWarnings);
   await prepareAssets(document, context);
+  await prepareVariables(document, context);
   let root: SceneNode | undefined;
   try {
     prepareLocalComponents(document, context);
@@ -218,6 +223,7 @@ export async function writeBridgeNodeUpdates(
   for (const [bridgeId, node] of mapped.nodes)
     context.nodes.set(bridgeId, node);
   await prepareAssets(document, context);
+  await prepareVariables(document, context);
   figma.commitUndo();
   try {
     prepareLocalComponents(document, context);
@@ -292,6 +298,7 @@ interface WriteContext {
   hashes: Record<string, string>;
   preparedComponents: Map<string, ComponentNode>;
   createdComponents: Set<ComponentNode>;
+  variables: Map<string, Variable>;
 }
 
 function prepareContext(
@@ -308,7 +315,164 @@ function prepareContext(
     hashes,
     preparedComponents: new Map(),
     createdComponents: new Set(),
+    variables: new Map(),
   };
+}
+
+async function prepareVariables(
+  document: BridgeDocument,
+  context: WriteContext,
+): Promise<void> {
+  if (!document.variables.length) return;
+  const collections = await figma.variables.getLocalVariableCollectionsAsync();
+  let collection = collections.find(
+    (candidate) =>
+      candidate.getPluginData(VARIABLE_COLLECTION_SOURCE_KEY) ===
+      document.source.documentId,
+  );
+  if (!collection) {
+    collection = figma.variables.createVariableCollection("Pencil Variables");
+    collection.setPluginData(
+      VARIABLE_COLLECTION_SOURCE_KEY,
+      document.source.documentId,
+    );
+  }
+
+  const modeSignatures = uniqueModeSignatures(document);
+  const modeIds = ensureVariableModes(collection, modeSignatures);
+  const localVariables = await figma.variables.getLocalVariablesAsync();
+  const existing = new Map(
+    localVariables
+      .filter((variable) => variable.variableCollectionId === collection.id)
+      .map((variable) => [variable.getPluginData(VARIABLE_ID_KEY), variable]),
+  );
+  for (const source of document.variables) {
+    const resolvedType = toFigmaVariableType(source.type);
+    let variable = existing.get(source.id);
+    if (variable && variable.resolvedType !== resolvedType)
+      throw new Error(
+        `Figma variable ${source.name} has type ${variable.resolvedType}, expected ${resolvedType}`,
+      );
+    if (!variable) {
+      variable = figma.variables.createVariable(
+        source.name,
+        collection,
+        resolvedType,
+      );
+      variable.setPluginData(VARIABLE_ID_KEY, source.id);
+    }
+    variable.name = source.name;
+    variable.scopes = variableScopes(document, source.id, source.type);
+    const values = new Map(
+      source.values.map((entry) => [modeSignature(entry.mode), entry.value]),
+    );
+    const fallback = source.values[0]?.value;
+    if (fallback === undefined)
+      throw new Error(`Bridge variable ${source.name} has no values`);
+    for (const signature of modeSignatures) {
+      const modeId = modeIds.get(signature);
+      if (!modeId)
+        throw new Error(`Figma variable mode is missing: ${signature}`);
+      variable.setValueForMode(modeId, values.get(signature) ?? fallback);
+    }
+    context.variables.set(source.id, variable);
+  }
+}
+
+function uniqueModeSignatures(document: BridgeDocument): string[] {
+  const signatures = new Set<string>();
+  for (const variable of document.variables)
+    for (const entry of variable.values)
+      signatures.add(modeSignature(entry.mode));
+  if (!signatures.size) signatures.add("{}");
+  return [...signatures].sort();
+}
+
+function modeSignature(mode: Record<string, string>): string {
+  return JSON.stringify(
+    Object.fromEntries(
+      Object.entries(mode).sort(([left], [right]) => left.localeCompare(right)),
+    ),
+  );
+}
+
+function modeName(signature: string): string {
+  const mode = JSON.parse(signature) as Record<string, string>;
+  const entries = Object.entries(mode);
+  return entries.length
+    ? entries.map(([axis, value]) => `${axis}: ${value}`).join(" · ")
+    : "Default";
+}
+
+function ensureVariableModes(
+  collection: VariableCollection,
+  signatures: string[],
+): Map<string, string> {
+  let stored: Record<string, string> = {};
+  try {
+    stored = JSON.parse(
+      collection.getPluginData(VARIABLE_MODE_MAP_KEY) || "{}",
+    ) as Record<string, string>;
+  } catch {
+    stored = {};
+  }
+  const availableIds = new Set(collection.modes.map((mode) => mode.modeId));
+  const modes = new Map<string, string>();
+  for (const signature of signatures) {
+    const storedId = stored[signature];
+    if (storedId && availableIds.has(storedId)) modes.set(signature, storedId);
+  }
+  for (const signature of signatures) {
+    if (modes.has(signature)) continue;
+    if (!modes.size && collection.modes[0]) {
+      const modeId = collection.modes[0].modeId;
+      collection.renameMode(modeId, modeName(signature));
+      modes.set(signature, modeId);
+      continue;
+    }
+    modes.set(signature, collection.addMode(modeName(signature)));
+  }
+  collection.setPluginData(
+    VARIABLE_MODE_MAP_KEY,
+    JSON.stringify(Object.fromEntries(modes)),
+  );
+  return modes;
+}
+
+function toFigmaVariableType(
+  type: BridgeDocument["variables"][number]["type"],
+): VariableResolvedDataType {
+  return type === "boolean"
+    ? "BOOLEAN"
+    : type === "color"
+      ? "COLOR"
+      : type === "number"
+        ? "FLOAT"
+        : "STRING";
+}
+
+function variableScopes(
+  document: BridgeDocument,
+  variableId: string,
+  type: BridgeDocument["variables"][number]["type"],
+): VariableScope[] {
+  const scopes = new Set<VariableScope>();
+  const inspect = (node: BridgeNode) => {
+    const bindings = node.variableBindings;
+    if (!bindings) return;
+    if (Object.values(bindings.fills ?? {}).includes(variableId))
+      scopes.add("ALL_FILLS");
+    if (Object.values(bindings.strokes ?? {}).includes(variableId))
+      scopes.add("STROKE_COLOR");
+    if (bindings.fontFamily === variableId) scopes.add("FONT_FAMILY");
+    if (bindings.cornerRadius === variableId) scopes.add("CORNER_RADIUS");
+  };
+  visit(document.root, inspect);
+  for (const component of document.components ?? []) visit(component, inspect);
+  if (scopes.size) return [...scopes];
+  return type === "color" || type === "number" || type === "string"
+    ? ["ALL_SCOPES"]
+    : ["ALL_SCOPES"];
 }
 
 function prepareLocalComponents(
@@ -578,11 +742,91 @@ function applyNodeProperties(
   node.x = source.bounds.x;
   node.y = source.bounds.y;
   applyGeometry(node, source, context);
+  applyVariableBindings(node, source, context);
   if (node.type === "INSTANCE" && source.kind === "instance")
     applyInstanceOverrides(node, source, context);
   if (node.type === "FRAME" || node.type === "COMPONENT")
     applyLayout(node, source);
   applySizingMode(node, source, parent);
+}
+
+function applyVariableBindings(
+  node: SceneNode,
+  source: BridgeNode,
+  context: WriteContext,
+): void {
+  const bindings = source.variableBindings;
+  if (!bindings) return;
+
+  if (bindings.fills && "fills" in node && node.fills !== figma.mixed) {
+    node.fills = bindPaintVariables(
+      node.fills,
+      bindings.fills,
+      source,
+      "fill",
+      context,
+    );
+  }
+  if (bindings.strokes && "strokes" in node) {
+    node.strokes = bindPaintVariables(
+      node.strokes,
+      bindings.strokes,
+      source,
+      "stroke",
+      context,
+    );
+  }
+  if (bindings.cornerRadius) {
+    const variable = context.variables.get(bindings.cornerRadius);
+    if (variable?.resolvedType === "FLOAT")
+      node.setBoundVariable("cornerRadius", variable);
+    else
+      addWarningOnce(
+        context,
+        `VARIABLE_BINDING_SKIPPED: ${source.name} has an invalid corner-radius variable`,
+      );
+  }
+  if (bindings.fontFamily && node.type === "TEXT" && source.text) {
+    const variable = context.variables.get(bindings.fontFamily);
+    const authoredFamily = variable?.valuesByMode
+      ? Object.values(variable.valuesByMode)[0]
+      : undefined;
+    if (
+      variable?.resolvedType === "STRING" &&
+      authoredFamily === source.text.style.family
+    )
+      node.setBoundVariable("fontFamily", variable);
+    else
+      addWarningOnce(
+        context,
+        `VARIABLE_BINDING_SKIPPED: ${source.name} font variable does not match the loadable Figma font`,
+      );
+  }
+}
+
+function bindPaintVariables(
+  paints: ReadonlyArray<Paint>,
+  bindings: Record<string, string>,
+  source: BridgeNode,
+  property: "fill" | "stroke",
+  context: WriteContext,
+): Paint[] {
+  return paints.map((paint, index) => {
+    const variableId = bindings[String(index)];
+    if (!variableId) return paint;
+    const variable = context.variables.get(variableId);
+    if (paint.type === "SOLID" && variable?.resolvedType === "COLOR")
+      return figma.variables.setBoundVariableForPaint(paint, "color", variable);
+    addWarningOnce(
+      context,
+      `VARIABLE_BINDING_SKIPPED: ${source.name} ${property} ${index + 1} is not compatible with ${variableId}`,
+    );
+    return paint;
+  });
+}
+
+function addWarningOnce(context: WriteContext, message: string): void {
+  if (!context.warnings.includes(message)) context.warnings.push(message);
 }
 
 function assertCompatibleNode(node: SceneNode, source: BridgeNode): void {
@@ -1024,7 +1268,7 @@ function applyLayoutPosition(
 }
 
 function toFigmaPaint(
-  paint: Paint,
+  paint: BridgePaint,
   context: WriteContext,
 ): SolidPaint | GradientPaint | ImagePaint {
   if (paint.type === "solid") {
@@ -1076,7 +1320,7 @@ function toFigmaPaint(
 
 function tintSvg(
   node: SceneNode,
-  paint: Extract<Paint, { type: "solid" }>,
+  paint: Extract<BridgePaint, { type: "solid" }>,
 ): void {
   if ("fills" in node && node.type !== "FRAME") {
     node.fills = [toSolidPaint(paint)];
@@ -1089,7 +1333,9 @@ function tintSvg(
   }
 }
 
-function toSolidPaint(paint: Extract<Paint, { type: "solid" }>): SolidPaint {
+function toSolidPaint(
+  paint: Extract<BridgePaint, { type: "solid" }>,
+): SolidPaint {
   return {
     type: "SOLID",
     visible: paint.visible,

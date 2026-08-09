@@ -3,6 +3,9 @@ export const AUTHORED_HASH_KEY = "penFigAuthoredHash";
 export const BRIDGE_KIND_KEY = "penFigBridgeKind";
 export const SVG_ASSET_KEY = "penFigSvgAssetId";
 export const INSTANCE_OVERRIDE_MAP_KEY = "penFigInstanceOverrideMap";
+export const VARIABLE_COLLECTION_SOURCE_KEY = "penFigVariableSource";
+export const VARIABLE_ID_KEY = "penFigVariableId";
+export const VARIABLE_MODE_MAP_KEY = "penFigVariableModes";
 
 export interface IdentityRecord {
   bridgeId: string;

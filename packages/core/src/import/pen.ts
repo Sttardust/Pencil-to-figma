@@ -144,7 +144,14 @@ function importNode(
     result.clipsContent = node.clip ?? false;
     result.layout = mapLayout(node);
   }
-  const fills = mapPaintList(node.fill, bridgeId, warnings, assets, variables);
+  const fills = mapPaintList(
+    node.fill,
+    bridgeId,
+    warnings,
+    assets,
+    variables,
+    "fill",
+  );
   if (fills.length) result.fills = fills;
   const cornerRadii = mapCornerRadius(
     node.cornerRadius,
@@ -155,7 +162,14 @@ function importNode(
   if (cornerRadii) result.cornerRadii = cornerRadii;
   if (node.stroke !== undefined && node.strokeWidth !== undefined) {
     result.stroke = {
-      paints: mapPaintList(node.stroke, bridgeId, warnings, assets, variables),
+      paints: mapPaintList(
+        node.stroke,
+        bridgeId,
+        warnings,
+        assets,
+        variables,
+        "stroke",
+      ),
       alignment: mapEnum(
         node.strokeAlignment,
         { inner: "inside", center: "center", outer: "outside" },
@@ -181,6 +195,7 @@ function importNode(
       warnings,
       bridgeId,
       "font family",
+      false,
     );
     result.text = {
       characters: node.content ?? "",
@@ -245,6 +260,8 @@ function importNode(
     });
     result.icon = { assetId };
   }
+  const variableBindings = directVariableBindings(node, variables);
+  if (variableBindings) result.variableBindings = variableBindings;
   return result;
 }
 
@@ -420,10 +437,20 @@ function mapPaintList(
   warnings: TransferWarning[],
   assets: BridgeAsset[],
   variables: PenVariableDefinitions,
+  property: "fill" | "stroke",
 ): Paint[] {
   if (value === undefined) return [];
-  return (Array.isArray(value) ? value : [value]).flatMap((paint) =>
-    mapPaint(paint, bridgeId, warnings, assets, variables),
+  const paints = Array.isArray(value) ? value : [value];
+  return paints.flatMap((paint) =>
+    mapPaint(
+      paint,
+      bridgeId,
+      warnings,
+      assets,
+      variables,
+      property,
+      paints.length === 1,
+    ),
   );
 }
 
@@ -433,6 +460,8 @@ function mapPaint(
   warnings: TransferWarning[],
   assets: BridgeAsset[],
   variables: PenVariableDefinitions,
+  property: "fill" | "stroke",
+  preserveDirectVariable: boolean,
 ): Paint[] {
   if (typeof value === "string")
     return [
@@ -442,7 +471,14 @@ function mapPaint(
         opacity: 1,
         blendMode: "normal",
         color: parseHex(
-          resolveColorVariable(value, variables, warnings, bridgeId, "fill"),
+          resolveColorVariable(
+            value,
+            variables,
+            warnings,
+            bridgeId,
+            property,
+            !preserveDirectVariable,
+          ),
         ),
       },
     ];
@@ -462,7 +498,8 @@ function mapPaint(
             variables,
             warnings,
             bridgeId,
-            "fill",
+            property,
+            !preserveDirectVariable,
           ),
         ),
       },
@@ -570,10 +607,12 @@ function resolveColorVariable(
   warnings: TransferWarning[],
   bridgeId: string,
   property: string,
+  recordInlining = true,
 ): string {
   if (!input.startsWith("$")) return input;
   const name = input.slice(1);
-  recordVariableInlining(warnings, bridgeId, name, property);
+  if (recordInlining)
+    recordVariableInlining(warnings, bridgeId, name, property);
   return String(resolveVariableValue(name, "color", definitions, []));
 }
 
@@ -583,10 +622,12 @@ function resolveStringVariable(
   warnings: TransferWarning[],
   bridgeId: string,
   property: string,
+  recordInlining = true,
 ): string {
   if (!input.startsWith("$")) return input;
   const name = input.slice(1);
-  recordVariableInlining(warnings, bridgeId, name, property);
+  if (recordInlining)
+    recordVariableInlining(warnings, bridgeId, name, property);
   return String(resolveVariableValue(name, "string", definitions, []));
 }
 
@@ -596,6 +637,7 @@ function resolveNumberVariable(
   warnings: TransferWarning[],
   bridgeId: string,
   property: string,
+  recordInlining = true,
 ): number {
   if (!input.startsWith("$")) {
     const value = Number(input);
@@ -604,7 +646,8 @@ function resolveNumberVariable(
     return value;
   }
   const name = input.slice(1);
-  recordVariableInlining(warnings, bridgeId, name, property);
+  if (recordInlining)
+    recordVariableInlining(warnings, bridgeId, name, property);
   return Number(resolveVariableValue(name, "number", definitions, []));
 }
 
@@ -709,10 +752,62 @@ function mapCornerRadius(
       warnings,
       bridgeId,
       "corner radius",
+      false,
     );
     return [resolved, resolved, resolved, resolved];
   }
   return value;
+}
+
+function directVariableBindings(
+  node: PenNode,
+  definitions: PenVariableDefinitions,
+): BridgeNode["variableBindings"] | undefined {
+  const bindings: NonNullable<BridgeNode["variableBindings"]> = {};
+  const fill = directPaintVariableId(node.fill, "color", definitions);
+  if (fill) bindings.fills = { "0": fill };
+  const stroke = directPaintVariableId(node.stroke, "color", definitions);
+  if (stroke) bindings.strokes = { "0": stroke };
+  const fontFamily = directVariableId(node.fontFamily, "string", definitions);
+  if (fontFamily) bindings.fontFamily = fontFamily;
+  const cornerRadius = directVariableId(
+    node.cornerRadius,
+    "number",
+    definitions,
+  );
+  if (cornerRadius) bindings.cornerRadius = cornerRadius;
+  return Object.keys(bindings).length ? bindings : undefined;
+}
+
+function directPaintVariableId(
+  value: unknown,
+  expectedType: PenVariableDefinition["type"],
+  definitions: PenVariableDefinitions,
+): string | undefined {
+  if (Array.isArray(value)) return undefined;
+  if (typeof value === "string")
+    return directVariableId(value, expectedType, definitions);
+  if (!value || typeof value !== "object") return undefined;
+  const paint = value as Record<string, unknown>;
+  return paint.type === "color"
+    ? directVariableId(paint.color, expectedType, definitions)
+    : undefined;
+}
+
+function directVariableId(
+  value: unknown,
+  expectedType: PenVariableDefinition["type"],
+  definitions: PenVariableDefinitions,
+): string | undefined {
+  if (typeof value !== "string" || !value.startsWith("$")) return undefined;
+  const name = value.slice(1);
+  const definition = definitions[name];
+  if (!definition) throw new Error(`Unknown Pen variable '$${name}'`);
+  if (definition.type !== expectedType)
+    throw new Error(
+      `Pen variable '$${name}' is ${definition.type}, expected ${expectedType}`,
+    );
+  return `pen-var:${name}`;
 }
 
 function mapStrokeWeights(value: NonNullable<PenNode["strokeWidth"]>): {

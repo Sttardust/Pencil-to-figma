@@ -284,7 +284,7 @@ describe("importPenDocument", () => {
     );
   });
 
-  it("preserves Pencil variable provenance while inlining authored values", () => {
+  it("preserves direct Pencil variable bindings and resolved values", () => {
     const document = importPenDocument(
       {
         id: "root",
@@ -323,9 +323,17 @@ describe("importPenDocument", () => {
         },
       ],
       cornerRadii: [16, 16, 16, 16],
+      variableBindings: {
+        fills: { "0": "pen-var:ink" },
+        cornerRadius: "pen-var:radius-card",
+      },
       children: [
         {
           text: { style: { family: "Inter" } },
+          variableBindings: {
+            fills: { "0": "pen-var:ink" },
+            fontFamily: "pen-var:font-body",
+          },
         },
       ],
     });
@@ -348,13 +356,8 @@ describe("importPenDocument", () => {
         }),
       ]),
     );
-    expect(document.warnings).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "PEN_VARIABLE_INLINED",
-          action: "flatten",
-        }),
-      ]),
+    expect(document.warnings).not.toContainEqual(
+      expect.objectContaining({ code: "PEN_VARIABLE_INLINED" }),
     );
   });
 });
