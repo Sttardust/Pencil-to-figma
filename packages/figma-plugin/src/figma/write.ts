@@ -221,7 +221,9 @@ export async function writeBridgeNodeUpdates(
   figma.commitUndo();
   try {
     prepareLocalComponents(document, context);
-    await materializeComponentDependencies(document, context);
+    await materializeComponentDependencies(document, context, {
+      updateExisting: false,
+    });
     for (const bridgeId of uniqueBridgeIds) {
       const source = sources.get(bridgeId)!;
       const node = mapped.nodes.get(bridgeId)!;
@@ -339,10 +341,12 @@ function prepareLocalComponents(
 async function materializeComponentDependencies(
   document: BridgeDocument,
   context: WriteContext,
+  options: { updateExisting?: boolean } = {},
 ): Promise<void> {
   for (const source of document.components ?? []) {
     const existing = context.nodes.get(source.bridgeId);
     if (existing && !context.preparedComponents.has(source.bridgeId)) {
+      if (options.updateExisting === false) continue;
       if (existing.type !== "COMPONENT")
         throw new Error(
           `Component mapping is not a component: ${source.bridgeId}`,

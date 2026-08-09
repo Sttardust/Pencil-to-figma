@@ -425,12 +425,14 @@ async function completePreparedFigmaUpdate(
     },
   );
   const completed = (await response.json()) as Record<string, unknown>;
-  if (!response.ok)
+  if (!response.ok) {
+    figma.triggerUndo();
     throw new Error(
       typeof completed.message === "string"
         ? completed.message
         : `Bridge error ${response.status}`,
     );
+  }
   pendingFigmaExport = verified;
   return completed;
 }
