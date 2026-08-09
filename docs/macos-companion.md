@@ -8,6 +8,9 @@ The public Pencil ↔ Figma workflow has two local pieces:
 The companion never listens beyond `127.0.0.1`, and the Figma manifest allows only
 `http://localhost:32145`. Opening the companion once registers its background service with the
 current macOS account. It will then start at login and reconnect to the Figma plugin automatically.
+Its unauthenticated health response contains only the protocol version, companion version,
+capability names, macOS platform, and CPU architecture. The plugin uses that information to explain
+whether the companion is missing or needs an update before any design operation begins.
 On the first connection, macOS displays an Allow/Cancel message. Choosing **Allow** creates the
 private saved connection without asking the user to copy or type a code. The older pairing-code
 flow remains collapsed in the plugin as a troubleshooting fallback.

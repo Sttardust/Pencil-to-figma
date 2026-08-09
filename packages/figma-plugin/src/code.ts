@@ -11,6 +11,8 @@ import { authoredDocumentHashes, planFigmaToPenCreate } from "@pen-fig/core";
 
 let pendingFigmaExport: FigmaReadResult | undefined;
 const CONNECTION_STORAGE_KEY = "penFigSavedConnectionV1";
+const COMPANION_DOWNLOAD_URL =
+  "https://github.com/Sttardust/Pencil-to-figma/releases";
 
 figma.showUI(__html__, { width: 400, height: 700, themeColors: true });
 
@@ -29,6 +31,11 @@ figma.ui.onmessage = async (message: {
       type: "saved-connection",
       credentials: isStoredConnection(stored) ? stored : null,
     });
+    return;
+  }
+
+  if (message.type === "open-companion-download") {
+    figma.openExternal(COMPANION_DOWNLOAD_URL);
     return;
   }
 

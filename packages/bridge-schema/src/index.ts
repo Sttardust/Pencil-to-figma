@@ -23,3 +23,8 @@ export type { Paint, Stroke, Effect, TextStyle } from "./style.js";
 export { rgbaSchema, rectSchema, sourceRefSchema } from "./primitives.js";
 export { bridgeManifestSchema, manifestMappingSchema } from "./manifest.js";
 export type { BridgeManifest, ManifestMapping } from "./manifest.js";
+export {
+  BRIDGE_PROTOCOL_VERSION,
+  COMPANION_CAPABILITIES,
+  COMPANION_VERSION,
+} from "./version.js";

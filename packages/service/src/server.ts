@@ -4,6 +4,9 @@ import path from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import { z } from "zod";
 import {
+  BRIDGE_PROTOCOL_VERSION,
+  COMPANION_CAPABILITIES,
+  COMPANION_VERSION,
   bridgeDocumentSchema,
   type BridgeDocument,
   type BridgeManifest,
@@ -234,7 +237,14 @@ export class BridgeServer {
       return;
     }
     if (request.method === "GET" && request.url === "/health") {
-      json(response, 200, { ok: true, protocol: 1 });
+      json(response, 200, {
+        ok: true,
+        protocol: BRIDGE_PROTOCOL_VERSION,
+        companionVersion: COMPANION_VERSION,
+        capabilities: COMPANION_CAPABILITIES,
+        platform: process.platform,
+        architecture: process.arch,
+      });
       return;
     }
 

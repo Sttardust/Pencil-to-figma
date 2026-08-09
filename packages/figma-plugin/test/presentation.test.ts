@@ -1,10 +1,38 @@
 import { describe, expect, it } from "vitest";
 import {
+  assessCompanionHealth,
   editableNodeSummary,
   friendlyWarning,
   presentSync,
   technicalJson,
 } from "../src/ui/presentation.js";
+
+describe("companion health presentation", () => {
+  it("accepts a versioned companion with native approval", () => {
+    expect(
+      assessCompanionHealth({
+        ok: true,
+        protocol: 1,
+        companionVersion: "0.1.1",
+        capabilities: ["automatic-reconnect", "native-approval"],
+      }),
+    ).toEqual({ compatible: true, version: "0.1.1" });
+  });
+
+  it("requires an update for legacy or incompatible health responses", () => {
+    expect(assessCompanionHealth({ ok: true, protocol: 1 })).toEqual({
+      compatible: false,
+    });
+    expect(
+      assessCompanionHealth({
+        ok: true,
+        protocol: 2,
+        companionVersion: "0.1.0",
+        capabilities: ["native-approval"],
+      }),
+    ).toEqual({ compatible: false, version: "0.1.0" });
+  });
+});
 
 describe("plugin UI presentation", () => {
   it("explains an unchanged comparison without developer terminology", () => {

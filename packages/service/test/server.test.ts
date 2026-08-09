@@ -111,6 +111,21 @@ describe("BridgeServer", () => {
     servers.push(server);
     const port = await server.start();
     const origin = `http://localhost:${port}`;
+    const health = await fetch(`${origin}/health`).then((response) =>
+      response.json(),
+    );
+    expect(health).toMatchObject({
+      ok: true,
+      protocol: 1,
+      companionVersion: expect.stringMatching(/^\d+\.\d+\.\d+$/),
+      capabilities: expect.arrayContaining([
+        "automatic-reconnect",
+        "native-approval",
+        "versioned-health",
+      ]),
+      platform: expect.any(String),
+      architecture: expect.any(String),
+    });
     const pairResponse = await fetch(`${origin}/pair`, {
       method: "POST",
       headers: { "content-type": "application/json" },

@@ -1,3 +1,38 @@
+import { BRIDGE_PROTOCOL_VERSION } from "@pen-fig/bridge-schema/version";
+
+export interface CompanionCompatibility {
+  compatible: boolean;
+  version?: string;
+}
+
+export function assessCompanionHealth(value: unknown): CompanionCompatibility {
+  const health =
+    value && typeof value === "object"
+      ? (value as {
+          ok?: unknown;
+          protocol?: unknown;
+          companionVersion?: unknown;
+          capabilities?: unknown;
+        })
+      : undefined;
+  const version =
+    typeof health?.companionVersion === "string"
+      ? health.companionVersion
+      : undefined;
+  const capabilities = Array.isArray(health?.capabilities)
+    ? health.capabilities
+    : [];
+  return {
+    compatible: Boolean(
+      health?.ok === true &&
+      health.protocol === BRIDGE_PROTOCOL_VERSION &&
+      version &&
+      capabilities.includes("native-approval"),
+    ),
+    ...(version ? { version } : {}),
+  };
+}
+
 export interface SyncPreviewLike {
   ok: boolean;
   message?: string;

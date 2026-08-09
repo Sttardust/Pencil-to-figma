@@ -1,4 +1,5 @@
 import {
+  assessCompanionHealth,
   editableNodeSummary,
   friendlyWarning,
   presentSync,
@@ -10,6 +11,7 @@ const pairInput = required<HTMLInputElement>("pair-code");
 const statusBadge = required<HTMLElement>("status");
 const connection = required<HTMLElement>("connection");
 const connectionHelp = required<HTMLElement>("connection-help");
+const connectionTitle = required<HTMLElement>("connection-title");
 const workspace = required<HTMLElement>("workspace");
 const detail = required<HTMLElement>("detail");
 const output = required<HTMLElement>("output");
@@ -45,6 +47,7 @@ const copyJson = required<HTMLButtonElement>("copy-json");
 const retryConnection = required<HTMLButtonElement>("retry-connection");
 const authorizeConnection = required<HTMLButtonElement>("authorize-connection");
 const manualPairing = required<HTMLDetailsElement>("manual-pairing");
+const downloadCompanion = required<HTMLButtonElement>("download-companion");
 
 let token: string | undefined;
 let savedReconnectToken: string | undefined;
@@ -71,6 +74,12 @@ retryConnection.addEventListener("click", () => {
 });
 
 authorizeConnection.addEventListener("click", () => void requestApproval());
+downloadCompanion.addEventListener("click", () => {
+  parent.postMessage(
+    { pluginMessage: { type: "open-companion-download" } },
+    "*",
+  );
+});
 
 required("screens").addEventListener("click", () => void loadScreens());
 required("search-screens").addEventListener(
@@ -624,15 +633,19 @@ async function connect(code: string): Promise<void> {
 }
 
 async function requestApproval(): Promise<void> {
-  setStatus("Waiting for approval…", "working");
+  setStatus("Looking for Pencil Bridge…", "working");
   connection.hidden = false;
   workspace.hidden = true;
   authorizeConnection.hidden = true;
   retryConnection.hidden = true;
+  downloadCompanion.hidden = true;
   manualPairing.hidden = true;
-  connectionHelp.textContent =
-    "Check the macOS message and choose Allow to connect this plugin.";
+  connectionHelp.textContent = "Checking the companion app on this Mac…";
   try {
+    await requireCompatibleCompanion();
+    setStatus("Waiting for approval…", "working");
+    connectionHelp.textContent =
+      "Check the macOS message and choose Allow to connect this plugin.";
     const approved = await request("/authorize", {
       method: "POST",
       body: JSON.stringify({ type: "authorize", protocol: 1 }),
@@ -640,6 +653,7 @@ async function requestApproval(): Promise<void> {
     });
     await finishConnection(approved);
   } catch (error) {
+    if (showCompanionProblem(error)) return;
     if (error instanceof BridgeRequestError) {
       if (error.code === "AUTH_APPROVAL_DENIED") {
         showConnectionError(
@@ -663,29 +677,27 @@ async function requestApproval(): Promise<void> {
         return;
       }
       if (error.code === "CONNECTION_PEN") {
-        showConnectionError(
-          "The bridge is connected, but Pencil is not ready. Open Pencil and a .pen file, then try again.",
-          "retry",
-        );
+        showPencilNotReady();
         return;
       }
     }
-    showConnectionError(
-      "Pencil Bridge is not running. Open the Pencil Figma Bridge app, then try again.",
-      "retry",
-    );
+    showCompanionProblem(new CompanionProblem("missing"));
   }
 }
 
 async function reconnect(reconnectToken: string): Promise<void> {
-  setStatus("Connecting…", "working");
+  setStatus("Looking for Pencil Bridge…", "working");
   connection.hidden = false;
   workspace.hidden = true;
   authorizeConnection.hidden = true;
   manualPairing.hidden = true;
   retryConnection.hidden = true;
-  connectionHelp.textContent = "Reconnecting securely to the local bridge…";
+  downloadCompanion.hidden = true;
+  connectionHelp.textContent = "Checking the companion app on this Mac…";
   try {
+    await requireCompatibleCompanion();
+    setStatus("Connecting…", "working");
+    connectionHelp.textContent = "Reconnecting securely to Pencil Bridge…";
     const reconnected = await request("/reconnect", {
       method: "POST",
       body: JSON.stringify({
@@ -697,6 +709,7 @@ async function reconnect(reconnectToken: string): Promise<void> {
     });
     await finishConnection(reconnected);
   } catch (error) {
+    if (showCompanionProblem(error)) return;
     if (
       error instanceof BridgeRequestError &&
       error.code === "AUTH_RECONNECT"
@@ -713,17 +726,26 @@ async function reconnect(reconnectToken: string): Promise<void> {
       error instanceof BridgeRequestError &&
       error.code === "CONNECTION_PEN"
     ) {
-      showConnectionError(
-        "The bridge is running, but Pencil is not ready. Open Pencil and a .pen file, then try again.",
-        "retry",
-      );
+      showPencilNotReady();
       return;
     }
-    showConnectionError(
-      "The local bridge is not running. Start the background bridge, then try again.",
-      "retry",
-    );
+    showCompanionProblem(new CompanionProblem("missing"));
   }
+}
+
+async function requireCompatibleCompanion(): Promise<void> {
+  let health: any;
+  try {
+    health = await request("/health", {
+      method: "GET",
+      authenticated: false,
+    });
+  } catch {
+    throw new CompanionProblem("missing");
+  }
+  const compatibility = assessCompanionHealth(health);
+  if (!compatibility.compatible)
+    throw new CompanionProblem("update", compatibility.version);
 }
 
 async function finishConnection(credentials: any): Promise<void> {
@@ -840,18 +862,64 @@ function showConnectionError(
   token = undefined;
   connection.hidden = false;
   workspace.hidden = true;
+  connectionTitle.textContent = "Connect to Pencil";
   setStatus("Not connected", "error");
   connectionHelp.textContent = message;
   authorizeConnection.hidden = action !== "approve";
   retryConnection.hidden = action !== "retry";
+  retryConnection.textContent = "Try connecting again";
+  downloadCompanion.hidden = true;
   manualPairing.hidden = action === "retry";
 }
 
 function showAuthorizationReady(message: string): void {
+  connectionTitle.textContent = "Connect to Pencil";
   connectionHelp.textContent = message;
   authorizeConnection.hidden = false;
   retryConnection.hidden = true;
+  retryConnection.textContent = "Try connecting again";
+  downloadCompanion.hidden = true;
   manualPairing.hidden = false;
+}
+
+function showPencilNotReady(): void {
+  token = undefined;
+  connection.hidden = false;
+  workspace.hidden = true;
+  connectionTitle.textContent = "Open a Pencil design";
+  connectionHelp.textContent =
+    "Pencil Bridge is connected. Open Pencil and a .pen design, then check again.";
+  setStatus("Waiting for Pencil", "neutral");
+  authorizeConnection.hidden = true;
+  retryConnection.hidden = false;
+  retryConnection.textContent = "Check Pencil again";
+  downloadCompanion.hidden = true;
+  manualPairing.hidden = true;
+}
+
+function showCompanionProblem(error: unknown): boolean {
+  if (!(error instanceof CompanionProblem)) return false;
+  token = undefined;
+  connection.hidden = false;
+  workspace.hidden = true;
+  connectionTitle.textContent =
+    error.kind === "missing" ? "Install Pencil Bridge" : "Update Pencil Bridge";
+  connectionHelp.textContent =
+    error.kind === "missing"
+      ? "Figma needs the small Pencil Bridge companion app to communicate with Pencil on this Mac."
+      : `${error.version ? `Pencil Bridge ${error.version} is installed, but ` : ""}this plugin needs a newer companion app.`;
+  setStatus("Setup needed", "neutral");
+  authorizeConnection.hidden = true;
+  retryConnection.hidden = false;
+  retryConnection.textContent =
+    error.kind === "missing"
+      ? "I've installed it — check again"
+      : "Check again";
+  downloadCompanion.hidden = false;
+  downloadCompanion.textContent =
+    error.kind === "missing" ? "Download Pencil Bridge" : "Download update";
+  manualPairing.hidden = true;
+  return true;
 }
 
 function showOperationError(message: string): void {
@@ -882,6 +950,19 @@ class BridgeRequestError extends Error {
     readonly code?: string,
   ) {
     super(message);
+  }
+}
+
+class CompanionProblem extends Error {
+  constructor(
+    readonly kind: "missing" | "update",
+    readonly version?: string,
+  ) {
+    super(
+      kind === "missing"
+        ? "Companion unavailable"
+        : "Companion update required",
+    );
   }
 }
 

@@ -118,6 +118,9 @@ The plugin UI groups transfers by direction and reduces each transfer to review 
 design comparison uses plain Pencil/Figma change counts and destination-specific update actions.
 Technical response JSON, native IDs, adoption, and diagnostic tools are hidden by default under
 explicit details panels and remain available for troubleshooting or sharing a test result.
+Connection onboarding distinguishes a missing companion, an outdated companion, and Pencil without
+an open design. The plugin offers the appropriate download, update, or retry action instead of
+showing the same developer error for all three conditions.
 
 ### Automatic connection
 

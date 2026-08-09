@@ -1,8 +1,11 @@
 {
   "name": "@pen-fig/macos-companion",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
+  "dependencies": {
+    "@pen-fig/bridge-schema": "0.0.0"
+  },
   "scripts": {
     "build:app": "tsx scripts/build.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
