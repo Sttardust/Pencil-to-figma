@@ -1068,13 +1068,19 @@ function readEffects(
 function readCornerRadii(
   node: SceneNode,
 ): [number, number, number, number] | undefined {
-  if (!("topLeftRadius" in node)) return undefined;
-  return [
-    numeric(node.topLeftRadius),
-    numeric(node.topRightRadius),
-    numeric(node.bottomRightRadius),
-    numeric(node.bottomLeftRadius),
-  ];
+  if ("topLeftRadius" in node)
+    return [
+      numeric(node.topLeftRadius),
+      numeric(node.topRightRadius),
+      numeric(node.bottomRightRadius),
+      numeric(node.bottomLeftRadius),
+    ];
+  if ("cornerRadius" in node) {
+    const radius = numeric(node.cornerRadius);
+    if (radius === 0) return undefined;
+    return [radius, radius, radius, radius];
+  }
+  return undefined;
 }
 
 function numeric(value: number | PluginAPI["mixed"]): number {

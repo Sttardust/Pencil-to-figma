@@ -84,6 +84,10 @@ Figma text layers with mixed range styling no longer abort an export. The bridge
 and fill from the range covering the most characters, keeps the complete text editable, and emits
 a `FIGMA_MIXED_TEXT_STYLES` flattening warning. Uniform text remains lossless.
 
+Negative auto-layout gaps, individual-side strokes, and four independent frame or rectangle corner
+radii transfer in both directions. Figma layer types that only accept one stroke width or one corner
+radius use the arithmetic mean and emit a stable flattening warning instead of silently diverging.
+
 If an authored font is unavailable to Figma, the plugin selects the closest loadable family and
 weight (for example, Fraunces falls back to Georgia), reports the substitution, and stores separate
 Pencil and Figma baseline hashes so the fallback does not appear as a user edit during sync.

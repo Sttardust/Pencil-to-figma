@@ -101,6 +101,29 @@ describe("planFigmaToPenCreate", () => {
     });
   });
 
+  it("exports negative gaps, per-side strokes, and nonuniform radii", () => {
+    const document = fixture();
+    document.root.layout!.gap = -8;
+    document.root.stroke = {
+      paints: [],
+      alignment: "inside",
+      weights: { top: 1, right: 2, bottom: 3, left: 4 },
+      cap: "none",
+      join: "miter",
+    };
+    document.root.cornerRadii = [4, 8, 12, 16];
+
+    const root = planFigmaToPenCreate(document).operations.find(
+      (operation) => operation.type === "insert",
+    );
+
+    expect(root?.payload).toMatchObject({
+      gap: -8,
+      strokeWidth: { top: 1, right: 2, bottom: 3, left: 4 },
+      cornerRadius: [4, 8, 12, 16],
+    });
+  });
+
   it("preserves managed Pencil variable references in reverse payloads", () => {
     const document = importPenDocument(
       {

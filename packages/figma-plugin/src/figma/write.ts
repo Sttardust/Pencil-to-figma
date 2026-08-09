@@ -22,6 +22,7 @@ import {
   readMappedSubtree,
 } from "./identity.js";
 import { directFontCandidates, fontKey } from "./fonts.js";
+import { normalizeGeometryForFigma, uniformValue } from "./geometry.js";
 import { findCleanRightSidePosition } from "./placement.js";
 
 const WRITE_SCHEMA_VERSION = "2";
@@ -59,6 +60,7 @@ export async function previewBridgeDocument(
   await figma.currentPage.loadAsync();
   const fontWarnings = await preflightFonts(document);
   normalizePaintsForFigma(document);
+  normalizeGeometryForFigma(document);
   const mappedRoots = findMappedRoots(
     figma.currentPage,
     document.root.bridgeId,
@@ -97,6 +99,7 @@ export async function writeBridgeDocument(
   await figma.currentPage.loadAsync();
   const fontWarnings = await preflightFonts(document);
   normalizePaintsForFigma(document);
+  normalizeGeometryForFigma(document);
   const hashes = authoredDocumentHashes(document);
   const mappedRoots = findMappedRoots(
     figma.currentPage,
@@ -221,6 +224,7 @@ export async function writeBridgeNodeUpdates(
       throw new Error(`Conflict mapping missing ${bridgeId}`);
   await preflightFonts(document);
   normalizePaintsForFigma(document);
+  normalizeGeometryForFigma(document);
   const hashes = authoredDocumentHashes(document);
   const context = prepareContext(document, assetData, hashes);
   for (const [bridgeId, node] of mapped.nodes)
@@ -1047,7 +1051,19 @@ function applyGeometry(
       node.strokeRightWeight = weights.right;
       node.strokeBottomWeight = weights.bottom;
       node.strokeLeftWeight = weights.left;
-    } else context.warnings.push(`Flattened per-side stroke on ${source.name}`);
+    } else {
+      const flattened = uniformValue([
+        weights.top,
+        weights.right,
+        weights.bottom,
+        weights.left,
+      ]);
+      node.strokeWeight = flattened;
+      addWarningOnce(
+        context,
+        `Flattened per-side stroke on ${source.name} to ${flattened}px`,
+      );
+    }
   }
   if (
     "effects" in node &&
@@ -1080,11 +1096,17 @@ function applyGeometry(
       node.bottomRightRadius,
       node.bottomLeftRadius,
     ] = source.cornerRadii;
+  } else if (source.cornerRadii && "cornerRadius" in node) {
+    (node as SceneNode & CornerMixin).cornerRadius = uniformValue(
+      source.cornerRadii,
+    );
   } else if ("topLeftRadius" in node && node.type !== "INSTANCE") {
     node.topLeftRadius = 0;
     node.topRightRadius = 0;
     node.bottomRightRadius = 0;
     node.bottomLeftRadius = 0;
+  } else if ("cornerRadius" in node && node.type !== "INSTANCE") {
+    (node as SceneNode & CornerMixin).cornerRadius = 0;
   }
   if (node.type === "TEXT" && source.text) applyText(node, source);
 }

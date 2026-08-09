@@ -116,6 +116,29 @@ describe("importPenDocument", () => {
     );
   });
 
+  it("preserves negative gaps, per-side strokes, and nonuniform radii", () => {
+    const root: PenNode = {
+      id: "geometry",
+      type: "frame",
+      layout: "horizontal",
+      gap: -8,
+      stroke: "#112233",
+      strokeWidth: { top: 1, right: 2, bottom: 3, left: 4 },
+      cornerRadius: [4, 8, 12, 16],
+    };
+
+    const document = importPenDocument(root, { documentId: "test.pen" });
+
+    expect(document.root.layout?.gap).toBe(-8);
+    expect(document.root.stroke?.weights).toEqual({
+      top: 1,
+      right: 2,
+      bottom: 3,
+      left: 4,
+    });
+    expect(document.root.cornerRadii).toEqual([4, 8, 12, 16]);
+  });
+
   it("fails on unknown node types", () => {
     expect(() =>
       importPenDocument(
