@@ -1,10 +1,27 @@
 # Pencil ↔ Figma Bridge
 
-Development prototype for transferring editable design trees between Pen and Figma.
+Development prototype for transferring editable design trees between Pencil and Figma.
+
+## Supported platforms
+
+The current release target is macOS only:
+
+- Intel Macs (`x86_64`)
+- Apple-silicon Macs (`arm64`)
+- Figma Desktop as the primary supported editor
+
+Windows and Linux packaging are intentionally out of scope for this phase. The bridge discovers
+the matching Pencil MCP executable from either `/Applications` or `~/Applications`; an explicit
+`PEN_FIG_PEN_MCP_PATH` override remains available for nonstandard installations.
+
+The repository still uses a developer LaunchAgent that starts Node.js from this checkout. Before a
+public Figma Community release, this service must be packaged as a signed and notarized macOS
+companion application that includes its own runtime and installer. End users will not be expected
+to install Node.js, clone this repository, or run terminal commands.
 
 ## Prerequisites
 
-- macOS with Pen and Figma Desktop installed
+- an Intel or Apple-silicon Mac with Pencil and Figma Desktop installed
 - Node.js 22 or newer
 - a `.pen` document open in Pen
 
@@ -134,10 +151,10 @@ npm audit
 
 ## Configuration
 
-| Variable               | Purpose                         | Default                 |
-| ---------------------- | ------------------------------- | ----------------------- |
-| `PEN_FIG_PORT`         | Local bridge port               | `32145`                 |
-| `PEN_FIG_PEN_MCP_PATH` | Override the Pen MCP executable | Pen Desktop bundle path |
+| Variable               | Purpose                            | Default                        |
+| ---------------------- | ---------------------------------- | ------------------------------ |
+| `PEN_FIG_PORT`         | Local bridge port                  | `32145`                        |
+| `PEN_FIG_PEN_MCP_PATH` | Override the Pencil MCP executable | Auto-detected macOS app bundle |
 
 The Figma development manifest currently permits only `http://localhost:32145`. If the port is
 changed, update its `devAllowedDomains` entry as well.

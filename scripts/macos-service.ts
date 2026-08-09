@@ -60,6 +60,7 @@ async function install(): Promise<void> {
   await writeFile(plistPath, plist, { encoding: "utf8", mode: 0o600 });
   await bootstrap();
   await run("launchctl", ["kickstart", "-k", serviceTarget]);
+  await waitForBridge();
   console.log("Pencil ↔ Figma background bridge installed and started.");
   console.log(`Logs: ${logsPath}`);
 }
@@ -93,5 +94,25 @@ async function bootstrap(): Promise<void> {
 function isLaunchdBusy(error: unknown): boolean {
   return Boolean(
     error && typeof error === "object" && "code" in error && error.code === 5,
+  );
+}
+
+async function waitForBridge(): Promise<void> {
+  const healthUrl = "http://127.0.0.1:32145/health";
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(healthUrl, {
+        signal: AbortSignal.timeout(750),
+      });
+      if (response.ok) return;
+    } catch {
+      // launchd may need a few seconds to start Node and the TypeScript loader.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  throw new Error(
+    `The background bridge did not become ready. Check ${path.join(logsPath, "service-error.log")}.`,
   );
 }
