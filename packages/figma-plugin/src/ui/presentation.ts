@@ -27,7 +27,9 @@ export function assessCompanionHealth(value: unknown): CompanionCompatibility {
       health?.ok === true &&
       health.protocol === BRIDGE_PROTOCOL_VERSION &&
       version &&
-      capabilities.includes("native-approval"),
+      capabilities.includes("native-approval") &&
+      capabilities.includes("header-auth") &&
+      capabilities.includes("restricted-origins"),
     ),
     ...(version ? { version } : {}),
   };

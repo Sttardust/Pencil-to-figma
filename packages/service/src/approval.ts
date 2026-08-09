@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 
-export type ApprovalDecision = "approved" | "denied" | "busy" | "unavailable";
+export type ApprovalDecision =
+  "approved" | "denied" | "busy" | "rate-limited" | "unavailable";
 
 export interface LocalApprovalProvider {
   requestApproval(): Promise<ApprovalDecision>;
@@ -9,26 +10,35 @@ export interface LocalApprovalProvider {
 export interface MacOSApprovalProviderOptions {
   platform?: NodeJS.Platform;
   prompt?: () => Promise<boolean>;
+  now?: () => number;
+  cooldownMs?: number;
 }
 
 export class MacOSApprovalProvider implements LocalApprovalProvider {
   readonly #platform: NodeJS.Platform;
   readonly #prompt: () => Promise<boolean>;
+  readonly #now: () => number;
+  readonly #cooldownMs: number;
   #pending = false;
+  #nextPromptAt = 0;
 
   constructor(options: MacOSApprovalProviderOptions = {}) {
     this.#platform = options.platform ?? process.platform;
     this.#prompt = options.prompt ?? showMacOSApproval;
+    this.#now = options.now ?? Date.now;
+    this.#cooldownMs = options.cooldownMs ?? 10_000;
   }
 
   async requestApproval(): Promise<ApprovalDecision> {
     if (this.#platform !== "darwin") return "unavailable";
     if (this.#pending) return "busy";
+    if (this.#now() < this.#nextPromptAt) return "rate-limited";
     this.#pending = true;
     try {
       return (await this.#prompt()) ? "approved" : "denied";
     } finally {
       this.#pending = false;
+      this.#nextPromptAt = this.#now() + this.#cooldownMs;
     }
   }
 }

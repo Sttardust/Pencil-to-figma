@@ -167,3 +167,13 @@ npm audit
 
 The Figma manifest permits only `http://localhost:32145`, where the installed macOS companion
 listens. If the port is changed, update its `allowedDomains` entry as well.
+
+### Local security
+
+The companion accepts network connections only on the Mac's loopback interface. Browser requests
+are limited to Figma origins (including Figma's sandboxed plugin origin), and authenticated
+requests carry their short-lived session token in a private request header rather than in the URL.
+Unrelated websites receive a forbidden response. Repeated native approval requests are throttled
+so a page cannot continuously open macOS dialogs. Saved reconnect credentials are stored with
+user-only file permissions, hidden from the normal plugin interface, and redacted from optional
+technical JSON. Production companion logs do not print the fallback pairing code.

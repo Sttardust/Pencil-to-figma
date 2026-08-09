@@ -155,20 +155,17 @@ figma.ui.onmessage = async (message: {
         throw new Error("Preview the selected Figma frame first");
       if (typeof message.token !== "string" || !message.token)
         throw new Error("Pair and authenticate first");
-      const response = await fetch(
-        `http://localhost:32145/figma/export?token=${encodeURIComponent(message.token)}`,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-pen-fig-token": message.token,
-          },
-          body: JSON.stringify({
-            document: pendingFigmaExport.document,
-            assetData: pendingFigmaExport.assetData,
-          }),
+      const response = await fetch("http://localhost:32145/figma/export", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-pen-fig-token": message.token,
         },
-      );
+        body: JSON.stringify({
+          document: pendingFigmaExport.document,
+          assetData: pendingFigmaExport.assetData,
+        }),
+      });
       const result = (await response.json()) as Record<string, unknown>;
       if (!response.ok)
         throw new Error(
@@ -199,7 +196,7 @@ figma.ui.onmessage = async (message: {
       )
         throw new Error("Enter a valid Pencil root ID");
       const response = await fetch(
-        `http://localhost:32145/figma/export/adopt?token=${encodeURIComponent(message.token)}`,
+        "http://localhost:32145/figma/export/adopt",
         {
           method: "POST",
           headers: {
@@ -237,7 +234,7 @@ figma.ui.onmessage = async (message: {
       const selectedFigma = await readSelectedFigmaDocument();
       pendingFigmaExport = selectedFigma;
       const response = await fetch(
-        `http://localhost:32145/figma/sync/preview?token=${encodeURIComponent(message.token)}`,
+        "http://localhost:32145/figma/sync/preview",
         {
           method: "POST",
           headers: {
@@ -269,20 +266,17 @@ figma.ui.onmessage = async (message: {
       if (!pendingFigmaExport) throw new Error("Preview mapped sync first");
       if (typeof message.token !== "string" || !message.token)
         throw new Error("Pair and authenticate first");
-      const response = await fetch(
-        `http://localhost:32145/figma/sync/apply?token=${encodeURIComponent(message.token)}`,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-pen-fig-token": message.token,
-          },
-          body: JSON.stringify({
-            document: pendingFigmaExport.document,
-            assetData: pendingFigmaExport.assetData,
-          }),
+      const response = await fetch("http://localhost:32145/figma/sync/apply", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-pen-fig-token": message.token,
         },
-      );
+        body: JSON.stringify({
+          document: pendingFigmaExport.document,
+          assetData: pendingFigmaExport.assetData,
+        }),
+      });
       const result = (await response.json()) as Record<string, unknown>;
       if (!response.ok)
         throw new Error(
@@ -314,7 +308,7 @@ figma.ui.onmessage = async (message: {
       if (typeof message.bridgeId !== "string" || !message.bridgeId)
         throw new Error("Choose a mapped conflict root");
       const response = await fetch(
-        `http://localhost:32145/figma/sync/resolve?token=${encodeURIComponent(message.token)}`,
+        "http://localhost:32145/figma/sync/resolve",
         {
           method: "POST",
           headers: {
@@ -466,7 +460,7 @@ async function completePreparedFigmaUpdate(
     );
   const verified = await readSelectedFigmaDocument();
   const response = await fetch(
-    `http://localhost:32145/figma/sync/resolve/complete?token=${encodeURIComponent(token)}`,
+    "http://localhost:32145/figma/sync/resolve/complete",
     {
       method: "POST",
       headers: {

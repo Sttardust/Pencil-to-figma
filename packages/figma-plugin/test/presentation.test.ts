@@ -8,15 +8,20 @@ import {
 } from "../src/ui/presentation.js";
 
 describe("companion health presentation", () => {
-  it("accepts a versioned companion with native approval", () => {
+  it("accepts a versioned companion with secure local transport", () => {
     expect(
       assessCompanionHealth({
         ok: true,
         protocol: 1,
-        companionVersion: "0.1.1",
-        capabilities: ["automatic-reconnect", "native-approval"],
+        companionVersion: "0.1.3",
+        capabilities: [
+          "automatic-reconnect",
+          "native-approval",
+          "header-auth",
+          "restricted-origins",
+        ],
       }),
-    ).toEqual({ compatible: true, version: "0.1.1" });
+    ).toEqual({ compatible: true, version: "0.1.3" });
   });
 
   it("requires an update for legacy or incompatible health responses", () => {
@@ -31,6 +36,14 @@ describe("companion health presentation", () => {
         capabilities: ["native-approval"],
       }),
     ).toEqual({ compatible: false, version: "0.1.0" });
+    expect(
+      assessCompanionHealth({
+        ok: true,
+        protocol: 1,
+        companionVersion: "0.1.2",
+        capabilities: ["native-approval"],
+      }),
+    ).toEqual({ compatible: false, version: "0.1.2" });
   });
 });
 

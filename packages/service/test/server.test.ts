@@ -13,6 +13,19 @@ import type { LocalApprovalProvider } from "../src/approval.js";
 const servers: BridgeServer[] = [];
 const temporaryDirectories: string[] = [];
 
+async function bridgeFetch(
+  input: string | URL,
+  init: RequestInit = {},
+): Promise<Response> {
+  const url = new URL(input);
+  const token = url.searchParams.get("token");
+  if (!token) return globalThis.fetch(url, init);
+  url.searchParams.delete("token");
+  const headers = new Headers(init.headers);
+  headers.set("x-pen-fig-token", token);
+  return globalThis.fetch(url, { ...init, headers });
+}
+
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.close()));
   await Promise.all(
@@ -42,7 +55,7 @@ describe("BridgeServer", () => {
     const port = await server.start();
     const origin = `http://localhost:${port}`;
 
-    const response = await fetch(`${origin}/authorize`, {
+    const response = await bridgeFetch(`${origin}/authorize`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ type: "authorize", protocol: 1 }),
@@ -55,7 +68,7 @@ describe("BridgeServer", () => {
       token: expect.any(String),
       reconnectToken: expect.any(String),
     });
-    const hello = await fetch(`${origin}/hello`, {
+    const hello = await bridgeFetch(`${origin}/hello`, {
       method: "POST",
       headers: { "x-pen-fig-token": approved.token },
     });
@@ -75,7 +88,7 @@ describe("BridgeServer", () => {
     });
     servers.push(server);
     const port = await server.start();
-    const response = await fetch(`http://localhost:${port}/authorize`, {
+    const response = await bridgeFetch(`http://localhost:${port}/authorize`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ type: "authorize", protocol: 1 }),
@@ -85,6 +98,99 @@ describe("BridgeServer", () => {
     expect(await response.json()).toMatchObject({
       type: "failed",
       code: "AUTH_APPROVAL_DENIED",
+    });
+  });
+
+  it("allows Figma browser origins and rejects unrelated websites", async () => {
+    const server = new BridgeServer({
+      host: "127.0.0.1",
+      port: 0,
+      pen: {} as PenMcpClient,
+    });
+    servers.push(server);
+    const port = await server.start();
+    const healthUrl = `http://localhost:${port}/health`;
+
+    const figma = await globalThis.fetch(healthUrl, {
+      headers: { origin: "https://www.figma.com" },
+    });
+    expect(figma.status).toBe(200);
+    expect(figma.headers.get("access-control-allow-origin")).toBe(
+      "https://www.figma.com",
+    );
+
+    const sandboxedPlugin = await globalThis.fetch(healthUrl, {
+      headers: { origin: "null" },
+    });
+    expect(sandboxedPlugin.status).toBe(200);
+    expect(sandboxedPlugin.headers.get("access-control-allow-origin")).toBe(
+      "null",
+    );
+
+    const unrelatedSite = await globalThis.fetch(healthUrl, {
+      headers: { origin: "https://example.com" },
+    });
+    expect(unrelatedSite.status).toBe(403);
+    expect(await unrelatedSite.json()).toMatchObject({
+      type: "failed",
+      code: "ORIGIN_FORBIDDEN",
+    });
+    expect(unrelatedSite.headers.get("access-control-allow-origin")).toBeNull();
+
+    const unrelatedSocket = new WebSocket(`ws://127.0.0.1:${port}`, {
+      headers: { origin: "https://example.com" },
+    });
+    const closed = new Promise<number>((resolve) =>
+      unrelatedSocket.once("close", (code) => resolve(code)),
+    );
+    await onceOpen(unrelatedSocket);
+    await expect(closed).resolves.toBe(1008);
+  });
+
+  it("rejects session tokens in URLs", async () => {
+    const server = new BridgeServer({
+      host: "127.0.0.1",
+      port: 0,
+      pen: {} as PenMcpClient,
+    });
+    servers.push(server);
+    const port = await server.start();
+    const response = await globalThis.fetch(
+      `http://localhost:${port}/health?token=do-not-log-me`,
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      type: "failed",
+      code: "AUTH_TOKEN_URL_FORBIDDEN",
+    });
+  });
+
+  it("returns a retryable response when approval prompts are rate-limited", async () => {
+    const approval: LocalApprovalProvider = {
+      requestApproval: async () => "rate-limited",
+    };
+    const server = new BridgeServer({
+      host: "127.0.0.1",
+      port: 0,
+      pen: {} as PenMcpClient,
+      approval,
+    });
+    servers.push(server);
+    const port = await server.start();
+    const response = await globalThis.fetch(
+      `http://localhost:${port}/authorize`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "authorize", protocol: 1 }),
+      },
+    );
+
+    expect(response.status).toBe(429);
+    expect(await response.json()).toMatchObject({
+      type: "failed",
+      code: "AUTH_APPROVAL_RATE_LIMITED",
     });
   });
 
@@ -111,7 +217,7 @@ describe("BridgeServer", () => {
     servers.push(server);
     const port = await server.start();
     const origin = `http://localhost:${port}`;
-    const health = await fetch(`${origin}/health`).then((response) =>
+    const health = await bridgeFetch(`${origin}/health`).then((response) =>
       response.json(),
     );
     expect(health).toMatchObject({
@@ -126,7 +232,7 @@ describe("BridgeServer", () => {
       platform: expect.any(String),
       architecture: expect.any(String),
     });
-    const pairResponse = await fetch(`${origin}/pair`, {
+    const pairResponse = await bridgeFetch(`${origin}/pair`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -138,16 +244,16 @@ describe("BridgeServer", () => {
     const paired = await pairResponse.json();
     expect(pairResponse.status).toBe(200);
     const token = encodeURIComponent(String(paired.token));
-    const hello = await fetch(`${origin}/hello?token=${token}`, {
+    const hello = await bridgeFetch(`${origin}/hello?token=${token}`, {
       method: "POST",
     });
     expect(await hello.json()).toMatchObject({ type: "ready", protocol: 1 });
-    const screens = await fetch(`${origin}/pen/screens?token=${token}`);
+    const screens = await bridgeFetch(`${origin}/pen/screens?token=${token}`);
     expect(await screens.json()).toMatchObject({
       type: "pen-screens",
       text: "abc | Screen",
     });
-    const search = await fetch(
+    const search = await bridgeFetch(
       `${origin}/pen/screen-search?query=Screen&token=${token}`,
     );
     expect(await search.json()).toMatchObject({
@@ -155,22 +261,25 @@ describe("BridgeServer", () => {
       requestId: "search",
       text: "abc | Screen",
     });
-    const node = await fetch(`${origin}/pen/nodes/abc?token=${token}`);
+    const node = await bridgeFetch(`${origin}/pen/nodes/abc?token=${token}`);
     const transferred = await node.json();
     expect(transferred).toMatchObject({
       type: "pen-document",
       transferId: expect.any(String),
       document: { root: { bridgeId: "pen:abc", name: "Screen" } },
     });
-    const completed = await fetch(`${origin}/sync/complete?token=${token}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        transferId: transferred.transferId,
-        mappings: [{ bridgeId: "pen:abc", figmaNodeId: "1:2" }],
-        figmaBaselineHashes: { "pen:abc": "a".repeat(64) },
-      }),
-    });
+    const completed = await bridgeFetch(
+      `${origin}/sync/complete?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          transferId: transferred.transferId,
+          mappings: [{ bridgeId: "pen:abc", figmaNodeId: "1:2" }],
+          figmaBaselineHashes: { "pen:abc": "a".repeat(64) },
+        }),
+      },
+    );
     expect(await completed.json()).toMatchObject({
       type: "sync-committed",
       revision: 0,
@@ -242,7 +351,7 @@ describe("BridgeServer", () => {
     servers.push(server);
     const port = await server.start();
     const origin = `http://localhost:${port}`;
-    const paired = await fetch(`${origin}/pair`, {
+    const paired = await bridgeFetch(`${origin}/pair`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -253,13 +362,13 @@ describe("BridgeServer", () => {
     }).then((response) => response.json());
     sessions.rotate();
 
-    const stale = await fetch(`${origin}/hello`, {
+    const stale = await bridgeFetch(`${origin}/hello`, {
       method: "POST",
       headers: { "x-pen-fig-token": paired.token },
     });
     expect(stale.status).toBe(401);
 
-    const reconnect = await fetch(`${origin}/reconnect`, {
+    const reconnect = await bridgeFetch(`${origin}/reconnect`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -276,7 +385,7 @@ describe("BridgeServer", () => {
       reconnectToken: paired.reconnectToken,
       token: expect.not.stringMatching(paired.token),
     });
-    const hello = await fetch(`${origin}/hello`, {
+    const hello = await bridgeFetch(`${origin}/hello`, {
       method: "POST",
       headers: { "x-pen-fig-token": reconnected.token },
     });
@@ -345,7 +454,7 @@ describe("BridgeServer", () => {
     servers.push(server);
     const port = await server.start();
     const origin = `http://localhost:${port}`;
-    const paired = await fetch(`${origin}/pair`, {
+    const paired = await bridgeFetch(`${origin}/pair`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -355,9 +464,11 @@ describe("BridgeServer", () => {
       }),
     }).then((response) => response.json());
     const token = encodeURIComponent(String(paired.token));
-    await fetch(`${origin}/hello?token=${token}`, { method: "POST" });
+    await bridgeFetch(`${origin}/hello?token=${token}`, { method: "POST" });
 
-    const response = await fetch(`${origin}/pen/nodes/screen?token=${token}`);
+    const response = await bridgeFetch(
+      `${origin}/pen/nodes/screen?token=${token}`,
+    );
     expect(response.status).toBe(200);
     const transferred = await response.json();
     expect(transferred).toMatchObject({
@@ -395,17 +506,20 @@ describe("BridgeServer", () => {
       },
     });
     expect(requested).toEqual(["screen", "buttonComponent"]);
-    const completed = await fetch(`${origin}/sync/complete?token=${token}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        transferId: transferred.transferId,
-        mappings: [
-          { bridgeId: "pen:screen", figmaNodeId: "1:1" },
-          { bridgeId: "pen:buttonInstance", figmaNodeId: "1:2" },
-        ],
-      }),
-    });
+    const completed = await bridgeFetch(
+      `${origin}/sync/complete?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          transferId: transferred.transferId,
+          mappings: [
+            { bridgeId: "pen:screen", figmaNodeId: "1:1" },
+            { bridgeId: "pen:buttonInstance", figmaNodeId: "1:2" },
+          ],
+        }),
+      },
+    );
     expect(completed.status).toBe(200);
     expect(await completed.json()).toMatchObject({
       type: "sync-committed",
@@ -475,7 +589,7 @@ describe("BridgeServer", () => {
     servers.push(server);
     const port = await server.start();
     const origin = `http://localhost:${port}`;
-    const paired = await fetch(`${origin}/pair`, {
+    const paired = await bridgeFetch(`${origin}/pair`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -485,9 +599,9 @@ describe("BridgeServer", () => {
       }),
     }).then((response) => response.json());
     const token = encodeURIComponent(String(paired.token));
-    await fetch(`${origin}/hello?token=${token}`, { method: "POST" });
+    await bridgeFetch(`${origin}/hello?token=${token}`, { method: "POST" });
 
-    const response = await fetch(
+    const response = await bridgeFetch(
       `${origin}/figma/export/adopt?token=${token}`,
       {
         method: "POST",
@@ -531,7 +645,7 @@ describe("BridgeServer", () => {
       ],
     });
 
-    const previewResponse = await fetch(
+    const previewResponse = await bridgeFetch(
       `${origin}/figma/sync/preview?token=${token}`,
       {
         method: "POST",
@@ -552,7 +666,7 @@ describe("BridgeServer", () => {
 
     const editedDocument = figmaExportDocument();
     editedDocument.root.children[0]!.text!.characters = "Updated in Figma";
-    const changedPreview = await fetch(
+    const changedPreview = await bridgeFetch(
       `${origin}/figma/sync/preview?token=${token}`,
       {
         method: "POST",
@@ -565,7 +679,7 @@ describe("BridgeServer", () => {
       actions: { toPencil: 1, toFigma: 0 },
     });
 
-    const applyResponse = await fetch(
+    const applyResponse = await bridgeFetch(
       `${origin}/figma/sync/apply?token=${token}`,
       {
         method: "POST",
@@ -588,7 +702,7 @@ describe("BridgeServer", () => {
     adoptedRoot.children![0]!.content = "Pencil conflict";
     const conflictDocument = figmaExportDocument();
     conflictDocument.root.children[0]!.text!.characters = "Figma conflict";
-    const conflictPreview = await fetch(
+    const conflictPreview = await bridgeFetch(
       `${origin}/figma/sync/preview?token=${token}`,
       {
         method: "POST",
@@ -604,7 +718,7 @@ describe("BridgeServer", () => {
     });
     expect(executeWriteCount).toBe(1);
 
-    const keepFigmaResponse = await fetch(
+    const keepFigmaResponse = await bridgeFetch(
       `${origin}/figma/sync/resolve?token=${token}`,
       {
         method: "POST",
@@ -633,7 +747,7 @@ describe("BridgeServer", () => {
     adoptedRoot.children![0]!.content = "Pencil wins";
     const losingFigmaDocument = figmaExportDocument();
     losingFigmaDocument.root.children[0]!.text!.characters = "Figma loses";
-    const prepareKeepPencil = await fetch(
+    const prepareKeepPencil = await bridgeFetch(
       `${origin}/figma/sync/resolve?token=${token}`,
       {
         method: "POST",
@@ -664,7 +778,7 @@ describe("BridgeServer", () => {
 
     const resolvedFigmaDocument = figmaExportDocument();
     resolvedFigmaDocument.root.children[0]!.text!.characters = "Pencil wins";
-    const completeKeepPencil = await fetch(
+    const completeKeepPencil = await bridgeFetch(
       `${origin}/figma/sync/resolve/complete?token=${token}`,
       {
         method: "POST",
@@ -687,7 +801,7 @@ describe("BridgeServer", () => {
     expect(executeWriteCount).toBe(2);
 
     adoptedRoot.children![0]!.content = "Pencil-only update";
-    const preparePencilUpdate = await fetch(
+    const preparePencilUpdate = await bridgeFetch(
       `${origin}/figma/sync/apply?token=${token}`,
       {
         method: "POST",
@@ -718,7 +832,7 @@ describe("BridgeServer", () => {
     const updatedFigmaDocument = figmaExportDocument();
     updatedFigmaDocument.root.children[0]!.text!.characters =
       "Pencil-only update";
-    const completePencilUpdate = await fetch(
+    const completePencilUpdate = await bridgeFetch(
       `${origin}/figma/sync/resolve/complete?token=${token}`,
       {
         method: "POST",
@@ -746,7 +860,7 @@ describe("BridgeServer", () => {
       content: "Added in Pencil",
       metadata: { type: "pen-fig-bridge", bridgeId: "pen:subtitle" },
     });
-    const structuralPreview = await fetch(
+    const structuralPreview = await bridgeFetch(
       `${origin}/figma/sync/preview?token=${token}`,
       {
         method: "POST",
@@ -761,7 +875,7 @@ describe("BridgeServer", () => {
       canApplyWithoutResolution: true,
     });
 
-    const prepareStructuralUpdate = await fetch(
+    const prepareStructuralUpdate = await bridgeFetch(
       `${origin}/figma/sync/apply?token=${token}`,
       {
         method: "POST",
@@ -795,7 +909,7 @@ describe("BridgeServer", () => {
         nodeId: "figma-subtitle",
       },
     });
-    const completeStructuralUpdate = await fetch(
+    const completeStructuralUpdate = await bridgeFetch(
       `${origin}/figma/sync/resolve/complete?token=${token}`,
       {
         method: "POST",
@@ -818,7 +932,7 @@ describe("BridgeServer", () => {
     expect(completeStructuralUpdate.status).toBe(200);
 
     adoptedRoot.children!.reverse();
-    const prepareReorder = await fetch(
+    const prepareReorder = await bridgeFetch(
       `${origin}/figma/sync/apply?token=${token}`,
       {
         method: "POST",
@@ -838,7 +952,7 @@ describe("BridgeServer", () => {
       structurallyUpdatedFigmaDocument,
     );
     reorderedFigmaDocument.root.children.reverse();
-    const completeReorder = await fetch(
+    const completeReorder = await bridgeFetch(
       `${origin}/figma/sync/resolve/complete?token=${token}`,
       {
         method: "POST",
@@ -857,7 +971,7 @@ describe("BridgeServer", () => {
     });
 
     adoptedRoot.children!.shift();
-    const prepareDeletion = await fetch(
+    const prepareDeletion = await bridgeFetch(
       `${origin}/figma/sync/apply?token=${token}`,
       {
         method: "POST",
@@ -875,7 +989,7 @@ describe("BridgeServer", () => {
     });
     const deletedFigmaDocument = structuredClone(reorderedFigmaDocument);
     deletedFigmaDocument.root.children.shift();
-    const completeDeletion = await fetch(
+    const completeDeletion = await bridgeFetch(
       `${origin}/figma/sync/resolve/complete?token=${token}`,
       {
         method: "POST",
@@ -909,7 +1023,7 @@ describe("BridgeServer", () => {
         nodeId: "figma-added",
       },
     });
-    const figmaStructuralPreview = await fetch(
+    const figmaStructuralPreview = await bridgeFetch(
       `${origin}/figma/sync/preview?token=${token}`,
       {
         method: "POST",
@@ -923,7 +1037,7 @@ describe("BridgeServer", () => {
       structural: true,
       canApplyWithoutResolution: true,
     });
-    const applyFigmaStructure = await fetch(
+    const applyFigmaStructure = await bridgeFetch(
       `${origin}/figma/sync/apply?token=${token}`,
       {
         method: "POST",
@@ -1056,7 +1170,7 @@ describe("BridgeServer", () => {
     servers.push(server);
     const port = await server.start();
     const origin = `http://localhost:${port}`;
-    const paired = await fetch(`${origin}/pair`, {
+    const paired = await bridgeFetch(`${origin}/pair`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -1066,13 +1180,16 @@ describe("BridgeServer", () => {
       }),
     }).then((response) => response.json());
     const token = encodeURIComponent(String(paired.token));
-    await fetch(`${origin}/hello?token=${token}`, { method: "POST" });
+    await bridgeFetch(`${origin}/hello?token=${token}`, { method: "POST" });
 
-    const response = await fetch(`${origin}/figma/export?token=${token}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ document, assetData: {} }),
-    });
+    const response = await bridgeFetch(
+      `${origin}/figma/export?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ document, assetData: {} }),
+      },
+    );
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
@@ -1084,7 +1201,7 @@ describe("BridgeServer", () => {
       manifest: { revision: 0, mappingCount: 2 },
     });
 
-    const unchangedPreview = await fetch(
+    const unchangedPreview = await bridgeFetch(
       `${origin}/figma/sync/preview?token=${token}`,
       {
         method: "POST",
@@ -1111,7 +1228,7 @@ describe("BridgeServer", () => {
     edited.root.children[0]!.instance!.overrides = {
       "pen:label": { content: "Join" },
     };
-    const changedPreview = await fetch(
+    const changedPreview = await bridgeFetch(
       `${origin}/figma/sync/preview?token=${token}`,
       {
         method: "POST",
@@ -1227,7 +1344,7 @@ describe("BridgeServer", () => {
     servers.push(server);
     const port = await server.start();
     const origin = `http://localhost:${port}`;
-    const paired = await fetch(`${origin}/pair`, {
+    const paired = await bridgeFetch(`${origin}/pair`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -1237,29 +1354,35 @@ describe("BridgeServer", () => {
       }),
     }).then((response) => response.json());
     const token = encodeURIComponent(String(paired.token));
-    await fetch(`${origin}/hello?token=${token}`, { method: "POST" });
+    await bridgeFetch(`${origin}/hello?token=${token}`, { method: "POST" });
 
     const baseline = figmaReorderDocument(["a", "b", "c"]);
-    const adopt = await fetch(`${origin}/figma/export/adopt?token=${token}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ document: baseline, penRootId: "nativeRoot" }),
-    });
+    const adopt = await bridgeFetch(
+      `${origin}/figma/export/adopt?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ document: baseline, penRootId: "nativeRoot" }),
+      },
+    );
     expect(adopt.status).toBe(200);
 
     penRoot.children = [nodes.b!, nodes.a!, nodes.c!];
     const figmaWins = figmaReorderDocument(["a", "c", "b"]);
-    const preview = await fetch(`${origin}/figma/sync/preview?token=${token}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ document: figmaWins }),
-    }).then((response) => response.json());
+    const preview = await bridgeFetch(
+      `${origin}/figma/sync/preview?token=${token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ document: figmaWins }),
+      },
+    ).then((response) => response.json());
     expect(preview).toMatchObject({
       counts: { conflicted: 1 },
       structural: true,
       conflictRoots: [{ bridgeId: "pen:root" }],
     });
-    const keepFigma = await fetch(
+    const keepFigma = await bridgeFetch(
       `${origin}/figma/sync/resolve?token=${token}`,
       {
         method: "POST",
@@ -1286,7 +1409,7 @@ describe("BridgeServer", () => {
 
     penRoot.children = [nodes.c!, nodes.a!, nodes.b!];
     const changedFigma = figmaReorderDocument(["b", "a", "c"]);
-    const prepareKeepPen = await fetch(
+    const prepareKeepPen = await bridgeFetch(
       `${origin}/figma/sync/resolve?token=${token}`,
       {
         method: "POST",
@@ -1306,7 +1429,7 @@ describe("BridgeServer", () => {
       structural: true,
       direction: "pen",
     });
-    const completed = await fetch(
+    const completed = await bridgeFetch(
       `${origin}/figma/sync/resolve/complete?token=${token}`,
       {
         method: "POST",
@@ -1326,7 +1449,7 @@ describe("BridgeServer", () => {
 
     nodes.b!.content = "B edited in Pencil";
     const figmaDeletesB = figmaReorderDocument(["c", "a"]);
-    const deleteConflictPreview = await fetch(
+    const deleteConflictPreview = await bridgeFetch(
       `${origin}/figma/sync/preview?token=${token}`,
       {
         method: "POST",
@@ -1339,7 +1462,7 @@ describe("BridgeServer", () => {
       structural: true,
       conflictRoots: [{ bridgeId: "pen:b", reason: "delete-vs-edit" }],
     });
-    const prepareRestoreB = await fetch(
+    const prepareRestoreB = await bridgeFetch(
       `${origin}/figma/sync/resolve?token=${token}`,
       {
         method: "POST",
@@ -1363,7 +1486,7 @@ describe("BridgeServer", () => {
     restoredB.root.children.find(
       (node) => node.bridgeId === "pen:b",
     )!.text!.characters = "B edited in Pencil";
-    const restoreCompleted = await fetch(
+    const restoreCompleted = await bridgeFetch(
       `${origin}/figma/sync/resolve/complete?token=${token}`,
       {
         method: "POST",
@@ -1386,7 +1509,7 @@ describe("BridgeServer", () => {
     figmaEditsA.root.children.find(
       (node) => node.bridgeId === "pen:a",
     )!.text!.characters = "A edited in Figma";
-    const recreatePreview = await fetch(
+    const recreatePreview = await bridgeFetch(
       `${origin}/figma/sync/preview?token=${token}`,
       {
         method: "POST",
@@ -1399,7 +1522,7 @@ describe("BridgeServer", () => {
       structural: true,
       conflictRoots: [{ bridgeId: "pen:a", reason: "delete-vs-edit" }],
     });
-    const recreateA = await fetch(
+    const recreateA = await bridgeFetch(
       `${origin}/figma/sync/resolve?token=${token}`,
       {
         method: "POST",

@@ -98,7 +98,13 @@ export class BridgeServer {
       server: this.#http,
       maxPayload: 1024 * 1024,
     });
-    this.#ws.on("connection", (socket) => this.#onConnection(socket));
+    this.#ws.on("connection", (socket, request) => {
+      if (!isAllowedBrowserOrigin(firstHeader(request.headers.origin))) {
+        socket.close(1008, "Figma origin required");
+        return;
+      }
+      this.#onConnection(socket);
+    });
   }
 
   get pairingCode(): string {
@@ -226,17 +232,30 @@ export class BridgeServer {
     request: import("node:http").IncomingMessage,
     response: import("node:http").ServerResponse,
   ): Promise<void> {
-    response.setHeader("access-control-allow-origin", "*");
-    response.setHeader(
-      "access-control-allow-headers",
-      "content-type, x-pen-fig-token",
-    );
-    response.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
+    const requestUrl = new URL(request.url ?? "/", "http://localhost");
+    const origin = firstHeader(request.headers.origin);
+    if (!isAllowedBrowserOrigin(origin)) {
+      json(response, 403, {
+        type: "failed",
+        code: "ORIGIN_FORBIDDEN",
+        message: "This local bridge accepts browser requests only from Figma",
+      });
+      return;
+    }
+    applyCorsHeaders(response, origin);
     if (request.method === "OPTIONS") {
       response.writeHead(204).end();
       return;
     }
-    if (request.method === "GET" && request.url === "/health") {
+    if (requestUrl.searchParams.has("token")) {
+      json(response, 400, {
+        type: "failed",
+        code: "AUTH_TOKEN_URL_FORBIDDEN",
+        message: "Send the session token in the x-pen-fig-token header",
+      });
+      return;
+    }
+    if (request.method === "GET" && requestUrl.pathname === "/health") {
       json(response, 200, {
         ok: true,
         protocol: BRIDGE_PROTOCOL_VERSION,
@@ -249,7 +268,7 @@ export class BridgeServer {
     }
 
     try {
-      if (request.method === "POST" && request.url === "/authorize") {
+      if (request.method === "POST" && requestUrl.pathname === "/authorize") {
         const parsed = authorizationRequestSchema.safeParse(
           await readJsonBody(request),
         );
@@ -267,6 +286,14 @@ export class BridgeServer {
             type: "failed",
             code: "AUTH_APPROVAL_BUSY",
             message: "A connection approval is already waiting on this Mac",
+          });
+          return;
+        }
+        if (decision === "rate-limited") {
+          json(response, 429, {
+            type: "failed",
+            code: "AUTH_APPROVAL_RATE_LIMITED",
+            message: "Wait a moment before requesting another approval",
           });
           return;
         }
@@ -294,7 +321,7 @@ export class BridgeServer {
         return;
       }
 
-      if (request.method === "POST" && request.url === "/pair") {
+      if (request.method === "POST" && requestUrl.pathname === "/pair") {
         const parsed = clientMessageSchema.safeParse(
           await readJsonBody(request),
         );
@@ -323,7 +350,7 @@ export class BridgeServer {
         return;
       }
 
-      if (request.method === "POST" && request.url === "/reconnect") {
+      if (request.method === "POST" && requestUrl.pathname === "/reconnect") {
         const parsed = clientMessageSchema.safeParse(
           await readJsonBody(request),
         );
@@ -354,13 +381,11 @@ export class BridgeServer {
         return;
       }
 
-      const requestUrl = new URL(request.url ?? "/", "http://localhost");
       const tokenHeader = request.headers["x-pen-fig-token"];
       const headerToken = Array.isArray(tokenHeader)
         ? (tokenHeader[0] ?? "")
         : (tokenHeader ?? "");
-      const token = requestUrl.searchParams.get("token") ?? headerToken;
-      if (!this.#sessions.authenticate(token)) {
+      if (!this.#sessions.authenticate(headerToken)) {
         json(response, 401, {
           type: "failed",
           code: "AUTH_REQUIRED",
@@ -1716,6 +1741,39 @@ function summarizeState(text: string): string {
       .find((line) => line.includes("Currently active canvas editor")) ??
     text.slice(0, 300)
   );
+}
+
+function firstHeader(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function isAllowedBrowserOrigin(origin: string | undefined): boolean {
+  if (origin === undefined || origin === "null") return true;
+  try {
+    const parsed = new URL(origin);
+    return (
+      parsed.protocol === "https:" &&
+      (parsed.hostname === "figma.com" ||
+        parsed.hostname.endsWith(".figma.com"))
+    );
+  } catch {
+    return false;
+  }
+}
+
+function applyCorsHeaders(
+  response: import("node:http").ServerResponse,
+  origin: string | undefined,
+): void {
+  if (origin !== undefined) {
+    response.setHeader("access-control-allow-origin", origin);
+    response.setHeader("vary", "Origin");
+  }
+  response.setHeader(
+    "access-control-allow-headers",
+    "content-type, x-pen-fig-token",
+  );
+  response.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
 }
 
 function json(

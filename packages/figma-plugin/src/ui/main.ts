@@ -669,6 +669,13 @@ async function requestApproval(): Promise<void> {
         );
         return;
       }
+      if (error.code === "AUTH_APPROVAL_RATE_LIMITED") {
+        showConnectionError(
+          "Please wait a few seconds, then choose Connect to Pencil again.",
+          "approve",
+        );
+        return;
+      }
       if (error.code === "AUTH_APPROVAL_UNAVAILABLE") {
         showConnectionError(
           "Automatic approval is unavailable in this development build. Use the fallback pairing code.",

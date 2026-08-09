@@ -15,6 +15,12 @@ On the first connection, macOS displays an Allow/Cancel message. Choosing **Allo
 private saved connection without asking the user to copy or type a code. The older pairing-code
 flow remains collapsed in the plugin as a troubleshooting fallback.
 
+Authenticated HTTP calls use the `x-pen-fig-token` header; tokens in URLs are rejected so they do
+not leak into request logs or browser history. CORS access is restricted to Figma and its sandboxed
+plugin origin. Non-browser local clients can still use the service for diagnostics, but all design
+operations require a valid session. Native approval prompts have a cooldown to prevent repeated
+dialog spam, and production logs do not reveal the development pairing code.
+
 ## Build the applications
 
 Build the edition matching the current Mac:

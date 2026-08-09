@@ -16,7 +16,8 @@ const server = new BridgeServer({
 const port = await server.start();
 
 console.log(`Pencil ↔ Figma bridge listening on http://${config.host}:${port}`);
-console.log(`Pairing code: ${server.pairingCode}`);
+if (process.env.NODE_ENV !== "production")
+  console.log(`Development pairing code: ${server.pairingCode}`);
 
 async function shutdown(): Promise<void> {
   await server.close();

@@ -32,6 +32,27 @@ describe("macOS local approval", () => {
     await expect(first).resolves.toBe("approved");
   });
 
+  it("rate-limits repeated native prompts", async () => {
+    let now = 1_000;
+    let prompts = 0;
+    const provider = new MacOSApprovalProvider({
+      platform: "darwin",
+      now: () => now,
+      cooldownMs: 10_000,
+      prompt: async () => {
+        prompts += 1;
+        return true;
+      },
+    });
+
+    await expect(provider.requestApproval()).resolves.toBe("approved");
+    await expect(provider.requestApproval()).resolves.toBe("rate-limited");
+    expect(prompts).toBe(1);
+    now += 10_000;
+    await expect(provider.requestApproval()).resolves.toBe("approved");
+    expect(prompts).toBe(2);
+  });
+
   it("reports native approval as unavailable outside macOS", async () => {
     const provider = new MacOSApprovalProvider({
       platform: "linux",
