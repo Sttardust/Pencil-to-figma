@@ -660,6 +660,13 @@ async function preflightFonts(document: BridgeDocument): Promise<string[]> {
       if (!node.text) continue;
       node.text.style.family = selected.family;
       node.text.style.style = selected.style;
+      if (node.variableBindings?.fontFamily) {
+        delete node.variableBindings.fontFamily;
+        if (!Object.keys(node.variableBindings).length)
+          delete node.variableBindings;
+        const message = `VARIABLE_BINDING_SKIPPED: ${node.name} font variable does not match the loadable Figma font`;
+        if (!warnings.includes(message)) warnings.push(message);
+      }
     }
     warnings.push(
       `FONT_SUBSTITUTED: ${font.family} ${font.style} → ${selected.family} ${selected.style} (${nodes.length} text ${nodes.length === 1 ? "node" : "nodes"})`,
