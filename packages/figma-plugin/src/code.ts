@@ -194,10 +194,10 @@ figma.ui.onmessage = async (message: {
 
   if (message.type === "preview-mapped-sync") {
     try {
-      if (!pendingFigmaExport)
-        throw new Error("Preview the selected Figma frame first");
       if (typeof message.token !== "string" || !message.token)
         throw new Error("Pair and authenticate first");
+      const selectedFigma = await readSelectedFigmaDocument();
+      pendingFigmaExport = selectedFigma;
       const response = await fetch(
         `http://localhost:32145/figma/sync/preview?token=${encodeURIComponent(message.token)}`,
         {
@@ -206,7 +206,7 @@ figma.ui.onmessage = async (message: {
             "content-type": "application/json",
             "x-pen-fig-token": message.token,
           },
-          body: JSON.stringify({ document: pendingFigmaExport.document }),
+          body: JSON.stringify({ document: selectedFigma.document }),
         },
       );
       const result = (await response.json()) as Record<string, unknown>;
@@ -228,8 +228,7 @@ figma.ui.onmessage = async (message: {
 
   if (message.type === "apply-mapped-sync") {
     try {
-      if (!pendingFigmaExport)
-        throw new Error("Preview the selected Figma frame first");
+      if (!pendingFigmaExport) throw new Error("Preview mapped sync first");
       if (typeof message.token !== "string" || !message.token)
         throw new Error("Pair and authenticate first");
       const response = await fetch(
@@ -269,8 +268,7 @@ figma.ui.onmessage = async (message: {
 
   if (message.type === "resolve-mapped-sync") {
     try {
-      if (!pendingFigmaExport)
-        throw new Error("Preview the selected Figma frame first");
+      if (!pendingFigmaExport) throw new Error("Preview mapped sync first");
       if (typeof message.token !== "string" || !message.token)
         throw new Error("Pair and authenticate first");
       if (message.direction !== "pen" && message.direction !== "figma")
