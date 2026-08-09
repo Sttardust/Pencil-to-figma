@@ -8,6 +8,7 @@ import { SessionManager } from "../src/session.js";
 import type { PenMcpClient } from "../src/pen/mcp-client.js";
 import { importPenDocument, type PenNode } from "@pen-fig/core";
 import type { BridgeDocument } from "@pen-fig/bridge-schema";
+import type { LocalApprovalProvider } from "../src/approval.js";
 
 const servers: BridgeServer[] = [];
 const temporaryDirectories: string[] = [];
@@ -22,6 +23,71 @@ afterEach(async () => {
 });
 
 describe("BridgeServer", () => {
+  it("authorizes a first connection after native macOS approval", async () => {
+    const pen = {
+      getAppState: async () => ({
+        text: "- Currently active canvas editor: `/tmp/test.pen`",
+      }),
+    } as PenMcpClient;
+    const approval: LocalApprovalProvider = {
+      requestApproval: async () => "approved",
+    };
+    const server = new BridgeServer({
+      host: "127.0.0.1",
+      port: 0,
+      pen,
+      approval,
+    });
+    servers.push(server);
+    const port = await server.start();
+    const origin = `http://localhost:${port}`;
+
+    const response = await fetch(`${origin}/authorize`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "authorize", protocol: 1 }),
+    });
+    const approved = await response.json();
+    expect(response.status).toBe(200);
+    expect(approved).toMatchObject({
+      type: "approved",
+      protocol: 1,
+      token: expect.any(String),
+      reconnectToken: expect.any(String),
+    });
+    const hello = await fetch(`${origin}/hello`, {
+      method: "POST",
+      headers: { "x-pen-fig-token": approved.token },
+    });
+    expect(await hello.json()).toMatchObject({ type: "ready", protocol: 1 });
+  });
+
+  it("does not issue credentials when native approval is denied", async () => {
+    const pen = {} as PenMcpClient;
+    const approval: LocalApprovalProvider = {
+      requestApproval: async () => "denied",
+    };
+    const server = new BridgeServer({
+      host: "127.0.0.1",
+      port: 0,
+      pen,
+      approval,
+    });
+    servers.push(server);
+    const port = await server.start();
+    const response = await fetch(`http://localhost:${port}/authorize`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "authorize", protocol: 1 }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      type: "failed",
+      code: "AUTH_APPROVAL_DENIED",
+    });
+  });
+
   it("pairs and reads Pen screens over loopback HTTP", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "pen-fig-server-"));
     temporaryDirectories.push(directory);

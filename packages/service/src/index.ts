@@ -1,5 +1,10 @@
 export { BridgeServer } from "./server.js";
 export {
+  MacOSApprovalProvider,
+  type ApprovalDecision,
+  type LocalApprovalProvider,
+} from "./approval.js";
+export {
   loadServiceConfig,
   penMcpCandidates,
   resolvePenMcpPath,

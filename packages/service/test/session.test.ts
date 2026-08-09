@@ -31,6 +31,13 @@ describe("SessionManager", () => {
     expect(sessions.reconnect("wrong")).toBeUndefined();
   });
 
+  it("issues credentials after native user approval", () => {
+    const sessions = new SessionManager();
+    const credentials = sessions.approve();
+    expect(sessions.authenticate(credentials.token)).toBe(true);
+    expect(sessions.reconnect(credentials.reconnectToken)).toEqual(credentials);
+  });
+
   it("locks pairing after repeated incorrect codes", () => {
     const sessions = new SessionManager();
     const correctCode = sessions.pairingCode;

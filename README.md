@@ -48,15 +48,16 @@ Start the local service:
 npm run dev:service
 ```
 
-The service listens only on `127.0.0.1:32145` and prints a six-character pairing code. The
-Figma development plugin connects through `http://localhost:32145`.
+The service listens only on `127.0.0.1:32145`. The Figma development plugin connects through
+`http://localhost:32145`; the printed six-character code is retained only as a troubleshooting
+fallback.
 
 Load the development plugin in Figma Desktop:
 
 1. Open **Plugins → Development → Import plugin from manifest…**.
 2. Select `packages/figma-plugin/manifest.json`.
 3. Run **Pencil Bridge (Development)**.
-4. Enter the pairing code printed by the service.
+4. Approve the macOS connection message. No code needs to be typed.
 
 The development plugin currently supports both directions:
 
@@ -120,11 +121,12 @@ explicit details panels and remain available for troubleshooting or sharing a te
 
 ### Automatic connection
 
-The six-character code is required only for the first connection. The Figma plugin saves a private
-reconnect credential in `figma.clientStorage`, while the service stores its matching credential in a
-user-only file under `~/Library/Application Support/Pencil Figma Bridge`. Reopening the plugin or
-restarting the bridge negotiates a fresh session token automatically. Use **Advanced options →
-Forget saved connection** to require pairing again.
+The first time the plugin connects, macOS asks the user to allow access. After approval, the Figma
+plugin saves a private reconnect credential in `figma.clientStorage`, while the service stores its
+matching credential in a user-only file under `~/Library/Application Support/Pencil Figma Bridge`.
+Reopening the plugin or restarting the bridge negotiates a fresh session token automatically. Use
+**Advanced options → Forget saved connection** to require approval again. A six-character pairing
+code remains available inside the collapsed troubleshooting option for development emergencies.
 
 For development use without Codex or a terminal session remaining open, install the optional macOS
 LaunchAgent once:

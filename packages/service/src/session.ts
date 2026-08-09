@@ -43,6 +43,11 @@ export class SessionManager {
     return this.#credentials();
   }
 
+  approve(): SessionCredentials {
+    this.#failedPairingAttempts = 0;
+    return this.#credentials();
+  }
+
   authenticate(token: string): boolean {
     return safeEqual(token, this.#session.sessionToken);
   }

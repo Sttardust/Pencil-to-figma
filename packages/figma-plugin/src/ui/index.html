@@ -20,19 +20,14 @@
       <section id="connection" class="connection-card">
         <h2>Connect to Pencil</h2>
         <p id="connection-help">Looking for your saved local connection…</p>
-        <form id="pair-form" hidden>
-          <label for="pair-code">Pairing code</label>
-          <div class="row">
-            <input
-              id="pair-code"
-              class="pair-code"
-              maxlength="6"
-              autocomplete="off"
-              placeholder="A1B2C3"
-            />
-            <button type="submit">Connect</button>
-          </div>
-        </form>
+        <button
+          id="authorize-connection"
+          type="button"
+          class="full-width"
+          hidden
+        >
+          Connect to Pencil
+        </button>
         <button
           id="retry-connection"
           type="button"
@@ -41,6 +36,22 @@
         >
           Try connecting again
         </button>
+        <details id="manual-pairing" class="manual-pairing" hidden>
+          <summary>Use a pairing code instead</summary>
+          <form id="pair-form">
+            <label for="pair-code">Six-character code</label>
+            <div class="row">
+              <input
+                id="pair-code"
+                class="pair-code"
+                maxlength="6"
+                autocomplete="off"
+                placeholder="A1B2C3"
+              />
+              <button type="submit">Connect</button>
+            </div>
+          </form>
+        </details>
       </section>
 
       <section id="workspace" class="workspace" hidden>

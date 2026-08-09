@@ -26,11 +26,16 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
+export const authorizationRequestSchema = z.object({
+  type: z.literal("authorize"),
+  protocol: z.literal(1),
+});
+
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
 
 export type ServerMessage =
   | {
-      type: "paired" | "reconnected";
+      type: "paired" | "reconnected" | "approved";
       protocol: 1;
       token: string;
       reconnectToken: string;

@@ -1,5 +1,5 @@
-export const COMPANION_VERSION = "0.1.0";
-export const COMPANION_BUILD = "1";
+export const COMPANION_VERSION = "0.1.1";
+export const COMPANION_BUILD = "2";
 export const NODE_VERSION = "24.19.0";
 
 export type MacArchitecture = "x64" | "arm64";

@@ -9,10 +9,15 @@ import {
   type BridgeManifest,
 } from "@pen-fig/bridge-schema";
 import {
+  authorizationRequestSchema,
   clientMessageSchema,
   type ClientMessage,
   type ServerMessage,
 } from "./protocol.js";
+import {
+  MacOSApprovalProvider,
+  type LocalApprovalProvider,
+} from "./approval.js";
 import { SessionManager } from "./session.js";
 import type { PenMcpClient } from "./pen/mcp-client.js";
 import { readPenVariables } from "./pen/variables.js";
@@ -42,6 +47,7 @@ export interface BridgeServerOptions {
   port: number;
   pen: PenMcpClient;
   sessions?: SessionManager;
+  approval?: LocalApprovalProvider;
 }
 
 export class BridgeServer {
@@ -49,6 +55,7 @@ export class BridgeServer {
   readonly #ws: WebSocketServer;
   readonly #pen: PenMcpClient;
   readonly #sessions: SessionManager;
+  readonly #approval: LocalApprovalProvider;
   readonly #host: string;
   readonly #port: number;
   readonly #manifests = new ManifestRepository();
@@ -80,6 +87,7 @@ export class BridgeServer {
     this.#port = options.port;
     this.#pen = options.pen;
     this.#sessions = options.sessions ?? new SessionManager();
+    this.#approval = options.approval ?? new MacOSApprovalProvider();
     this.#http = createServer((request, response) => {
       void this.#handleHttp(request, response);
     });
@@ -231,6 +239,51 @@ export class BridgeServer {
     }
 
     try {
+      if (request.method === "POST" && request.url === "/authorize") {
+        const parsed = authorizationRequestSchema.safeParse(
+          await readJsonBody(request),
+        );
+        if (!parsed.success) {
+          json(response, 400, {
+            type: "failed",
+            code: "SCHEMA_MESSAGE",
+            message: "Expected a valid local authorization request",
+          });
+          return;
+        }
+        const decision = await this.#approval.requestApproval();
+        if (decision === "busy") {
+          json(response, 409, {
+            type: "failed",
+            code: "AUTH_APPROVAL_BUSY",
+            message: "A connection approval is already waiting on this Mac",
+          });
+          return;
+        }
+        if (decision === "unavailable") {
+          json(response, 501, {
+            type: "failed",
+            code: "AUTH_APPROVAL_UNAVAILABLE",
+            message: "Native connection approval is unavailable",
+          });
+          return;
+        }
+        if (decision === "denied") {
+          json(response, 403, {
+            type: "failed",
+            code: "AUTH_APPROVAL_DENIED",
+            message: "Connection was not allowed on this Mac",
+          });
+          return;
+        }
+        json(response, 200, {
+          type: "approved",
+          protocol: 1,
+          ...this.#sessions.approve(),
+        });
+        return;
+      }
+
       if (request.method === "POST" && request.url === "/pair") {
         const parsed = clientMessageSchema.safeParse(
           await readJsonBody(request),

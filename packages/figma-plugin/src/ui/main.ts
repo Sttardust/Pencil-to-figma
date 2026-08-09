@@ -43,6 +43,8 @@ const keepFigma = required<HTMLButtonElement>("keep-figma");
 const cancelConflict = required<HTMLButtonElement>("cancel-conflict");
 const copyJson = required<HTMLButtonElement>("copy-json");
 const retryConnection = required<HTMLButtonElement>("retry-connection");
+const authorizeConnection = required<HTMLButtonElement>("authorize-connection");
+const manualPairing = required<HTMLDetailsElement>("manual-pairing");
 
 let token: string | undefined;
 let savedReconnectToken: string | undefined;
@@ -65,8 +67,10 @@ form.addEventListener("submit", (event) => {
 
 retryConnection.addEventListener("click", () => {
   if (savedReconnectToken) void reconnect(savedReconnectToken);
-  else showPairingForm();
+  else void requestApproval();
 });
+
+authorizeConnection.addEventListener("click", () => void requestApproval());
 
 required("screens").addEventListener("click", () => void loadScreens());
 required("search-screens").addEventListener(
@@ -218,7 +222,7 @@ required("forget-connection").addEventListener("click", () => {
   );
   workspace.hidden = true;
   connection.hidden = false;
-  showPairingForm();
+  showAuthorizationReady("The saved connection was removed.");
   setStatus("Not connected", "neutral");
 });
 
@@ -238,7 +242,7 @@ window.onmessage = (event) => {
     ) {
       savedReconnectToken = credentials.reconnectToken;
       void reconnect(credentials.reconnectToken);
-    } else showPairingForm();
+    } else void requestApproval();
     return;
   }
 
@@ -589,8 +593,10 @@ async function importScreen(nodeId: string): Promise<void> {
 
 async function connect(code: string): Promise<void> {
   if (!/^[A-Z0-9]{6}$/.test(code)) {
-    setStatus("Check the code", "error");
-    setActivity("Enter the six-character code shown by the bridge service.");
+    showConnectionError(
+      "Enter the six-character code shown by the bridge service.",
+      "manual",
+    );
     return;
   }
   setStatus("Connecting…", "working");
@@ -609,11 +615,65 @@ async function connect(code: string): Promise<void> {
     ) {
       showConnectionError(
         "The bridge is running, but Pencil is not ready. Open Pencil and a .pen file, then try again.",
-        false,
+        "retry",
       );
       return;
     }
-    showConnectionError(errorMessage(error, "Connection failed."), true);
+    showConnectionError(errorMessage(error, "Connection failed."), "manual");
+  }
+}
+
+async function requestApproval(): Promise<void> {
+  setStatus("Waiting for approval…", "working");
+  connection.hidden = false;
+  workspace.hidden = true;
+  authorizeConnection.hidden = true;
+  retryConnection.hidden = true;
+  manualPairing.hidden = true;
+  connectionHelp.textContent =
+    "Check the macOS message and choose Allow to connect this plugin.";
+  try {
+    const approved = await request("/authorize", {
+      method: "POST",
+      body: JSON.stringify({ type: "authorize", protocol: 1 }),
+      authenticated: false,
+    });
+    await finishConnection(approved);
+  } catch (error) {
+    if (error instanceof BridgeRequestError) {
+      if (error.code === "AUTH_APPROVAL_DENIED") {
+        showConnectionError(
+          "Connection was cancelled. Choose Connect to Pencil when you are ready.",
+          "approve",
+        );
+        return;
+      }
+      if (error.code === "AUTH_APPROVAL_BUSY") {
+        showConnectionError(
+          "A macOS approval message is already open. Respond to it, then try again.",
+          "approve",
+        );
+        return;
+      }
+      if (error.code === "AUTH_APPROVAL_UNAVAILABLE") {
+        showConnectionError(
+          "Automatic approval is unavailable in this development build. Use the fallback pairing code.",
+          "manual",
+        );
+        return;
+      }
+      if (error.code === "CONNECTION_PEN") {
+        showConnectionError(
+          "The bridge is connected, but Pencil is not ready. Open Pencil and a .pen file, then try again.",
+          "retry",
+        );
+        return;
+      }
+    }
+    showConnectionError(
+      "Pencil Bridge is not running. Open the Pencil Figma Bridge app, then try again.",
+      "retry",
+    );
   }
 }
 
@@ -621,7 +681,8 @@ async function reconnect(reconnectToken: string): Promise<void> {
   setStatus("Connecting…", "working");
   connection.hidden = false;
   workspace.hidden = true;
-  form.hidden = true;
+  authorizeConnection.hidden = true;
+  manualPairing.hidden = true;
   retryConnection.hidden = true;
   connectionHelp.textContent = "Reconnecting securely to the local bridge…";
   try {
@@ -645,10 +706,7 @@ async function reconnect(reconnectToken: string): Promise<void> {
         { pluginMessage: { type: "clear-saved-connection" } },
         "*",
       );
-      showConnectionError(
-        "The saved connection was reset. Enter the new one-time pairing code.",
-        true,
-      );
+      void requestApproval();
       return;
     }
     if (
@@ -657,13 +715,13 @@ async function reconnect(reconnectToken: string): Promise<void> {
     ) {
       showConnectionError(
         "The bridge is running, but Pencil is not ready. Open Pencil and a .pen file, then try again.",
-        false,
+        "retry",
       );
       return;
     }
     showConnectionError(
       "The local bridge is not running. Start the background bridge, then try again.",
-      false,
+      "retry",
     );
   }
 }
@@ -775,22 +833,25 @@ async function copyTechnicalJson(): Promise<void> {
   }
 }
 
-function showConnectionError(message: string, canPair: boolean): void {
+function showConnectionError(
+  message: string,
+  action: "approve" | "retry" | "manual",
+): void {
   token = undefined;
   connection.hidden = false;
   workspace.hidden = true;
   setStatus("Not connected", "error");
   connectionHelp.textContent = message;
-  form.hidden = !canPair;
-  retryConnection.hidden = canPair;
+  authorizeConnection.hidden = action !== "approve";
+  retryConnection.hidden = action !== "retry";
+  manualPairing.hidden = action === "retry";
 }
 
-function showPairingForm(): void {
-  connectionHelp.textContent =
-    "Pair once using the six-character code. Future launches reconnect automatically.";
-  form.hidden = false;
+function showAuthorizationReady(message: string): void {
+  connectionHelp.textContent = message;
+  authorizeConnection.hidden = false;
   retryConnection.hidden = true;
-  pairInput.focus();
+  manualPairing.hidden = false;
 }
 
 function showOperationError(message: string): void {

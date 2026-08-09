@@ -177,6 +177,21 @@ input:focus {
   letter-spacing: 0.12em;
 }
 
+.manual-pairing {
+  margin-top: 10px;
+  color: var(--figma-color-text-secondary);
+  font-size: 10px;
+}
+
+.manual-pairing summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.manual-pairing form {
+  margin-top: 10px;
+}
+
 button {
   min-height: 32px;
   border: 0;
