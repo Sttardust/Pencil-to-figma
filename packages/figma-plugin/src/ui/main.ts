@@ -2,12 +2,14 @@ import {
   editableNodeSummary,
   friendlyWarning,
   presentSync,
+  technicalJson,
 } from "./presentation.js";
 
 const form = required<HTMLFormElement>("pair-form");
 const pairInput = required<HTMLInputElement>("pair-code");
 const statusBadge = required<HTMLElement>("status");
 const connection = required<HTMLElement>("connection");
+const connectionHelp = required<HTMLElement>("connection-help");
 const workspace = required<HTMLElement>("workspace");
 const detail = required<HTMLElement>("detail");
 const output = required<HTMLElement>("output");
@@ -40,8 +42,10 @@ const keepPencil = required<HTMLButtonElement>("keep-pencil");
 const keepFigma = required<HTMLButtonElement>("keep-figma");
 const cancelConflict = required<HTMLButtonElement>("cancel-conflict");
 const copyJson = required<HTMLButtonElement>("copy-json");
+const retryConnection = required<HTMLButtonElement>("retry-connection");
 
 let token: string | undefined;
+let savedReconnectToken: string | undefined;
 let pendingExportPreview: any;
 let pendingExportPlan: any;
 let pendingSyncPreview: any;
@@ -57,6 +61,11 @@ let pendingImport:
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   void connect(pairInput.value.trim().toUpperCase());
+});
+
+retryConnection.addEventListener("click", () => {
+  if (savedReconnectToken) void reconnect(savedReconnectToken);
+  else showPairingForm();
 });
 
 required("screens").addEventListener("click", () => void loadScreens());
@@ -200,6 +209,18 @@ required("selection").addEventListener("click", () =>
 required("write-test").addEventListener("click", () =>
   parent.postMessage({ pluginMessage: { type: "reversible-write-test" } }, "*"),
 );
+required("forget-connection").addEventListener("click", () => {
+  token = undefined;
+  savedReconnectToken = undefined;
+  parent.postMessage(
+    { pluginMessage: { type: "clear-saved-connection" } },
+    "*",
+  );
+  workspace.hidden = true;
+  connection.hidden = false;
+  showPairingForm();
+  setStatus("Not connected", "neutral");
+});
 
 copyJson.addEventListener("click", () => void copyTechnicalJson());
 
@@ -207,6 +228,19 @@ window.onmessage = (event) => {
   const message = event.data.pluginMessage;
   if (!message) return;
   setTechnical(message);
+
+  if (message.type === "saved-connection") {
+    const credentials = message.credentials;
+    if (
+      credentials &&
+      typeof credentials.reconnectToken === "string" &&
+      typeof credentials.sessionToken === "string"
+    ) {
+      savedReconnectToken = credentials.reconnectToken;
+      void reconnect(credentials.reconnectToken);
+    } else showPairingForm();
+    return;
+  }
 
   if (message.type === "selection-summary") {
     const count = Array.isArray(message.nodes) ? message.nodes.length : 0;
@@ -566,15 +600,97 @@ async function connect(code: string): Promise<void> {
       body: JSON.stringify({ type: "pair", protocol: 1, code }),
       authenticated: false,
     });
-    token = paired.token;
-    await request("/hello", { method: "POST" });
-    connection.hidden = true;
-    workspace.hidden = false;
-    setStatus("Connected", "success");
-    setActivity("Pencil is ready. Choose what you want to move.");
+    await finishConnection(paired);
   } catch (error) {
-    showConnectionError(errorMessage(error, "Connection failed."));
+    if (
+      error instanceof BridgeRequestError &&
+      error.code === "CONNECTION_PEN" &&
+      savedReconnectToken
+    ) {
+      showConnectionError(
+        "The bridge is running, but Pencil is not ready. Open Pencil and a .pen file, then try again.",
+        false,
+      );
+      return;
+    }
+    showConnectionError(errorMessage(error, "Connection failed."), true);
   }
+}
+
+async function reconnect(reconnectToken: string): Promise<void> {
+  setStatus("Connecting…", "working");
+  connection.hidden = false;
+  workspace.hidden = true;
+  form.hidden = true;
+  retryConnection.hidden = true;
+  connectionHelp.textContent = "Reconnecting securely to the local bridge…";
+  try {
+    const reconnected = await request("/reconnect", {
+      method: "POST",
+      body: JSON.stringify({
+        type: "reconnect",
+        protocol: 1,
+        reconnectToken,
+      }),
+      authenticated: false,
+    });
+    await finishConnection(reconnected);
+  } catch (error) {
+    if (
+      error instanceof BridgeRequestError &&
+      error.code === "AUTH_RECONNECT"
+    ) {
+      savedReconnectToken = undefined;
+      parent.postMessage(
+        { pluginMessage: { type: "clear-saved-connection" } },
+        "*",
+      );
+      showConnectionError(
+        "The saved connection was reset. Enter the new one-time pairing code.",
+        true,
+      );
+      return;
+    }
+    if (
+      error instanceof BridgeRequestError &&
+      error.code === "CONNECTION_PEN"
+    ) {
+      showConnectionError(
+        "The bridge is running, but Pencil is not ready. Open Pencil and a .pen file, then try again.",
+        false,
+      );
+      return;
+    }
+    showConnectionError(
+      "The local bridge is not running. Start the background bridge, then try again.",
+      false,
+    );
+  }
+}
+
+async function finishConnection(credentials: any): Promise<void> {
+  if (
+    typeof credentials.token !== "string" ||
+    typeof credentials.reconnectToken !== "string"
+  )
+    throw new Error("The bridge returned invalid connection credentials.");
+  token = credentials.token;
+  savedReconnectToken = credentials.reconnectToken;
+  parent.postMessage(
+    {
+      pluginMessage: {
+        type: "save-connection",
+        sessionToken: token,
+        reconnectToken: savedReconnectToken,
+      },
+    },
+    "*",
+  );
+  await request("/hello", { method: "POST" });
+  connection.hidden = true;
+  workspace.hidden = false;
+  setStatus("Connected", "success");
+  setActivity("Pencil is ready. Choose what you want to move.");
 }
 
 function resolveConflict(direction: "pen" | "figma"): void {
@@ -626,10 +742,7 @@ async function request(
   };
   if (options.authenticated !== false && token)
     headers["x-pen-fig-token"] = token;
-  const url = new URL(`http://localhost:32145${path}`);
-  if (options.authenticated !== false && token)
-    url.searchParams.set("token", token);
-  const response = await fetch(url.toString(), {
+  const response = await fetch(`http://localhost:32145${path}`, {
     method: options.method,
     headers,
     ...(options.body ? { body: options.body } : {}),
@@ -637,12 +750,16 @@ async function request(
   const message = await response.json();
   setTechnical(message);
   if (!response.ok)
-    throw new Error(message.message ?? `Bridge error ${response.status}`);
+    throw new BridgeRequestError(
+      message.message ?? `Bridge error ${response.status}`,
+      response.status,
+      typeof message.code === "string" ? message.code : undefined,
+    );
   return message;
 }
 
 function setTechnical(message: unknown): void {
-  output.textContent = JSON.stringify(message, null, 2);
+  output.textContent = technicalJson(message);
 }
 
 async function copyTechnicalJson(): Promise<void> {
@@ -658,13 +775,22 @@ async function copyTechnicalJson(): Promise<void> {
   }
 }
 
-function showConnectionError(message: string): void {
+function showConnectionError(message: string, canPair: boolean): void {
   token = undefined;
   connection.hidden = false;
   workspace.hidden = true;
   setStatus("Not connected", "error");
-  const connectionHelp = connection.querySelector("p");
-  if (connectionHelp) connectionHelp.textContent = message;
+  connectionHelp.textContent = message;
+  form.hidden = !canPair;
+  retryConnection.hidden = canPair;
+}
+
+function showPairingForm(): void {
+  connectionHelp.textContent =
+    "Pair once using the six-character code. Future launches reconnect automatically.";
+  form.hidden = false;
+  retryConnection.hidden = true;
+  pairInput.focus();
 }
 
 function showOperationError(message: string): void {
@@ -688,6 +814,16 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+class BridgeRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
+}
+
 function required<T extends HTMLElement = HTMLElement>(id: string): T {
   const element = document.getElementById(id);
   if (!element) throw new Error(`Missing #${id}`);
@@ -695,3 +831,5 @@ function required<T extends HTMLElement = HTMLElement>(id: string): T {
 }
 
 export {};
+
+parent.postMessage({ pluginMessage: { type: "load-saved-connection" } }, "*");

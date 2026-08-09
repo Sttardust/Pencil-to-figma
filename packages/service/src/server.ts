@@ -143,8 +143,8 @@ export class BridgeServer {
 
       const message = parsed.data;
       if (message.type === "pair") {
-        const token = this.#sessions.pair(message.code.toUpperCase());
-        if (!token) {
+        const credentials = this.#sessions.pair(message.code.toUpperCase());
+        if (!credentials) {
           send(socket, {
             type: "failed",
             code: "AUTH_PAIRING",
@@ -152,7 +152,21 @@ export class BridgeServer {
           });
           return;
         }
-        send(socket, { type: "paired", protocol: 1, token });
+        send(socket, { type: "paired", protocol: 1, ...credentials });
+        return;
+      }
+
+      if (message.type === "reconnect") {
+        const credentials = this.#sessions.reconnect(message.reconnectToken);
+        if (!credentials) {
+          send(socket, {
+            type: "failed",
+            code: "AUTH_RECONNECT",
+            message: "Saved connection is no longer valid",
+          });
+          return;
+        }
+        send(socket, { type: "reconnected", protocol: 1, ...credentials });
         return;
       }
 
@@ -229,8 +243,8 @@ export class BridgeServer {
           });
           return;
         }
-        const token = this.#sessions.pair(parsed.data.code.toUpperCase());
-        if (!token) {
+        const credentials = this.#sessions.pair(parsed.data.code.toUpperCase());
+        if (!credentials) {
           json(response, 401, {
             type: "failed",
             code: "AUTH_PAIRING",
@@ -238,7 +252,42 @@ export class BridgeServer {
           });
           return;
         }
-        json(response, 200, { type: "paired", protocol: 1, token });
+        json(response, 200, {
+          type: "paired",
+          protocol: 1,
+          ...credentials,
+        });
+        return;
+      }
+
+      if (request.method === "POST" && request.url === "/reconnect") {
+        const parsed = clientMessageSchema.safeParse(
+          await readJsonBody(request),
+        );
+        if (!parsed.success || parsed.data.type !== "reconnect") {
+          json(response, 400, {
+            type: "failed",
+            code: "SCHEMA_MESSAGE",
+            message: "Expected a valid reconnect message",
+          });
+          return;
+        }
+        const credentials = this.#sessions.reconnect(
+          parsed.data.reconnectToken,
+        );
+        if (!credentials) {
+          json(response, 401, {
+            type: "failed",
+            code: "AUTH_RECONNECT",
+            message: "Saved connection is no longer valid",
+          });
+          return;
+        }
+        json(response, 200, {
+          type: "reconnected",
+          protocol: 1,
+          ...credentials,
+        });
         return;
       }
 

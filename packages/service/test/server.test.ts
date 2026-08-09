@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { BridgeServer } from "../src/server.js";
+import { SessionManager } from "../src/session.js";
 import type { PenMcpClient } from "../src/pen/mcp-client.js";
 import { importPenDocument, type PenNode } from "@pen-fig/core";
 import type { BridgeDocument } from "@pen-fig/bridge-schema";
@@ -142,6 +143,63 @@ describe("BridgeServer", () => {
       penState: "- Currently active canvas editor: `/tmp/test.pen`",
     });
     socket.close();
+  });
+
+  it("reconnects with the saved credential after session rotation", async () => {
+    const pen = {
+      getAppState: async () => ({
+        text: "- Currently active canvas editor: `/tmp/test.pen`",
+      }),
+    } as PenMcpClient;
+    const sessions = new SessionManager("07b0c17c-a115-42cf-8cce-e057dd8f4f0a");
+    const server = new BridgeServer({
+      host: "127.0.0.1",
+      port: 0,
+      pen,
+      sessions,
+    });
+    servers.push(server);
+    const port = await server.start();
+    const origin = `http://localhost:${port}`;
+    const paired = await fetch(`${origin}/pair`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        type: "pair",
+        protocol: 1,
+        code: server.pairingCode,
+      }),
+    }).then((response) => response.json());
+    sessions.rotate();
+
+    const stale = await fetch(`${origin}/hello`, {
+      method: "POST",
+      headers: { "x-pen-fig-token": paired.token },
+    });
+    expect(stale.status).toBe(401);
+
+    const reconnect = await fetch(`${origin}/reconnect`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        type: "reconnect",
+        protocol: 1,
+        reconnectToken: paired.reconnectToken,
+      }),
+    });
+    const reconnected = await reconnect.json();
+    expect(reconnect.status).toBe(200);
+    expect(reconnected).toMatchObject({
+      type: "reconnected",
+      protocol: 1,
+      reconnectToken: paired.reconnectToken,
+      token: expect.not.stringMatching(paired.token),
+    });
+    const hello = await fetch(`${origin}/hello`, {
+      method: "POST",
+      headers: { "x-pen-fig-token": reconnected.token },
+    });
+    expect(await hello.json()).toMatchObject({ type: "ready" });
   });
 
   it("bundles reusable Pencil components by ref identity", async () => {

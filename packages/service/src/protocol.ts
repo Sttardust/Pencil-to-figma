@@ -7,6 +7,11 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
     code: z.string().length(6),
   }),
   z.object({
+    type: z.literal("reconnect"),
+    protocol: z.literal(1),
+    reconnectToken: z.string().uuid(),
+  }),
+  z.object({
     type: z.literal("hello"),
     protocol: z.literal(1),
     token: z.string().uuid(),
@@ -24,7 +29,12 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
 
 export type ServerMessage =
-  | { type: "paired"; protocol: 1; token: string }
+  | {
+      type: "paired" | "reconnected";
+      protocol: 1;
+      token: string;
+      reconnectToken: string;
+    }
   | { type: "ready"; protocol: 1; penState: string }
   | { type: "pen-state"; requestId: string; text: string }
   | { type: "pen-screens"; requestId: string; text: string }

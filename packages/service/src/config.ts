@@ -12,6 +12,7 @@ export interface ServiceConfig {
   host: string;
   port: number;
   penMcpPath: string;
+  credentialPath?: string;
 }
 
 async function isExecutable(path: string): Promise<boolean> {
@@ -55,5 +56,8 @@ export async function loadServiceConfig(): Promise<ServiceConfig> {
     host: DEFAULT_HOST,
     port,
     penMcpPath: await resolvePenMcpPath(),
+    ...(process.env.PEN_FIG_CREDENTIAL_PATH
+      ? { credentialPath: process.env.PEN_FIG_CREDENTIAL_PATH }
+      : {}),
   };
 }

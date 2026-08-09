@@ -10,6 +10,8 @@
     "build": "npm run build --workspaces --if-present",
     "dev:service": "npm --workspace @pen-fig/service run dev",
     "dev:plugin": "npm --workspace @pen-fig/figma-plugin run dev",
+    "service:install": "tsx scripts/macos-service.ts install",
+    "service:uninstall": "tsx scripts/macos-service.ts uninstall",
     "doctor": "npm --workspace @pen-fig/cli run doctor",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

@@ -97,6 +97,25 @@ design comparison uses plain Pencil/Figma change counts and destination-specific
 Technical response JSON, native IDs, adoption, and diagnostic tools are hidden by default under
 explicit details panels and remain available for troubleshooting or sharing a test result.
 
+### Automatic connection
+
+The six-character code is required only for the first connection. The Figma plugin saves a private
+reconnect credential in `figma.clientStorage`, while the service stores its matching credential in a
+user-only file under `~/Library/Application Support/Pencil Figma Bridge`. Reopening the plugin or
+restarting the bridge negotiates a fresh session token automatically. Use **Advanced options →
+Forget saved connection** to require pairing again.
+
+For development use without Codex or a terminal session remaining open, install the optional macOS
+LaunchAgent once:
+
+```sh
+npm run service:install
+```
+
+It starts the loopback-only bridge at login and keeps it available in the background. The plugin
+then checks whether Pencil and an active `.pen` document are open. Remove it with
+`npm run service:uninstall`.
+
 When modifying the plugin, run its watch build in another terminal:
 
 ```sh

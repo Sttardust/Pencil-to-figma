@@ -1,10 +1,18 @@
 import { loadServiceConfig } from "./config.js";
 import { PenMcpClient } from "./pen/mcp-client.js";
 import { BridgeServer } from "./server.js";
+import { loadOrCreateReconnectToken } from "./credentials.js";
+import { SessionManager } from "./session.js";
 
 const config = await loadServiceConfig();
 const pen = new PenMcpClient(config.penMcpPath);
-const server = new BridgeServer({ host: config.host, port: config.port, pen });
+const reconnectToken = await loadOrCreateReconnectToken(config.credentialPath);
+const server = new BridgeServer({
+  host: config.host,
+  port: config.port,
+  pen,
+  sessions: new SessionManager(reconnectToken),
+});
 const port = await server.start();
 
 console.log(`Pencil ↔ Figma bridge listening on http://${config.host}:${port}`);

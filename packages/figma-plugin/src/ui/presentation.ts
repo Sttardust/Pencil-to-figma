@@ -132,3 +132,14 @@ export function friendlyWarning(warning: unknown): string {
     return "Some component settings will be copied as editable layers.";
   return "Some design details may be simplified during transfer.";
 }
+
+export function technicalJson(value: unknown): string {
+  return JSON.stringify(
+    value,
+    (key, entry) =>
+      ["token", "sessionToken", "reconnectToken"].includes(key)
+        ? "[redacted]"
+        : entry,
+    2,
+  );
+}

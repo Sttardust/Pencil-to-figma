@@ -3,6 +3,7 @@ import {
   editableNodeSummary,
   friendlyWarning,
   presentSync,
+  technicalJson,
 } from "../src/ui/presentation.js";
 
 describe("plugin UI presentation", () => {
@@ -63,5 +64,17 @@ describe("plugin UI presentation", () => {
     expect(friendlyWarning("FONT_SUBSTITUTED: Fraunces → Georgia")).toBe(
       "A missing font will use the closest available font.",
     );
+  });
+
+  it("redacts saved credentials from optional JSON details", () => {
+    const value = technicalJson({
+      type: "reconnected",
+      token: "session-secret",
+      credentials: { reconnectToken: "reconnect-secret" },
+    });
+
+    expect(value).not.toContain("session-secret");
+    expect(value).not.toContain("reconnect-secret");
+    expect(value.match(/\[redacted\]/g)).toHaveLength(2);
   });
 });

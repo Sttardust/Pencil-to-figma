@@ -14,13 +14,13 @@
           <h1>Pencil ↔ Figma</h1>
           <p class="subtitle">Move editable designs between both apps.</p>
         </div>
-        <span id="status" class="badge neutral">Not connected</span>
+        <span id="status" class="badge working">Connecting…</span>
       </header>
 
       <section id="connection" class="connection-card">
         <h2>Connect to Pencil</h2>
-        <p>Start the bridge service and enter the six-character code.</p>
-        <form id="pair-form">
+        <p id="connection-help">Looking for your saved local connection…</p>
+        <form id="pair-form" hidden>
           <label for="pair-code">Pairing code</label>
           <div class="row">
             <input
@@ -33,6 +33,14 @@
             <button type="submit">Connect</button>
           </div>
         </form>
+        <button
+          id="retry-connection"
+          type="button"
+          class="secondary full-width"
+          hidden
+        >
+          Try connecting again
+        </button>
       </section>
 
       <section id="workspace" class="workspace" hidden>
@@ -166,6 +174,13 @@
             </button>
             <button id="write-test" type="button" class="quiet full-width">
               Test Figma write access
+            </button>
+            <button
+              id="forget-connection"
+              type="button"
+              class="quiet full-width"
+            >
+              Forget saved connection
             </button>
           </div>
         </details>

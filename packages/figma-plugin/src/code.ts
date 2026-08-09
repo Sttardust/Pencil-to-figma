@@ -10,16 +10,47 @@ import {
 import { authoredDocumentHashes, planFigmaToPenCreate } from "@pen-fig/core";
 
 let pendingFigmaExport: FigmaReadResult | undefined;
+const CONNECTION_STORAGE_KEY = "penFigSavedConnectionV1";
 
 figma.showUI(__html__, { width: 400, height: 700, themeColors: true });
 
 figma.ui.onmessage = async (message: {
   type: string;
   token?: unknown;
+  sessionToken?: unknown;
+  reconnectToken?: unknown;
   penRootId?: unknown;
   direction?: unknown;
   bridgeId?: unknown;
 }) => {
+  if (message.type === "load-saved-connection") {
+    const stored = await figma.clientStorage.getAsync(CONNECTION_STORAGE_KEY);
+    figma.ui.postMessage({
+      type: "saved-connection",
+      credentials: isStoredConnection(stored) ? stored : null,
+    });
+    return;
+  }
+
+  if (message.type === "save-connection") {
+    if (
+      typeof message.sessionToken === "string" &&
+      isUuid(message.sessionToken) &&
+      typeof message.reconnectToken === "string" &&
+      isUuid(message.reconnectToken)
+    )
+      await figma.clientStorage.setAsync(CONNECTION_STORAGE_KEY, {
+        sessionToken: message.sessionToken,
+        reconnectToken: message.reconnectToken,
+      });
+    return;
+  }
+
+  if (message.type === "clear-saved-connection") {
+    await figma.clientStorage.deleteAsync(CONNECTION_STORAGE_KEY);
+    return;
+  }
+
   if (message.type === "selection-summary") {
     await figma.currentPage.loadAsync();
     figma.ui.postMessage({
@@ -361,6 +392,25 @@ figma.ui.onmessage = async (message: {
     }
   }
 };
+
+function isStoredConnection(
+  value: unknown,
+): value is { sessionToken: string; reconnectToken: string } {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.sessionToken === "string" &&
+    isUuid(candidate.sessionToken) &&
+    typeof candidate.reconnectToken === "string" &&
+    isUuid(candidate.reconnectToken)
+  );
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
 
 function verifiedFigmaBaselineHashes(
   mappings: Array<{ bridgeId: string; figmaNodeId: string }>,
