@@ -73,6 +73,20 @@ describe("companion health presentation", () => {
   });
 });
 
+describe("operation error presentation", () => {
+  it("explains a failed Figma read-back without developer language", () => {
+    expect(
+      presentOperationError(
+        "Figma verification failed: Scrim: gradient direction changed",
+      ),
+    ).toEqual({
+      title: "Figma changed part of the design",
+      message:
+        "The bridge checked the imported layers and found a visual or layout difference. No new sync baseline was saved. Open JSON details for the affected layer, then try again after updating the plugin or companion.",
+    });
+  });
+});
+
 describe("plugin UI presentation", () => {
   it("turns a Pencil page limit into visible corrective guidance", () => {
     expect(

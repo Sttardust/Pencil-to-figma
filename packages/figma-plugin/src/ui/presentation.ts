@@ -22,6 +22,12 @@ export function presentOperationError(
       message: `Select up to ${pageLimit} complete Pencil pages, then try again.`,
     };
   const normalized = message.toLowerCase();
+  if (normalized.includes("figma verification failed"))
+    return {
+      title: "Figma changed part of the design",
+      message:
+        "The bridge checked the imported layers and found a visual or layout difference. No new sync baseline was saved. Open JSON details for the affected layer, then try again after updating the plugin or companion.",
+    };
   if (normalized.includes("no top-level pencil pages"))
     return {
       title: "No complete Pencil pages selected",

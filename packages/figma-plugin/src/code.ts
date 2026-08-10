@@ -1,3 +1,4 @@
+import { bridgeDocumentSchema } from "@pen-fig/bridge-schema";
 import {
   previewBridgeDocument,
   writeBridgeDocument,
@@ -8,6 +9,7 @@ import {
   readSelectedFigmaDocuments,
   type FigmaReadResult,
 } from "./figma/read.js";
+import { verifyFigmaWriteFidelity } from "./figma/verification.js";
 import { authoredDocumentHashes, planFigmaToPenCreate } from "@pen-fig/core";
 import {
   sumExportPlanCounts,
@@ -456,6 +458,10 @@ figma.ui.onmessage = async (message: {
       const verified = await readSelectedFigmaDocument({
         collectAssetData: false,
       });
+      verifyFigmaWriteFidelity(
+        bridgeDocumentSchema.parse(message.document),
+        verified.document,
+      );
       const figmaBaselineHashes = verifiedFigmaBaselineHashes(
         result.mappings,
         verified,

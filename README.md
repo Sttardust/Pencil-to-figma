@@ -140,6 +140,10 @@ showing the same developer error for all three conditions.
 Transfer failures also identify whether validation, fonts, assets, comparison, writing,
 verification, or persistence failed. Retry guidance appears only for operations that are safe to
 repeat, and local filesystem paths are removed from public error details.
+After every Pencil → Figma write, the plugin reads the imported tree back from Figma and verifies
+fixed dimensions, absolute placement, managed layer order, and gradient direction/stops before it
+saves a sync baseline. A mismatch is shown as a user-facing verification error, preventing a
+visually incorrect transfer from being recorded as successfully synchronized.
 The companion also journals Figma → Pencil creation phases without design content. An interrupted
 operation is marked failed on restart, and the plugin asks for a mapped comparison before normal
 work continues.
