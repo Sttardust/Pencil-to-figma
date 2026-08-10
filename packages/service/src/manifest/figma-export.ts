@@ -106,6 +106,7 @@ export function buildFigmaExportManifest(
       throw new Error(`Bridge node ${node.bridgeId} has no Figma source`);
     mappings.push({
       bridgeId: node.bridgeId,
+      rootBridgeId: document.root.bridgeId,
       penNodeId: penMapping.penNodeId,
       figmaNodeId: node.source.nodeId,
       baselineHash: hashes[node.bridgeId]!,
@@ -121,7 +122,14 @@ export function buildFigmaExportManifest(
     figmaDocumentId: document.source.documentId,
     revision: (options.previous?.revision ?? -1) + 1,
     updatedAt: (options.updatedAt ?? new Date()).toISOString(),
-    mappings,
+    mappings: [
+      ...(options.previous?.mappings.filter(
+        (mapping) =>
+          Boolean(mapping.rootBridgeId) &&
+          mapping.rootBridgeId !== document.root.bridgeId,
+      ) ?? []),
+      ...mappings,
+    ],
   };
 }
 

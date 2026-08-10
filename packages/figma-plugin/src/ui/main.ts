@@ -124,7 +124,9 @@ prepareExport.addEventListener("click", () => {
   adoptCopy.disabled = true;
   prepareExport.disabled = true;
   setStatus("Reviewing selection…", "working");
-  setActivity("Reading the selected Figma frame and checking its contents…");
+  setActivity(
+    "Reading the selected Figma screens and checking their contents…",
+  );
   parent.postMessage({ pluginMessage: { type: "preview-figma-export" } }, "*");
 });
 
@@ -132,7 +134,12 @@ confirmExport.addEventListener("click", () => {
   if (!pendingExportPlan || !token) return;
   confirmExport.disabled = true;
   setStatus("Sending to Pencil…", "working");
-  setActivity("Creating a new editable copy in open canvas space…");
+  const screenCount = Number(pendingExportPlan.screenCount ?? 1);
+  setActivity(
+    screenCount === 1
+      ? "Creating a new editable copy in open canvas space…"
+      : `Creating ${screenCount} editable copies in open canvas space…`,
+  );
   parent.postMessage(
     { pluginMessage: { type: "execute-figma-export", token } },
     "*",
@@ -260,7 +267,7 @@ window.onmessage = (event) => {
     setActivity(
       count === 1
         ? `Selected “${message.nodes[0]?.name ?? "Untitled"}”.`
-        : `${count} Figma layers are selected. Transfers require one complete frame or component.`,
+        : `${count} Figma layers are selected. They can belong to one or more screens.`,
     );
   }
 
@@ -281,6 +288,8 @@ window.onmessage = (event) => {
   if (message.type === "figma-export-preview")
     handleFigmaExportPreview(message);
   if (message.type === "figma-export-plan") handleFigmaExportPlan(message);
+  if (message.type === "figma-export-progress")
+    handleFigmaExportProgress(message);
   if (message.type === "figma-export-result") handleFigmaExportResult(message);
   if (message.type === "figma-export-adopted") handleAdoptResult(message);
   if (message.type === "figma-sync-preview") handleSyncPreview(message);
@@ -375,15 +384,17 @@ function handleFigmaExportPreview(message: any): void {
     pendingExportPreview = undefined;
     showOperationError(
       message.message ??
-        "Select one complete Figma frame or component and try again.",
+        "Select one or more Figma screens, or layers inside them, and try again.",
     );
     return;
   }
   pendingExportPreview = message;
-  adoptCopy.disabled = false;
+  adoptCopy.disabled = Number(message.screenCount ?? 1) !== 1;
   setStatus("Preparing summary…", "working");
   setActivity(
-    "The frame is readable. Checking the transfer size and warnings…",
+    Number(message.screenCount ?? 1) === 1
+      ? "The screen is readable. Checking the transfer size and warnings…"
+      : `${message.screenCount} screens are readable. Checking the transfer size and warnings…`,
   );
   parent.postMessage({ pluginMessage: { type: "plan-figma-export" } }, "*");
 }
@@ -400,28 +411,58 @@ function handleFigmaExportPlan(message: any): void {
   }
   pendingExportPlan = message;
   const counts = message.counts ?? {};
+  const screenCount = Number(message.screenCount ?? 1);
   const name = pendingExportPreview?.root?.name ?? "Selected frame";
-  exportReviewTitle.textContent = `Send “${name}” to Pencil?`;
-  exportReviewSummary.textContent = `${editableNodeSummary(Number(counts.inserts ?? 0))} and ${Number(counts.assets ?? 0)} asset${Number(counts.assets ?? 0) === 1 ? "" : "s"} will be placed in open canvas space.`;
+  exportReviewTitle.textContent =
+    screenCount === 1
+      ? `Send “${name}” to Pencil?`
+      : `Send ${screenCount} screens to Pencil?`;
+  exportReviewSummary.textContent = `${editableNodeSummary(Number(counts.inserts ?? 0))} and ${Number(counts.assets ?? 0)} asset${Number(counts.assets ?? 0) === 1 ? "" : "s"} will be placed as ${screenCount === 1 ? "one copy" : `${screenCount} separate copies`} in open canvas space.`;
   renderWarnings(exportWarnings, message.warnings);
+  confirmExport.textContent =
+    screenCount === 1
+      ? "Send copy to Pencil"
+      : `Send ${screenCount} screens to Pencil`;
   confirmExport.disabled = false;
   exportReview.hidden = false;
   setStatus("Ready to send", "success");
   setActivity("Review the summary, then send when you are ready.");
 }
 
+function handleFigmaExportProgress(message: any): void {
+  const total = Number(message.total ?? 1);
+  const completed = Number(message.completed ?? 0);
+  const currentName = String(message.currentName ?? "next screen");
+  setStatus(`Sending ${completed + 1} of ${total}…`, "working");
+  setActivity(`Creating “${currentName}” in Pencil…`);
+}
+
 function handleFigmaExportResult(message: any): void {
   confirmExport.disabled = false;
   if (!message.ok) {
+    const completed = Number(message.completedScreenCount ?? 0);
+    const total = Number(message.screenCount ?? 1);
+    if (completed > 0) {
+      exportReview.hidden = true;
+      setStatus("Partly sent", "error");
+      setActivity(
+        `${completed} of ${total} screens were created safely. “${message.failedScreenName ?? "The next screen"}” could not be sent: ${message.message ?? "Unknown error"}`,
+      );
+      return;
+    }
     showOperationError(
-      message.message ?? "The Figma frame could not be sent to Pencil.",
+      message.message ??
+        "The selected Figma screens could not be sent to Pencil.",
     );
     return;
   }
   exportReview.hidden = true;
   setStatus("Sent to Pencil", "success");
+  const screenCount = Number(message.screenCount ?? 1);
   setActivity(
-    `${editableNodeSummary(Number(message.nodeCount ?? 0))} were created in Pencil and placed away from existing pages.`,
+    screenCount === 1
+      ? `${editableNodeSummary(Number(message.nodeCount ?? 0))} were created in Pencil and placed away from existing pages.`
+      : `${screenCount} screens with ${editableNodeSummary(Number(message.nodeCount ?? 0))} were created in Pencil and placed away from existing pages.`,
   );
 }
 

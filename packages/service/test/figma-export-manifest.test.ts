@@ -112,6 +112,86 @@ describe("Figma export manifests", () => {
     ).toThrow("Duplicate Pencil bridge identity pen:same");
   });
 
+  it("preserves mappings for other exported screens", () => {
+    const previous: BridgeManifest = {
+      version: 1,
+      penDocumentId: "/tmp/orchid.pen",
+      figmaDocumentId: "figma-file",
+      revision: 2,
+      updatedAt: "2026-08-01T00:00:00.000Z",
+      mappings: [
+        {
+          bridgeId: "figma:other-root",
+          rootBridgeId: "figma:other-root",
+          penNodeId: "pen-other-root",
+          figmaNodeId: "other-root",
+          baselineHash: "a".repeat(64),
+        },
+      ],
+    };
+    const document = figmaDocument();
+    const manifest = buildFigmaExportManifest(
+      document,
+      [
+        { bridgeId: "pen:root", penNodeId: "new-root" },
+        { bridgeId: "pen:title", penNodeId: "new-title" },
+      ],
+      "/tmp/orchid.pen",
+      { previous, penDocument: document },
+    );
+
+    expect(manifest.mappings.map((mapping) => mapping.bridgeId)).toEqual([
+      "figma:other-root",
+      "pen:root",
+      "pen:title",
+    ]);
+    expect(manifest.mappings.slice(1)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          bridgeId: "pen:root",
+          rootBridgeId: "pen:root",
+        }),
+        expect.objectContaining({
+          bridgeId: "pen:title",
+          rootBridgeId: "pen:root",
+        }),
+      ]),
+    );
+  });
+
+  it("replaces a legacy single-screen manifest during migration", () => {
+    const document = figmaDocument();
+    const manifest = buildFigmaExportManifest(
+      document,
+      [
+        { bridgeId: "pen:root", penNodeId: "new-root" },
+        { bridgeId: "pen:title", penNodeId: "new-title" },
+      ],
+      "/tmp/orchid.pen",
+      {
+        previous: {
+          version: 1,
+          penDocumentId: "/tmp/orchid.pen",
+          revision: 8,
+          updatedAt: "2026-08-01T00:00:00.000Z",
+          mappings: [
+            {
+              bridgeId: "pen:legacy",
+              penNodeId: "legacy",
+              baselineHash: "b".repeat(64),
+            },
+          ],
+        },
+        penDocument: document,
+      },
+    );
+
+    expect(manifest.mappings.map((mapping) => mapping.bridgeId)).toEqual([
+      "pen:root",
+      "pen:title",
+    ]);
+  });
+
   it("resolves native Pencil identities from an existing sidecar mapping", () => {
     expect(
       collectMappedPenBridgeMappings(

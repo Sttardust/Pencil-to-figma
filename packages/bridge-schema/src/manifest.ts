@@ -6,6 +6,7 @@ const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 export const manifestMappingSchema = z
   .object({
     bridgeId: bridgeIdSchema,
+    rootBridgeId: bridgeIdSchema.optional(),
     penNodeId: z.string().min(1).optional(),
     figmaNodeId: z.string().min(1).optional(),
     baselineHash: sha256Schema,

@@ -5,11 +5,17 @@ import {
 } from "./figma/write.js";
 import {
   readSelectedFigmaDocument,
+  readSelectedFigmaDocuments,
   type FigmaReadResult,
 } from "./figma/read.js";
 import { authoredDocumentHashes, planFigmaToPenCreate } from "@pen-fig/core";
+import {
+  sumExportPlanCounts,
+  validateFigmaExportBatch,
+} from "./figma/batch.js";
 
 let pendingFigmaExport: FigmaReadResult | undefined;
+let pendingFigmaExportBatch: FigmaReadResult[] = [];
 const CONNECTION_STORAGE_KEY = "penFigSavedConnectionV1";
 const COMPANION_DOWNLOAD_URL =
   "https://github.com/Sttardust/Pencil-to-figma/releases";
@@ -81,34 +87,63 @@ figma.ui.onmessage = async (message: {
 
   if (message.type === "preview-figma-export") {
     try {
-      const result = await readSelectedFigmaDocument();
-      pendingFigmaExport = result;
+      const results = await readSelectedFigmaDocuments();
+      validateFigmaExportBatch(results);
+      pendingFigmaExportBatch = results;
+      pendingFigmaExport = results.length === 1 ? results[0] : undefined;
+      const fonts = new Set(results.flatMap((result) => result.fonts));
       figma.ui.postMessage({
         type: "figma-export-preview",
         ok: true,
-        root: {
+        screenCount: results.length,
+        roots: results.map((result) => ({
           bridgeId: result.document.root.bridgeId,
           name: result.document.root.name,
           kind: result.document.root.kind,
-        },
-        nodeCount: result.nodeCount,
-        fonts: result.fonts,
-        assets: {
-          total: result.document.assets.length,
-          images: result.document.assets.filter(
-            (asset) => asset.kind === "image",
-          ).length,
-          svg: result.document.assets.filter((asset) => asset.kind === "svg")
-            .length,
-        },
-        warnings: result.document.warnings.map((warning) => ({
-          code: warning.code,
-          action: warning.action,
-          message: warning.message,
+          nodeCount: result.nodeCount,
         })),
+        root: {
+          bridgeId: results[0]!.document.root.bridgeId,
+          name: results[0]!.document.root.name,
+          kind: results[0]!.document.root.kind,
+        },
+        nodeCount: results.reduce(
+          (total, result) => total + result.nodeCount,
+          0,
+        ),
+        fonts: [...fonts].sort(),
+        assets: {
+          total: results.reduce(
+            (total, result) => total + result.document.assets.length,
+            0,
+          ),
+          images: results.reduce(
+            (total, result) =>
+              total +
+              result.document.assets.filter((asset) => asset.kind === "image")
+                .length,
+            0,
+          ),
+          svg: results.reduce(
+            (total, result) =>
+              total +
+              result.document.assets.filter((asset) => asset.kind === "svg")
+                .length,
+            0,
+          ),
+        },
+        warnings: results.flatMap((result) =>
+          result.document.warnings.map((warning) => ({
+            code: warning.code,
+            action: warning.action,
+            message: warning.message,
+            screenName: result.document.root.name,
+          })),
+        ),
       });
     } catch (error) {
       pendingFigmaExport = undefined;
+      pendingFigmaExportBatch = [];
       figma.ui.postMessage({
         type: "figma-export-preview",
         ok: false,
@@ -119,25 +154,42 @@ figma.ui.onmessage = async (message: {
 
   if (message.type === "plan-figma-export") {
     try {
-      if (!pendingFigmaExport)
-        throw new Error("Preview the selected Figma frame first");
-      const plan = planFigmaToPenCreate(pendingFigmaExport.document);
+      if (!pendingFigmaExportBatch.length)
+        throw new Error("Review the selected Figma screens first");
+      const plans = pendingFigmaExportBatch.map((result) => ({
+        name: result.document.root.name,
+        plan: planFigmaToPenCreate(result.document),
+      }));
       figma.ui.postMessage({
         type: "figma-export-plan",
         ok: true,
-        mode: plan.mode,
-        rootBridgeId: plan.rootBridgeId,
-        counts: plan.counts,
-        chunks: plan.chunks.map((chunk) => ({
-          index: chunk.index,
-          operations: chunk.operations.length,
-          estimatedBytes: chunk.estimatedBytes,
+        mode: plans.length === 1 ? plans[0]!.plan.mode : "create-batch",
+        screenCount: plans.length,
+        rootBridgeId: plans[0]!.plan.rootBridgeId,
+        counts: sumExportPlanCounts(plans.map(({ plan }) => plan.counts)),
+        screens: plans.map(({ name, plan }) => ({
+          name,
+          rootBridgeId: plan.rootBridgeId,
+          counts: plan.counts,
+          chunkCount: plan.chunks.length,
         })),
-        warnings: plan.warnings.map((warning) => ({
-          code: warning.code,
-          action: warning.action,
-          message: warning.message,
-        })),
+        chunks: plans.flatMap(({ name, plan }, screenIndex) =>
+          plan.chunks.map((chunk) => ({
+            screenIndex,
+            screenName: name,
+            index: chunk.index,
+            operations: chunk.operations.length,
+            estimatedBytes: chunk.estimatedBytes,
+          })),
+        ),
+        warnings: plans.flatMap(({ name, plan }) =>
+          plan.warnings.map((warning) => ({
+            code: warning.code,
+            action: warning.action,
+            message: warning.message,
+            screenName: name,
+          })),
+        ),
       });
     } catch (error) {
       figma.ui.postMessage({
@@ -151,29 +203,11 @@ figma.ui.onmessage = async (message: {
 
   if (message.type === "execute-figma-export") {
     try {
-      if (!pendingFigmaExport)
-        throw new Error("Preview the selected Figma frame first");
+      if (!pendingFigmaExportBatch.length)
+        throw new Error("Review the selected Figma screens first");
       if (typeof message.token !== "string" || !message.token)
         throw new Error("Pair and authenticate first");
-      const response = await fetch("http://localhost:32145/figma/export", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-pen-fig-token": message.token,
-        },
-        body: JSON.stringify({
-          document: pendingFigmaExport.document,
-          assetData: pendingFigmaExport.assetData,
-        }),
-      });
-      const result = (await response.json()) as Record<string, unknown>;
-      if (!response.ok)
-        throw new Error(
-          typeof result.message === "string"
-            ? result.message
-            : `Bridge error ${response.status}`,
-        );
-      figma.ui.postMessage(result);
+      await executeFigmaExportBatch(pendingFigmaExportBatch, message.token);
     } catch (error) {
       figma.ui.postMessage({
         type: "figma-export-result",
@@ -187,7 +221,9 @@ figma.ui.onmessage = async (message: {
   if (message.type === "adopt-figma-export") {
     try {
       if (!pendingFigmaExport)
-        throw new Error("Preview the selected Figma frame first");
+        throw new Error(
+          "Review one selected Figma screen before linking a copy",
+        );
       if (typeof message.token !== "string" || !message.token)
         throw new Error("Pair and authenticate first");
       if (
@@ -233,6 +269,7 @@ figma.ui.onmessage = async (message: {
         throw new Error("Pair and authenticate first");
       const selectedFigma = await readSelectedFigmaDocument();
       pendingFigmaExport = selectedFigma;
+      pendingFigmaExportBatch = [];
       const response = await fetch(
         "http://localhost:32145/figma/sync/preview",
         {
@@ -413,6 +450,76 @@ function isUuid(value: string): boolean {
   );
 }
 
+async function executeFigmaExportBatch(
+  batch: FigmaReadResult[],
+  token: string,
+): Promise<void> {
+  const results: Record<string, unknown>[] = [];
+  for (const [index, item] of batch.entries()) {
+    figma.ui.postMessage({
+      type: "figma-export-progress",
+      completed: index,
+      total: batch.length,
+      currentName: item.document.root.name,
+    });
+    try {
+      const response = await fetch("http://localhost:32145/figma/export", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-pen-fig-token": token,
+        },
+        body: JSON.stringify({
+          document: item.document,
+          assetData: item.assetData,
+        }),
+      });
+      const result = (await response.json()) as Record<string, unknown>;
+      if (!response.ok)
+        throw new Error(
+          typeof result.message === "string"
+            ? result.message
+            : `Bridge error ${response.status}`,
+        );
+      results.push(result);
+    } catch (error) {
+      figma.ui.postMessage({
+        type: "figma-export-result",
+        ok: false,
+        operation: "partial-batch",
+        screenCount: batch.length,
+        completedScreenCount: results.length,
+        failedScreenName: item.document.root.name,
+        message:
+          error instanceof Error ? error.message : "Pencil export failed",
+        results,
+      });
+      return;
+    }
+  }
+
+  if (results.length === 1) {
+    figma.ui.postMessage(results[0]!);
+    return;
+  }
+  figma.ui.postMessage({
+    type: "figma-export-result",
+    ok: true,
+    operation: "created-batch",
+    screenCount: results.length,
+    completedScreenCount: results.length,
+    nodeCount: results.reduce(
+      (total, result) => total + Number(result.nodeCount ?? 0),
+      0,
+    ),
+    rootIds: results
+      .map((result) => result.rootId)
+      .filter((rootId): rootId is string => typeof rootId === "string"),
+    results,
+    manifest: results[results.length - 1]?.manifest,
+  });
+}
+
 function verifiedFigmaBaselineHashes(
   mappings: Array<{ bridgeId: string; figmaNodeId: string }>,
   verified: FigmaReadResult,
@@ -483,5 +590,6 @@ async function completePreparedFigmaUpdate(
     );
   }
   pendingFigmaExport = verified;
+  pendingFigmaExportBatch = [];
   return completed;
 }

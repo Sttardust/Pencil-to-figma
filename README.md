@@ -63,9 +63,11 @@ The development plugin currently supports both directions:
 
 - **Pencil → Figma:** search for a Pencil root, preview the sync, and create or update editable
   Figma nodes while preserving the bridge mapping.
-- **Figma → Pencil:** select one Figma frame, preview it, build the chunk plan, then confirm
-  **Export copy to Pencil…**. The bridge writes a new editable root beside the source frame and
-  stages image assets in a `.pen-fig-assets` folder beside the active `.pen` file.
+- **Figma → Pencil:** select one or more Figma screens, layers inside those screens, or a Figma
+  section containing screens. Review the combined summary, then confirm the transfer. The bridge
+  writes each screen as a separate editable root in open canvas space and stages image assets in a
+  `.pen-fig-assets` folder beside the active `.pen` file. A batch can contain up to 12 screens,
+  5,000 editable layers, and 64 MiB of images.
 - **Mapped sync:** adopt an exported Pencil copy, preview changes against the last dual baseline,
   and atomically apply property and structural edits in either direction. Mapped sync preserves
   native identities while creating, deleting, moving, or reordering editable nodes. If both
@@ -78,6 +80,11 @@ placeholder and removed automatically if a chunk fails. After adoption, mapped p
 structural updates modify that copy in place. The bridge verifies the resulting tree before it
 commits the next manifest revision, including native Pencil IDs created while resolving a
 delete-versus-edit conflict.
+
+Multi-screen exports process and verify one screen at a time. Completed screens remain valid if a
+later screen fails, and the plugin reports exactly how many succeeded. The sidecar manifest keeps
+independent mappings for every exported screen instead of replacing the previous screen's link.
+Mapped comparison and conflict resolution remain deliberately single-screen operations.
 
 Pencil → Figma imports also resolve local Pencil `ref` dependencies by native identity. Reusable
 frames become Figma components and resolvable refs become instances; dependency components are

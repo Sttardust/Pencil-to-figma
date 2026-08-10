@@ -36,18 +36,42 @@ interface NativeVariableReadContext {
   variablesByBridgeId: ReadonlyMap<string, BridgeVariable>;
 }
 
+export const MAX_FIGMA_EXPORT_SCREENS = 12;
+
 export async function readSelectedFigmaDocument(
   options: { collectAssetData?: boolean } = {},
 ): Promise<FigmaReadResult> {
   await figma.currentPage.loadAsync();
   const selected = resolveFigmaExportRoot(figma.currentPage.selection);
+  return readFigmaDocument(selected, options, await readNativeVariables());
+}
 
+export async function readSelectedFigmaDocuments(
+  options: { collectAssetData?: boolean } = {},
+): Promise<FigmaReadResult[]> {
+  await figma.currentPage.loadAsync();
+  const selected = resolveFigmaExportRoots(figma.currentPage.selection);
+  if (selected.length > MAX_FIGMA_EXPORT_SCREENS)
+    throw new Error(
+      `Select no more than ${MAX_FIGMA_EXPORT_SCREENS} Figma screens at once`,
+    );
+  const nativeVariables = await readNativeVariables();
+  const results: FigmaReadResult[] = [];
+  for (const root of selected)
+    results.push(await readFigmaDocument(root, options, nativeVariables));
+  return results;
+}
+
+async function readFigmaDocument(
+  selected: FrameNode | ComponentNode,
+  options: { collectAssetData?: boolean },
+  nativeVariables: NativeVariableReadContext,
+): Promise<FigmaReadResult> {
   const documentId = figma.fileKey ?? "figma-local";
   const assets: BridgeAsset[] = [];
   const warnings: TransferWarning[] = [];
   const fonts = new Set<string>();
   const dependencies = await loadComponentDependencies(selected);
-  const nativeVariables = await readNativeVariables();
   let nodeCount = 0;
   const root = readNode(
     selected,
@@ -111,11 +135,28 @@ export async function readSelectedFigmaDocument(
 export function resolveFigmaExportRoot(
   selection: readonly SceneNode[],
 ): FrameNode | ComponentNode {
+  const roots = resolveFigmaExportRoots(selection);
+  if (roots.length !== 1)
+    throw new Error(
+      "Select one Figma screen for comparison. Multi-screen selection is available when sending copies to Pencil.",
+    );
+  return roots[0]!;
+}
+
+export function resolveFigmaExportRoots(
+  selection: readonly SceneNode[],
+): Array<FrameNode | ComponentNode> {
   if (!selection.length)
     throw new Error("Select a Figma screen, or any layer inside it");
 
   const roots = new Map<string, FrameNode | ComponentNode>();
   for (const node of selection) {
+    if (node.type === "SECTION") {
+      collectExportRootsFromContainer(node, roots);
+      if (!roots.size)
+        throw new Error(`“${node.name}” does not contain any Figma screens`);
+      continue;
+    }
     let current: BaseNode | null = node;
     let root: FrameNode | ComponentNode | undefined;
     while (current && current.type !== "PAGE" && current.type !== "DOCUMENT") {
@@ -130,11 +171,20 @@ export function resolveFigmaExportRoot(
     roots.set(root.id, root);
   }
 
-  if (roots.size !== 1)
-    throw new Error(
-      "The selected layers belong to different screens. Select one screen at a time.",
-    );
-  return roots.values().next().value!;
+  return [...roots.values()];
+}
+
+function collectExportRootsFromContainer(
+  container: ChildrenMixin,
+  roots: Map<string, FrameNode | ComponentNode>,
+): void {
+  for (const child of container.children) {
+    if (child.type === "FRAME" || child.type === "COMPONENT") {
+      roots.set(child.id, child);
+      continue;
+    }
+    if ("children" in child) collectExportRootsFromContainer(child, roots);
+  }
 }
 
 async function readNativeVariables(): Promise<NativeVariableReadContext> {

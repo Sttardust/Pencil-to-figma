@@ -479,6 +479,7 @@ export class BridgeServer {
             throw new Error(`Figma mapping missing ${node.bridgeId}`);
           mappings.push({
             bridgeId: node.bridgeId,
+            rootBridgeId: transfer.document.root.bridgeId,
             penNodeId: node.source.nodeId,
             figmaNodeId: mapping.figmaNodeId,
             baselineHash: expectedHashes[node.bridgeId]!,
@@ -500,7 +501,14 @@ export class BridgeServer {
             : {}),
           revision: (previous?.revision ?? -1) + 1,
           updatedAt: new Date().toISOString(),
-          mappings,
+          mappings: [
+            ...(previous?.mappings.filter(
+              (mapping) =>
+                Boolean(mapping.rootBridgeId) &&
+                mapping.rootBridgeId !== transfer.document.root.bridgeId,
+            ) ?? []),
+            ...mappings,
+          ],
         });
         this.#transfers.delete(completion.transferId);
         json(response, 200, {
@@ -1302,18 +1310,21 @@ export class BridgeServer {
       ...previous,
       revision: previous.revision + 1,
       updatedAt: new Date().toISOString(),
-      mappings: previous.mappings.map((mapping) =>
-        selected.has(mapping.bridgeId)
-          ? {
-              ...mapping,
-              penNodeId: penNodeIds.get(mapping.bridgeId),
-              figmaNodeId: figmaNodeIds.get(mapping.bridgeId),
-              baselineHash: figmaHashes[mapping.bridgeId]!,
-              penBaselineHash: penHashes[mapping.bridgeId],
-              figmaBaselineHash: figmaHashes[mapping.bridgeId],
-            }
-          : mapping,
-      ),
+      mappings: previous.mappings.map((mapping) => {
+        if (selected.has(mapping.bridgeId))
+          return {
+            ...mapping,
+            rootBridgeId: document.root.bridgeId,
+            penNodeId: penNodeIds.get(mapping.bridgeId),
+            figmaNodeId: figmaNodeIds.get(mapping.bridgeId),
+            baselineHash: figmaHashes[mapping.bridgeId]!,
+            penBaselineHash: penHashes[mapping.bridgeId],
+            figmaBaselineHash: figmaHashes[mapping.bridgeId],
+          };
+        return figmaHashes[mapping.bridgeId]
+          ? { ...mapping, rootBridgeId: document.root.bridgeId }
+          : mapping;
+      }),
     };
     const manifestPath = sidecarPath(penPath);
     await this.#manifests.writeAtomic(manifestPath, manifest);
