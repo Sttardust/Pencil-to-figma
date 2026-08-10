@@ -123,6 +123,7 @@ export async function writeBridgeDocument(
       recordsForWriter(document, mapped),
     );
     if (plan.operations.length === 0) {
+      alignRootToPreferredTop(mappedRoot, options);
       figma.currentPage.selection = [mappedRoot];
       figma.viewport.scrollAndZoomIntoView([mappedRoot]);
       return {
@@ -157,6 +158,7 @@ export async function writeBridgeDocument(
     }
     const root = context.nodes.get(document.root.bridgeId);
     if (!root) throw new Error("Updated Figma root is missing");
+    alignRootToPreferredTop(root, options);
     figma.currentPage.selection = [root];
     figma.viewport.scrollAndZoomIntoView([root]);
     return {
@@ -201,6 +203,10 @@ export async function writeBridgeDocument(
     removeCreatedComponents(context);
     throw error;
   }
+}
+
+function alignRootToPreferredTop(root: SceneNode, options: WriteOptions): void {
+  if (options.preferredRootTop !== undefined) root.y = options.preferredRootTop;
 }
 
 export async function writeBridgeNodeUpdates(
