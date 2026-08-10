@@ -35,10 +35,14 @@ main {
 }
 
 .app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  display: grid;
+  grid-template-areas:
+    "brand menu"
+    "status status";
+  grid-template-columns: minmax(0, 1fr) 30px;
+  column-gap: 12px;
+  row-gap: 8px;
+  align-items: start;
   margin-bottom: 12px;
   border: 1px solid var(--bridge-line);
   border-radius: 15px;
@@ -48,28 +52,8 @@ main {
 }
 
 .brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  grid-area: brand;
   min-width: 0;
-}
-
-.brand-mark {
-  display: grid;
-  flex: none;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--bridge-accent);
-  box-shadow: 0 4px 14px var(--bridge-accent-shadow);
-}
-
-.brand-mark span {
-  width: 11px;
-  height: 11px;
-  border: 3px solid white;
-  border-radius: 999px;
 }
 
 h1,
@@ -112,13 +96,17 @@ label,
 }
 
 .badge {
-  flex: none;
+  grid-area: status;
+  justify-self: end;
+  max-width: 100%;
   border: 1px solid transparent;
   border-radius: 999px;
   padding: 5px 8px;
   font-size: 9px;
   font-weight: 600;
-  white-space: nowrap;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-align: right;
 }
 
 .badge.success {
@@ -559,15 +547,16 @@ pre:focus {
   box-shadow: 0 0 0 2px var(--bridge-accent-line);
 }
 
-.header-actions {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
+.more-menu {
+  grid-area: menu;
+  justify-self: end;
+  position: relative;
 }
 
-.more-menu {
-  position: relative;
+.more-menu > button.icon-button {
+  font-size: 18px;
+  line-height: 1;
+  letter-spacing: 0;
 }
 
 button.icon-button {
