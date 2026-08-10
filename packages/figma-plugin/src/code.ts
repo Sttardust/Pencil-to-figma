@@ -13,10 +13,16 @@ import {
   sumExportPlanCounts,
   validateFigmaExportBatch,
 } from "./figma/batch.js";
+import {
+  mergeRecentPencilExports,
+  parseRecentPencilExports,
+  type RecentPencilExport,
+} from "./ui/recent-exports.js";
 
 let pendingFigmaExport: FigmaReadResult | undefined;
 let pendingFigmaExportBatch: FigmaReadResult[] = [];
 const CONNECTION_STORAGE_KEY = "penFigSavedConnectionV1";
+const RECENT_EXPORTS_STORAGE_KEY = "penFigRecentPencilExportsV1";
 const COMPANION_DOWNLOAD_URL =
   "https://github.com/Sttardust/Pencil-to-figma/releases";
 
@@ -31,6 +37,20 @@ figma.ui.onmessage = async (message: {
   direction?: unknown;
   bridgeId?: unknown;
 }) => {
+  if (message.type === "load-recent-exports") {
+    figma.ui.postMessage({
+      type: "recent-pencil-exports",
+      exports: await loadRecentPencilExports(),
+    });
+    return;
+  }
+
+  if (message.type === "clear-recent-exports") {
+    await figma.clientStorage.deleteAsync(RECENT_EXPORTS_STORAGE_KEY);
+    figma.ui.postMessage({ type: "recent-pencil-exports", exports: [] });
+    return;
+  }
+
   if (message.type === "load-saved-connection") {
     const stored = await figma.clientStorage.getAsync(CONNECTION_STORAGE_KEY);
     figma.ui.postMessage({
@@ -463,6 +483,7 @@ async function executeFigmaExportBatch(
       currentName: item.document.root.name,
     });
     try {
+      const previousRootId = results[results.length - 1]?.rootId;
       const response = await fetch("http://localhost:32145/figma/export", {
         method: "POST",
         headers: {
@@ -472,6 +493,9 @@ async function executeFigmaExportBatch(
         body: JSON.stringify({
           document: item.document,
           assetData: item.assetData,
+          ...(typeof previousRootId === "string"
+            ? { placementAnchorId: previousRootId }
+            : {}),
         }),
       });
       const result = (await response.json()) as Record<string, unknown>;
@@ -483,6 +507,7 @@ async function executeFigmaExportBatch(
         );
       results.push(result);
     } catch (error) {
+      const exports = await rememberRecentPencilExports(batch, results);
       figma.ui.postMessage({
         type: "figma-export-result",
         ok: false,
@@ -493,13 +518,15 @@ async function executeFigmaExportBatch(
         message:
           error instanceof Error ? error.message : "Pencil export failed",
         results,
+        exports,
       });
       return;
     }
   }
 
+  const exports = await rememberRecentPencilExports(batch, results);
   if (results.length === 1) {
-    figma.ui.postMessage(results[0]!);
+    figma.ui.postMessage({ ...results[0]!, exports });
     return;
   }
   figma.ui.postMessage({
@@ -516,8 +543,51 @@ async function executeFigmaExportBatch(
       .map((result) => result.rootId)
       .filter((rootId): rootId is string => typeof rootId === "string"),
     results,
+    exports,
     manifest: results[results.length - 1]?.manifest,
   });
+}
+
+async function loadRecentPencilExports(): Promise<RecentPencilExport[]> {
+  const stored = await figma.clientStorage.getAsync(RECENT_EXPORTS_STORAGE_KEY);
+  return parseRecentPencilExports(stored);
+}
+
+async function rememberRecentPencilExports(
+  batch: FigmaReadResult[],
+  results: Record<string, unknown>[],
+): Promise<RecentPencilExport[]> {
+  const exportedAt = new Date().toISOString();
+  const completed = results.flatMap((result, index) => {
+    const position =
+      result.position && typeof result.position === "object"
+        ? (result.position as Record<string, unknown>)
+        : undefined;
+    const penRootId = result.rootId;
+    if (
+      typeof penRootId !== "string" ||
+      typeof position?.x !== "number" ||
+      typeof position.y !== "number" ||
+      !Number.isFinite(position.x) ||
+      !Number.isFinite(position.y)
+    )
+      return [];
+    return [
+      {
+        name: batch[index]?.document.root.name ?? "Untitled screen",
+        penRootId,
+        x: position.x,
+        y: position.y,
+        exportedAt,
+      },
+    ];
+  });
+  if (!completed.length) return [];
+  const existing = await loadRecentPencilExports();
+  const recent = mergeRecentPencilExports(existing, completed);
+  await figma.clientStorage.setAsync(RECENT_EXPORTS_STORAGE_KEY, recent);
+  figma.ui.postMessage({ type: "recent-pencil-exports", exports: recent });
+  return completed;
 }
 
 function verifiedFigmaBaselineHashes(

@@ -18,6 +18,7 @@ export interface FigmaExportAssetData {
 
 export interface PenExportResult {
   rootId: string;
+  position: { x: number; y: number };
   nodeCount: number;
   chunkCount: number;
   assetCount: number;
@@ -25,11 +26,16 @@ export interface PenExportResult {
   mappings: Array<{ bridgeId: string; penNodeId: string }>;
 }
 
+export interface PenExportOptions {
+  placementAnchorId?: string;
+}
+
 export async function writeFigmaCopyToPen(
   document: BridgeDocument,
   assetData: Record<string, FigmaExportAssetData>,
   penPath: string,
   pen: PenMcpClient,
+  options: PenExportOptions = {},
 ): Promise<PenExportResult> {
   const transferId = randomUUID();
   const assetPaths = await stageFigmaAssets(document, assetData, penPath);
@@ -45,7 +51,7 @@ export async function writeFigmaCopyToPen(
   const rootPosition = await pen.findEmptySpace(
     footprint.width,
     footprint.height,
-    sourceBounds ? sourceId : undefined,
+    options.placementAnchorId ?? (sourceBounds ? sourceId : undefined),
     ROOT_GAP,
   );
   let rootId: string | undefined;
@@ -137,6 +143,7 @@ export async function writeFigmaCopyToPen(
   if (!rootId) throw new Error("Pencil export created no root node");
   return {
     rootId,
+    position: rootPosition,
     nodeCount: plan.counts.inserts,
     chunkCount: plan.chunks.length,
     assetCount: plan.counts.assets,

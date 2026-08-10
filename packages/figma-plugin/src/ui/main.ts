@@ -48,6 +48,10 @@ const retryConnection = required<HTMLButtonElement>("retry-connection");
 const authorizeConnection = required<HTMLButtonElement>("authorize-connection");
 const manualPairing = required<HTMLDetailsElement>("manual-pairing");
 const downloadCompanion = required<HTMLButtonElement>("download-companion");
+const recentExportsPanel = required<HTMLElement>("recent-exports");
+const recentExportList = required<HTMLElement>("recent-export-list");
+const copyExportIds = required<HTMLButtonElement>("copy-export-ids");
+const clearRecentExports = required<HTMLButtonElement>("clear-recent-exports");
 
 let token: string | undefined;
 let savedReconnectToken: string | undefined;
@@ -55,6 +59,7 @@ let pendingExportPreview: any;
 let pendingExportPlan: any;
 let pendingSyncPreview: any;
 let pendingConflict: any;
+let recentPencilExports: any[] = [];
 let pendingImport:
   | {
       document: any;
@@ -243,6 +248,10 @@ required("forget-connection").addEventListener("click", () => {
 });
 
 copyJson.addEventListener("click", () => void copyTechnicalJson());
+copyExportIds.addEventListener("click", () => void copyRecentExportIds());
+clearRecentExports.addEventListener("click", () => {
+  parent.postMessage({ pluginMessage: { type: "clear-recent-exports" } }, "*");
+});
 
 window.onmessage = (event) => {
   const message = event.data.pluginMessage;
@@ -282,6 +291,9 @@ window.onmessage = (event) => {
         : "Figma did not allow the reversible write test.",
     );
   }
+
+  if (message.type === "recent-pencil-exports")
+    renderRecentPencilExports(message.exports);
 
   if (message.type === "import-preview") handleImportPreview(message);
   if (message.type === "import-result") handleImportResult(message);
@@ -461,9 +473,73 @@ function handleFigmaExportResult(message: any): void {
   const screenCount = Number(message.screenCount ?? 1);
   setActivity(
     screenCount === 1
-      ? `${editableNodeSummary(Number(message.nodeCount ?? 0))} were created in Pencil and placed away from existing pages.`
-      : `${screenCount} screens with ${editableNodeSummary(Number(message.nodeCount ?? 0))} were created in Pencil and placed away from existing pages.`,
+      ? `${editableNodeSummary(Number(message.nodeCount ?? 0))} were created in Pencil. Its page name and ID are listed below.`
+      : `${screenCount} screens with ${editableNodeSummary(Number(message.nodeCount ?? 0))} were created together in Pencil. Their page names and IDs are listed below.`,
   );
+}
+
+function renderRecentPencilExports(value: unknown): void {
+  recentPencilExports = Array.isArray(value)
+    ? value.filter(
+        (entry) =>
+          entry &&
+          typeof entry === "object" &&
+          typeof entry.name === "string" &&
+          typeof entry.penRootId === "string" &&
+          typeof entry.x === "number" &&
+          typeof entry.y === "number",
+      )
+    : [];
+  recentExportList.replaceChildren();
+  for (const entry of recentPencilExports) {
+    const item = document.createElement("div");
+    item.className = "recent-export-item";
+    const name = document.createElement("span");
+    name.className = "recent-export-name";
+    name.textContent = entry.name;
+    name.title = `${entry.name} — canvas ${Math.round(entry.x)}, ${Math.round(entry.y)}`;
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "quiet recent-export-id";
+    copy.textContent = entry.penRootId;
+    copy.title = `Copy Pencil page ID ${entry.penRootId}`;
+    copy.addEventListener(
+      "click",
+      () => void copyPencilPageId(entry.penRootId, entry.name),
+    );
+    item.append(name, copy);
+    recentExportList.append(item);
+  }
+  recentExportsPanel.hidden = recentPencilExports.length === 0;
+}
+
+async function copyPencilPageId(id: string, name: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(id);
+    setActivity(`Copied the Pencil page ID for “${name}”: ${id}`);
+  } catch {
+    setActivity(`Pencil page ID for “${name}”: ${id}`);
+  }
+}
+
+async function copyRecentExportIds(): Promise<void> {
+  const value = recentPencilExports
+    .map(
+      (entry) =>
+        `${entry.name} | ${entry.penRootId} | canvas ${Math.round(entry.x)}, ${Math.round(entry.y)}`,
+    )
+    .join("\n");
+  try {
+    await navigator.clipboard.writeText(value);
+    copyExportIds.textContent = "Copied";
+    setTimeout(
+      () => (copyExportIds.textContent = "Copy page names and IDs"),
+      1_200,
+    );
+    setActivity("Copied the recent Pencil page names, IDs, and positions.");
+  } catch {
+    setActivity("The page list could not be copied. Click an individual ID.");
+  }
 }
 
 function handleAdoptResult(message: any): void {
@@ -1023,3 +1099,4 @@ function required<T extends HTMLElement = HTMLElement>(id: string): T {
 export {};
 
 parent.postMessage({ pluginMessage: { type: "load-saved-connection" } }, "*");
+parent.postMessage({ pluginMessage: { type: "load-recent-exports" } }, "*");

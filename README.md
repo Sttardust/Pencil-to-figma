@@ -85,6 +85,10 @@ Multi-screen exports process and verify one screen at a time. Completed screens 
 later screen fails, and the plugin reports exactly how many succeeded. The sidecar manifest keeps
 independent mappings for every exported screen instead of replacing the previous screen's link.
 Mapped comparison and conflict resolution remain deliberately single-screen operations.
+Screens from the same batch are placed together from left to right. The plugin stores the 20 most
+recent Pencil destinations and shows their page names, native IDs, and canvas positions under
+**Recently sent to Pencil**. That list remains available after reopening the plugin and can be
+copied for search or troubleshooting.
 
 Pencil → Figma imports also resolve local Pencil `ref` dependencies by native identity. Reusable
 frames become Figma components and resolvable refs become instances; dependency components are

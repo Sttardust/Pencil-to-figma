@@ -282,6 +282,63 @@ button:disabled {
   margin: 3px 0 0;
 }
 
+.recent-exports {
+  margin-top: 10px;
+  border-top: 1px solid var(--figma-color-border);
+  padding-top: 10px;
+}
+
+.recent-exports-heading,
+.recent-export-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.recent-exports-heading p {
+  margin: 2px 0 0;
+}
+
+.recent-exports-heading > button {
+  flex: none;
+}
+
+.recent-export-list {
+  display: grid;
+  gap: 5px;
+  max-height: 170px;
+  margin: 8px 0;
+  overflow: auto;
+}
+
+.recent-export-item {
+  border-radius: 6px;
+  padding: 7px 8px;
+  background: var(--figma-color-bg-secondary);
+}
+
+.recent-export-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-export-id {
+  flex: none;
+  color: var(--figma-color-text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+}
+
+button.recent-export-id {
+  min-height: 24px;
+  padding: 3px 5px;
+}
+
 .review-actions button,
 .conflict-actions button {
   flex: 1;

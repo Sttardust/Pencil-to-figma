@@ -1,5 +1,5 @@
 export const BRIDGE_PROTOCOL_VERSION = 1 as const;
-export const COMPANION_VERSION = "0.1.4";
+export const COMPANION_VERSION = "0.1.5";
 export const COMPANION_CAPABILITIES = [
   "automatic-reconnect",
   "native-approval",
@@ -8,4 +8,5 @@ export const COMPANION_CAPABILITIES = [
   "restricted-origins",
   "approval-rate-limit",
   "multi-screen-export",
+  "grouped-export-placement",
 ] as const;

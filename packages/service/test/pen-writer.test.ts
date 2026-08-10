@@ -85,6 +85,7 @@ describe("writeFigmaCopyToPen", () => {
 
     expect(result).toMatchObject({
       rootId: "p1",
+      position: { x: 700, y: 200 },
       nodeCount: 2,
       assetCount: 1,
       mappings: [
@@ -103,6 +104,39 @@ describe("writeFigmaCopyToPen", () => {
     expect(await readdir(path.join(directory, ".pen-fig-assets"))).toHaveLength(
       1,
     );
+  });
+
+  it("places the next batch screen beside the previous Pencil root", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "pen-writer-"));
+    temporaryDirectories.push(directory);
+    let requestedAnchor: string | undefined;
+    let nextId = 1;
+    const pen = {
+      getTopLevelBounds: async () => undefined,
+      findEmptySpace: async (
+        _width: number,
+        _height: number,
+        anchorId?: string,
+      ) => {
+        requestedAnchor = anchorId;
+        return { x: 1_200, y: 300 };
+      },
+      executeWrite: async (input: string) =>
+        [...input.matchAll(/Print\("MAP","\|","([^"]+)","\|",[A-Za-z0-9_]+\)/g)]
+          .map((mapping) => `MAP | ${mapping[1]} | p${nextId++}`)
+          .join("\n"),
+    } as unknown as PenMcpClient;
+
+    const result = await writeFigmaCopyToPen(
+      fixture(),
+      {},
+      path.join(directory, "design.pen"),
+      pen,
+      { placementAnchorId: "previousRoot" },
+    );
+
+    expect(requestedAnchor).toBe("previousRoot");
+    expect(result.position).toEqual({ x: 1_200, y: 300 });
   });
 
   it("deletes a discoverable partial root when a write fails", async () => {

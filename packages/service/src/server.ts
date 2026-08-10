@@ -532,6 +532,11 @@ export class BridgeServer {
           exportRequest.assetData,
           penPath,
           this.#pen,
+          {
+            ...(exportRequest.placementAnchorId
+              ? { placementAnchorId: exportRequest.placementAnchorId }
+              : {}),
+          },
         );
         const { mappings, ...summary } = result;
         const rootBridgeIds = new Set<string>();
@@ -1524,6 +1529,10 @@ const figmaExportRequestSchema = z
         })
         .strict(),
     ),
+    placementAnchorId: z
+      .string()
+      .regex(/^[A-Za-z0-9]+$/)
+      .optional(),
   })
   .strict();
 

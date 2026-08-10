@@ -13,16 +13,17 @@ describe("companion health presentation", () => {
       assessCompanionHealth({
         ok: true,
         protocol: 1,
-        companionVersion: "0.1.4",
+        companionVersion: "0.1.5",
         capabilities: [
           "automatic-reconnect",
           "native-approval",
           "header-auth",
           "restricted-origins",
           "multi-screen-export",
+          "grouped-export-placement",
         ],
       }),
-    ).toEqual({ compatible: true, version: "0.1.4" });
+    ).toEqual({ compatible: true, version: "0.1.5" });
   });
 
   it("requires an update for legacy or incompatible health responses", () => {
