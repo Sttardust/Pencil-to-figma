@@ -27,7 +27,7 @@ import { needsOverlayLayoutRebuild } from "./migration.js";
 import { findCleanRightSidePosition } from "./placement.js";
 import { autoLayoutFillFallback, type LayoutAxis } from "./sizing.js";
 
-const WRITE_SCHEMA_VERSION = "4";
+const WRITE_SCHEMA_VERSION = "5";
 const ROOT_GAP = 120;
 const COMPONENT_GAP = 40;
 
@@ -38,7 +38,24 @@ export interface WriteResult {
   operations?: SyncPlan["counts"];
   mappings: Array<{ bridgeId: string; figmaNodeId: string }>;
   figmaBaselineHashes: Record<string, string>;
+  layoutDiagnostics?: LayoutDiagnostics;
   warnings: string[];
+}
+
+export interface LayoutDiagnostics {
+  schema: string;
+  root: { id: string; width: number; height: number; x: number; y: number };
+  children: Array<{
+    bridgeId: string;
+    name: string;
+    layoutPosition: string;
+    width: number;
+    height: number;
+    x: number;
+    y: number;
+    sizingHorizontal?: string;
+    sizingVertical?: string;
+  }>;
 }
 
 export interface PreviewResult {
@@ -148,6 +165,11 @@ export async function writeBridgeDocument(
         operations: plan.counts,
         mappings: mappingsFromNodes(mapped.nodes, rootBridgeIds(document)),
         figmaBaselineHashes: hashes,
+        layoutDiagnostics: describeRootLayout(
+          document.root,
+          mappedRoot,
+          mapped.nodes,
+        ),
         warnings: [
           ...document.warnings.map((warning) => warning.message),
           ...fontWarnings,
@@ -165,6 +187,7 @@ export async function writeBridgeDocument(
       prepareLocalComponents(document, context);
       await materializeComponentDependencies(document, context);
       await applySyncPlan(document, mappedRoot, plan, context);
+      stabilizeOverlayRootLayout(document.root, mappedRoot, context);
       discardUnusedPreparedComponents(context);
       figma.commitUndo();
     } catch (error) {
@@ -183,6 +206,7 @@ export async function writeBridgeDocument(
       operations: plan.counts,
       mappings: mappingsFromNodes(context.nodes, rootBridgeIds(document)),
       figmaBaselineHashes: hashes,
+      layoutDiagnostics: describeRootLayout(document.root, root, context.nodes),
       warnings: [
         ...document.warnings.map((warning) => warning.message),
         ...context.warnings,
@@ -198,6 +222,7 @@ export async function writeBridgeDocument(
     prepareLocalComponents(document, context);
     await materializeComponentDependencies(document, context);
     root = await createNode(document.root, figma.currentPage, context);
+    stabilizeOverlayRootLayout(document.root, root, context);
     discardUnusedPreparedComponents(context);
     placeCreatedDocumentRoots(root, document, context, options);
     figma.currentPage.selection = [root];
@@ -208,6 +233,7 @@ export async function writeBridgeDocument(
       operation: "created",
       mappings: mappingsFromNodes(context.nodes, rootBridgeIds(document)),
       figmaBaselineHashes: hashes,
+      layoutDiagnostics: describeRootLayout(document.root, root, context.nodes),
       warnings: [
         ...document.warnings.map((warning) => warning.message),
         ...context.warnings,
@@ -240,6 +266,7 @@ async function rebuildMappedDocumentRoot(
     prepareLocalComponents(document, context);
     await materializeComponentDependencies(document, context);
     replacement = await createNode(document.root, figma.currentPage, context);
+    stabilizeOverlayRootLayout(document.root, replacement, context);
     discardUnusedPreparedComponents(context);
     replacement.x = originalPosition.x;
     replacement.y = options.preferredRootTop ?? originalPosition.y;
@@ -254,6 +281,11 @@ async function rebuildMappedDocumentRoot(
       operations: plan.counts,
       mappings: mappingsFromNodes(context.nodes, rootBridgeIds(document)),
       figmaBaselineHashes: hashes,
+      layoutDiagnostics: describeRootLayout(
+        document.root,
+        replacement,
+        context.nodes,
+      ),
       warnings: [
         ...document.warnings.map((warning) => warning.message),
         ...context.warnings,
@@ -269,6 +301,116 @@ async function rebuildMappedDocumentRoot(
 
 function alignRootToPreferredTop(root: SceneNode, options: WriteOptions): void {
   if (options.preferredRootTop !== undefined) root.y = options.preferredRootTop;
+}
+
+function describeRootLayout(
+  sourceRoot: BridgeNode,
+  root: SceneNode,
+  nodes: ReadonlyMap<string, SceneNode>,
+): LayoutDiagnostics {
+  return {
+    schema: WRITE_SCHEMA_VERSION,
+    root: {
+      id: root.id,
+      width: root.width,
+      height: root.height,
+      x: root.x,
+      y: root.y,
+    },
+    children: sourceRoot.children.flatMap((source) => {
+      const node = nodes.get(source.bridgeId);
+      if (!node) return [];
+      return [
+        {
+          bridgeId: source.bridgeId,
+          name: source.name,
+          layoutPosition:
+            "layoutPosition" in node && typeof node.layoutPosition === "string"
+              ? node.layoutPosition
+              : "NONE",
+          width: node.width,
+          height: node.height,
+          x: node.x,
+          y: node.y,
+          ...("layoutSizingHorizontal" in node
+            ? {
+                sizingHorizontal: node.layoutSizingHorizontal,
+                sizingVertical: node.layoutSizingVertical,
+              }
+            : {}),
+        },
+      ];
+    }),
+  };
+}
+
+function stabilizeOverlayRootLayout(
+  sourceRoot: BridgeNode,
+  root: SceneNode,
+  context: WriteContext,
+): void {
+  if (
+    !needsOverlayLayoutRebuild(sourceRoot) ||
+    !(root.type === "FRAME" || root.type === "COMPONENT") ||
+    !sourceRoot.layout ||
+    (sourceRoot.layout.mode !== "horizontal" &&
+      sourceRoot.layout.mode !== "vertical")
+  )
+    return;
+
+  const horizontal = sourceRoot.layout.mode === "horizontal";
+  const flowSources = sourceRoot.children.filter(
+    (child) => child.layoutPosition !== "absolute",
+  );
+  const primaryFillSources = flowSources.filter((child) =>
+    horizontal ? child.width.mode === "fill" : child.height.mode === "fill",
+  );
+  if (primaryFillSources.length !== 1) return;
+
+  const fillSource = primaryFillSources[0]!;
+  const fillNode = context.nodes.get(fillSource.bridgeId);
+  if (!fillNode || !("resize" in fillNode)) return;
+
+  const innerWidth = Math.max(
+    1,
+    root.width -
+      sourceRoot.layout.padding.left -
+      sourceRoot.layout.padding.right,
+  );
+  const innerHeight = Math.max(
+    1,
+    root.height -
+      sourceRoot.layout.padding.top -
+      sourceRoot.layout.padding.bottom,
+  );
+  const fixedPrimary = flowSources.reduce((total, child) => {
+    if (child.bridgeId === fillSource.bridgeId) return total;
+    const childNode = context.nodes.get(child.bridgeId);
+    if (!childNode || !("width" in childNode) || !("height" in childNode))
+      return total;
+    return total + (horizontal ? childNode.width : childNode.height);
+  }, 0);
+  const gapTotal = Math.max(0, flowSources.length - 1) * sourceRoot.layout.gap;
+  const fillPrimary = Math.max(
+    1,
+    (horizontal ? innerWidth : innerHeight) - fixedPrimary - gapTotal,
+  );
+  const width = horizontal
+    ? fillPrimary
+    : fillSource.width.mode === "fill"
+      ? innerWidth
+      : fillNode.width;
+  const height = horizontal
+    ? fillSource.height.mode === "fill"
+      ? innerHeight
+      : fillNode.height
+    : fillPrimary;
+
+  fillNode.resize(Math.max(0.01, width), Math.max(0.01, height));
+  if ("layoutSizingHorizontal" in fillNode) {
+    fillNode.layoutSizingHorizontal = "FIXED";
+    fillNode.layoutSizingVertical = "FIXED";
+  }
 }
 
 export async function writeBridgeNodeUpdates(
