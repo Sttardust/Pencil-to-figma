@@ -23,10 +23,11 @@ import {
 } from "./identity.js";
 import { directFontCandidates, fontKey } from "./fonts.js";
 import { normalizeGeometryForFigma, uniformValue } from "./geometry.js";
+import { needsOverlayLayoutRebuild } from "./migration.js";
 import { findCleanRightSidePosition } from "./placement.js";
 import { autoLayoutFillFallback, type LayoutAxis } from "./sizing.js";
 
-const WRITE_SCHEMA_VERSION = "3";
+const WRITE_SCHEMA_VERSION = "4";
 const ROOT_GAP = 120;
 const COMPONENT_GAP = 40;
 
@@ -122,6 +123,20 @@ export async function writeBridgeDocument(
       document,
       recordsForWriter(document, mapped),
     );
+    if (
+      mappedRoot.getPluginData("penFigSchema") !== WRITE_SCHEMA_VERSION &&
+      needsOverlayLayoutRebuild(document.root) &&
+      !document.components?.length
+    )
+      return rebuildMappedDocumentRoot(
+        document,
+        mappedRoot,
+        plan,
+        assetData,
+        hashes,
+        fontWarnings,
+        options,
+      );
     if (plan.operations.length === 0) {
       alignRootToPreferredTop(mappedRoot, options);
       figma.currentPage.selection = [mappedRoot];
@@ -201,6 +216,53 @@ export async function writeBridgeDocument(
   } catch (error) {
     root?.remove();
     removeCreatedComponents(context);
+    throw error;
+  }
+}
+
+async function rebuildMappedDocumentRoot(
+  document: BridgeDocument,
+  mappedRoot: SceneNode,
+  plan: SyncPlan,
+  assetData: Record<string, string>,
+  hashes: Record<string, string>,
+  fontWarnings: string[],
+  options: WriteOptions,
+): Promise<WriteResult> {
+  const originalPosition = { x: mappedRoot.x, y: mappedRoot.y };
+  const context = prepareContext(document, assetData, hashes);
+  context.warnings.push(...fontWarnings);
+  await prepareAssets(document, context);
+  await prepareVariables(document, context);
+  let replacement: SceneNode | undefined;
+  figma.commitUndo();
+  try {
+    prepareLocalComponents(document, context);
+    await materializeComponentDependencies(document, context);
+    replacement = await createNode(document.root, figma.currentPage, context);
+    discardUnusedPreparedComponents(context);
+    replacement.x = originalPosition.x;
+    replacement.y = options.preferredRootTop ?? originalPosition.y;
+    mappedRoot.remove();
+    figma.currentPage.selection = [replacement];
+    figma.viewport.scrollAndZoomIntoView([replacement]);
+    figma.commitUndo();
+    return {
+      rootId: replacement.id,
+      nodeCount: rootBridgeIds(document).size,
+      operation: "updated",
+      operations: plan.counts,
+      mappings: mappingsFromNodes(context.nodes, rootBridgeIds(document)),
+      figmaBaselineHashes: hashes,
+      warnings: [
+        ...document.warnings.map((warning) => warning.message),
+        ...context.warnings,
+      ],
+    };
+  } catch (error) {
+    (replacement ?? context.nodes.get(document.root.bridgeId))?.remove();
+    removeCreatedComponents(context);
+    figma.triggerUndo();
     throw error;
   }
 }
