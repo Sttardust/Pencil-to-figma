@@ -24,6 +24,7 @@ import {
 import { directFontCandidates, fontKey } from "./fonts.js";
 import { normalizeGeometryForFigma, uniformValue } from "./geometry.js";
 import { findCleanRightSidePosition } from "./placement.js";
+import { autoLayoutFillFallback, type LayoutAxis } from "./sizing.js";
 
 const WRITE_SCHEMA_VERSION = "2";
 const ROOT_GAP = 120;
@@ -51,6 +52,10 @@ export interface NodeUpdateResult {
   rootId: string;
   updatedNodeCount: number;
   updatedBridgeIds: string[];
+}
+
+export interface WriteOptions {
+  preferredRootTop?: number;
 }
 
 export async function previewBridgeDocument(
@@ -94,6 +99,7 @@ export async function previewBridgeDocument(
 export async function writeBridgeDocument(
   input: unknown,
   assetData: Record<string, string> = {},
+  options: WriteOptions = {},
 ): Promise<WriteResult> {
   const document = bridgeDocumentSchema.parse(input);
   await figma.currentPage.loadAsync();
@@ -176,7 +182,7 @@ export async function writeBridgeDocument(
     await materializeComponentDependencies(document, context);
     root = await createNode(document.root, figma.currentPage, context);
     discardUnusedPreparedComponents(context);
-    placeCreatedDocumentRoots(root, document, context);
+    placeCreatedDocumentRoots(root, document, context, options);
     figma.currentPage.selection = [root];
     figma.viewport.scrollAndZoomIntoView([root]);
     return {
@@ -560,6 +566,7 @@ function placeCreatedDocumentRoots(
   root: SceneNode,
   document: BridgeDocument,
   context: WriteContext,
+  options: WriteOptions,
 ): void {
   const componentRoots = (document.components ?? [])
     .map((component) => context.nodes.get(component.bridgeId))
@@ -587,6 +594,7 @@ function placeCreatedDocumentRoots(
     occupied,
     figma.viewport.center,
     ROOT_GAP,
+    options.preferredRootTop,
   );
   root.x = position.x;
   root.y = position.y;
@@ -767,7 +775,7 @@ function applyNodeProperties(
   node.setPluginData(AUTHORED_HASH_KEY, context.hashes[source.bridgeId] ?? "");
   node.setPluginData("penFigSchema", WRITE_SCHEMA_VERSION);
   applyLayoutPosition(node, source, parent);
-  applySize(node, source);
+  applySize(node, source, parent);
   node.x = source.bounds.x;
   node.y = source.bounds.y;
   applyGeometry(node, source, context);
@@ -994,17 +1002,62 @@ function createNativeNode(
   }
 }
 
-function applySize(node: SceneNode, source: BridgeNode): void {
+function applySize(
+  node: SceneNode,
+  source: BridgeNode,
+  parent: BaseNode & ChildrenMixin,
+): void {
   if (!("resize" in node)) return;
-  const width =
-    source.width.mode === "fixed"
-      ? source.width.value
-      : source.bounds.width || source.width.fallback || 1;
-  const height =
-    source.height.mode === "fixed"
-      ? source.height.value
-      : source.bounds.height || source.height.fallback || 1;
+  const width = initialDimension(node, source, parent, "horizontal");
+  const height = initialDimension(node, source, parent, "vertical");
   node.resize(Math.max(0.01, width), Math.max(0.01, height));
+}
+
+function initialDimension(
+  node: SceneNode,
+  source: BridgeNode,
+  parent: BaseNode & ChildrenMixin,
+  axis: LayoutAxis,
+): number {
+  const sizing = axis === "horizontal" ? source.width : source.height;
+  if (sizing.mode === "fixed") return sizing.value;
+  const authoredBounds =
+    axis === "horizontal" ? source.bounds.width : source.bounds.height;
+  if (authoredBounds > 0) return authoredBounds;
+  if (sizing.fallback !== undefined && sizing.fallback > 0)
+    return sizing.fallback;
+  if (
+    sizing.mode !== "fill" ||
+    !("layoutMode" in parent) ||
+    parent.layoutMode === "NONE" ||
+    parent.layoutMode === "GRID" ||
+    !("width" in parent) ||
+    !("height" in parent)
+  )
+    return 1;
+
+  const flowSiblings = parent.children
+    .filter(
+      (sibling): sibling is SceneNode =>
+        sibling !== node &&
+        "width" in sibling &&
+        "height" in sibling &&
+        sibling.visible &&
+        (!("layoutPosition" in sibling) ||
+          sibling.layoutPosition !== "ABSOLUTE"),
+    )
+    .map((sibling) => ({ width: sibling.width, height: sibling.height }));
+  return autoLayoutFillFallback(axis, {
+    layoutMode: parent.layoutMode,
+    width: parent.width,
+    height: parent.height,
+    paddingTop: parent.paddingTop,
+    paddingRight: parent.paddingRight,
+    paddingBottom: parent.paddingBottom,
+    paddingLeft: parent.paddingLeft,
+    itemSpacing: parent.itemSpacing,
+    flowSiblings,
+  });
 }
 
 function applyGeometry(

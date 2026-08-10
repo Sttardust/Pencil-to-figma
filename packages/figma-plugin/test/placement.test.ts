@@ -21,4 +21,18 @@ describe("findCleanRightSidePosition", () => {
       ),
     ).toEqual({ x: 1220, y: 100 });
   });
+
+  it("keeps every screen in a batch on the same top edge", () => {
+    const first = findCleanRightSidePosition(393, 844, [], { x: 500, y: 500 });
+    const second = findCleanRightSidePosition(
+      393,
+      932,
+      [{ x: first.x, y: first.y, width: 393, height: 844 }],
+      { x: 500, y: 500 },
+      120,
+      first.y,
+    );
+
+    expect(second).toEqual({ x: 816.5, y: first.y });
+  });
 });

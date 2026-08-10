@@ -22,6 +22,8 @@ import {
 
 let pendingFigmaExport: FigmaReadResult | undefined;
 let pendingFigmaExportBatch: FigmaReadResult[] = [];
+let pencilImportBatchPlacement:
+  { batchId: string; top: number | undefined } | undefined;
 const CONNECTION_STORAGE_KEY = "penFigSavedConnectionV1";
 const RECENT_EXPORTS_STORAGE_KEY = "penFigRecentPencilExportsV1";
 const COMPANION_DOWNLOAD_URL =
@@ -40,6 +42,9 @@ figma.ui.onmessage = async (message: {
   document?: unknown;
   documents?: unknown;
   assetData?: unknown;
+  importBatchId?: unknown;
+  importBatchIndex?: unknown;
+  importBatchSize?: unknown;
 }) => {
   if (message.type === "load-recent-exports") {
     figma.ui.postMessage({
@@ -410,12 +415,44 @@ figma.ui.onmessage = async (message: {
 
   if (message.type === "apply-document" && message.document !== undefined) {
     try {
+      const importBatchId =
+        typeof message.importBatchId === "string"
+          ? message.importBatchId
+          : undefined;
+      const importBatchIndex =
+        typeof message.importBatchIndex === "number"
+          ? message.importBatchIndex
+          : 0;
+      const importBatchSize =
+        typeof message.importBatchSize === "number"
+          ? message.importBatchSize
+          : 1;
+      if (
+        importBatchId &&
+        (importBatchIndex === 0 ||
+          pencilImportBatchPlacement?.batchId !== importBatchId)
+      )
+        pencilImportBatchPlacement = { batchId: importBatchId, top: undefined };
       const result = await writeBridgeDocument(
         message.document,
         message.assetData && typeof message.assetData === "object"
           ? (message.assetData as Record<string, string>)
           : {},
+        importBatchId &&
+          pencilImportBatchPlacement?.batchId === importBatchId &&
+          pencilImportBatchPlacement.top !== undefined
+          ? { preferredRootTop: pencilImportBatchPlacement.top }
+          : {},
       );
+      if (
+        importBatchId &&
+        pencilImportBatchPlacement?.batchId === importBatchId &&
+        pencilImportBatchPlacement.top === undefined
+      ) {
+        const importedRoot = await figma.getNodeByIdAsync(result.rootId);
+        if (importedRoot && "y" in importedRoot)
+          pencilImportBatchPlacement.top = importedRoot.y;
+      }
       const verified = await readSelectedFigmaDocument({
         collectAssetData: false,
       });
@@ -430,6 +467,8 @@ figma.ui.onmessage = async (message: {
         figmaBaselineHashes,
         ...(figma.fileKey ? { figmaDocumentId: figma.fileKey } : {}),
       });
+      if (importBatchId && importBatchIndex + 1 >= importBatchSize)
+        pencilImportBatchPlacement = undefined;
     } catch (error) {
       figma.ui.postMessage({
         type: "import-result",

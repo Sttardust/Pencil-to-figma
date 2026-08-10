@@ -87,6 +87,8 @@ interface PendingImport {
 let pendingImports: PendingImport[] = [];
 let activeImportIndex = 0;
 let completedImportResults: any[] = [];
+let pencilImportBatchSequence = 0;
+let activePencilImportBatchId = "";
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -137,6 +139,7 @@ cancelImport.addEventListener("click", () => {
   pendingImports = [];
   activeImportIndex = 0;
   completedImportResults = [];
+  activePencilImportBatchId = "";
   importReview.hidden = true;
   cancelImport.disabled = false;
   setStatus(completed ? "Transfer stopped" : "Connected", "success");
@@ -363,6 +366,7 @@ function handleImportPreview(message: any): void {
     pendingImports = [];
     activeImportIndex = 0;
     completedImportResults = [];
+    activePencilImportBatchId = "";
     confirmImport.disabled = false;
     cancelImport.disabled = false;
     importReview.hidden = true;
@@ -486,6 +490,7 @@ async function handleImportResult(message: any): Promise<void> {
     pendingImports = [];
     activeImportIndex = 0;
     completedImportResults = [];
+    activePencilImportBatchId = "";
     importReview.hidden = true;
     cancelImport.disabled = false;
     setStatus("Sent to Figma", "success");
@@ -857,6 +862,7 @@ async function importScreens(
     pendingImports = [];
     activeImportIndex = 0;
     completedImportResults = [];
+    activePencilImportBatchId = `pencil-import-${++pencilImportBatchSequence}`;
     importReview.hidden = true;
     setStatus(
       screens.length === 1 ? "Reviewing screen…" : "Reviewing pages…",
@@ -901,6 +907,7 @@ async function importScreens(
     pendingImports = [];
     activeImportIndex = 0;
     completedImportResults = [];
+    activePencilImportBatchId = "";
     showOperationError(
       errorMessage(error, "The selected Pencil pages could not be reviewed."),
     );
@@ -924,6 +931,9 @@ function applyCurrentPencilImport(): void {
         type: "apply-document",
         document: item.document,
         assetData: item.assetData,
+        importBatchId: activePencilImportBatchId,
+        importBatchIndex: activeImportIndex,
+        importBatchSize: total,
       },
     },
     "*",

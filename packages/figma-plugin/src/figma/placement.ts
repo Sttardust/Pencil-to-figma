@@ -16,8 +16,9 @@ export function findCleanRightSidePosition(
   occupied: CanvasRect[],
   viewportCenter: CanvasPoint,
   gap = 120,
+  preferredTop?: number,
 ): CanvasPoint {
-  const y = viewportCenter.y - height / 2;
+  const y = preferredTop ?? viewportCenter.y - height / 2;
   if (!occupied.length)
     return {
       x: viewportCenter.x - width / 2,
