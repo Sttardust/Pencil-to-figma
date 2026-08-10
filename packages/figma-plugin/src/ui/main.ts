@@ -5,6 +5,7 @@ import {
   presentSync,
   technicalJson,
 } from "./presentation.js";
+import { copyText } from "./clipboard.js";
 
 const form = required<HTMLFormElement>("pair-form");
 const pairInput = required<HTMLInputElement>("pair-code");
@@ -44,6 +45,7 @@ const keepPencil = required<HTMLButtonElement>("keep-pencil");
 const keepFigma = required<HTMLButtonElement>("keep-figma");
 const cancelConflict = required<HTMLButtonElement>("cancel-conflict");
 const copyJson = required<HTMLButtonElement>("copy-json");
+const technicalDetails = required<HTMLDetailsElement>("technical-details");
 const retryConnection = required<HTMLButtonElement>("retry-connection");
 const authorizeConnection = required<HTMLButtonElement>("authorize-connection");
 const manualPairing = required<HTMLDetailsElement>("manual-pairing");
@@ -514,10 +516,9 @@ function renderRecentPencilExports(value: unknown): void {
 }
 
 async function copyPencilPageId(id: string, name: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(id);
+  if (await copyText(id)) {
     setActivity(`Copied the Pencil page ID for “${name}”: ${id}`);
-  } catch {
+  } else {
     setActivity(`Pencil page ID for “${name}”: ${id}`);
   }
 }
@@ -529,15 +530,14 @@ async function copyRecentExportIds(): Promise<void> {
         `${entry.name} | ${entry.penRootId} | canvas ${Math.round(entry.x)}, ${Math.round(entry.y)}`,
     )
     .join("\n");
-  try {
-    await navigator.clipboard.writeText(value);
+  if (await copyText(value)) {
     copyExportIds.textContent = "Copied";
     setTimeout(
       () => (copyExportIds.textContent = "Copy page names and IDs"),
       1_200,
     );
     setActivity("Copied the recent Pencil page names, IDs, and positions.");
-  } catch {
+  } else {
     setActivity("The page list could not be copied. Click an individual ID.");
   }
 }
@@ -968,15 +968,25 @@ function setTechnical(message: unknown): void {
 
 async function copyTechnicalJson(): Promise<void> {
   const value = output.textContent ?? "";
-  try {
-    await navigator.clipboard.writeText(value);
+  if (await copyText(value)) {
     copyJson.textContent = "Copied";
     setTimeout(() => (copyJson.textContent = "Copy JSON"), 1_200);
-  } catch {
-    setActivity(
-      "Copy was blocked. Open the JSON details and select the text manually.",
-    );
+    setActivity("JSON copied to the clipboard.");
+  } else {
+    technicalDetails.open = true;
+    selectTechnicalJson();
+    setActivity("JSON is selected. Press ⌘C to copy it.");
   }
+}
+
+function selectTechnicalJson(): void {
+  const selection = window.getSelection();
+  if (!selection) return;
+  const range = document.createRange();
+  range.selectNodeContents(output);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  output.focus();
 }
 
 function showConnectionError(
