@@ -236,6 +236,7 @@ describe("BridgeServer", () => {
         text: `- Currently active canvas editor: \`${penPath}\``,
       }),
       listRootFrames: async () => "abc | Screen",
+      listSelectedRootFrames: async () => "abc | Screen",
       searchRootFrames: async () => "abc | Screen",
       getNode: async () => ({
         id: "abc",
@@ -284,6 +285,14 @@ describe("BridgeServer", () => {
     const screens = await bridgeFetch(`${origin}/pen/screens?token=${token}`);
     expect(await screens.json()).toMatchObject({
       type: "pen-screens",
+      text: "abc | Screen",
+    });
+    const selection = await bridgeFetch(
+      `${origin}/pen/selection?token=${token}`,
+    );
+    expect(await selection.json()).toMatchObject({
+      type: "pen-screens",
+      requestId: "selection",
       text: "abc | Screen",
     });
     const search = await bridgeFetch(

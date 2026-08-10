@@ -71,6 +71,28 @@ export class PenMcpClient {
     return extractText(result);
   }
 
+  async listSelectedRootFrames(limit = 12): Promise<string> {
+    const selectedIds = selectedNodeIdsFromAppState(
+      (await this.getAppState()).text,
+    );
+    if (!selectedIds.length) return "";
+    if (selectedIds.length > 200)
+      throw new Error("Select fewer Pencil layers before reading the pages");
+    const selected = JSON.stringify(selectedIds);
+    const result = await this.#callWithReconnect(
+      "execute",
+      {
+        input: `const selected=new Set(${selected});let count=0;Get((n,c)=>{c.skipChildren();if(selected.has(n.id)&&n.type==="frame"&&!n.reusable&&count<${limit + 1}){Print(n.id,"|",n.name||"");count++}})`,
+      },
+      30_000,
+    );
+    const text = extractText(result);
+    const pageCount = [...text.matchAll(/^[A-Za-z0-9]+\s+\|\s+.+$/gm)].length;
+    if (pageCount > limit)
+      throw new Error(`Select no more than ${limit} Pencil pages at once`);
+    return text;
+  }
+
   async searchRootFrames(query: string, limit = 30): Promise<string> {
     const normalized = query.trim();
     if (!normalized || normalized.length > 100)
@@ -231,6 +253,16 @@ export class PenMcpClient {
     }
     throw lastError;
   }
+}
+
+export function selectedNodeIdsFromAppState(text: string): string[] {
+  const selection = /^-\s*Selected nodes:\s*(.*)$/im.exec(text)?.[1]?.trim();
+  if (!selection || /no nodes are selected/i.test(selection)) return [];
+  return [
+    ...new Set(
+      [...selection.matchAll(/`([A-Za-z0-9]+)`/g)].map((match) => match[1]!),
+    ),
+  ];
 }
 
 function extractText(result: CallToolResult): string {

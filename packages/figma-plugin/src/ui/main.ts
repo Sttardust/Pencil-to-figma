@@ -95,6 +95,10 @@ downloadCompanion.addEventListener("click", () => {
 });
 
 required("screens").addEventListener("click", () => void loadScreens());
+required("selected-screens").addEventListener(
+  "click",
+  () => void loadSelectedScreens(),
+);
 required("search-screens").addEventListener(
   "click",
   () => void searchScreens(),
@@ -669,6 +673,29 @@ async function loadScreens(): Promise<void> {
   }
 }
 
+async function loadSelectedScreens(): Promise<void> {
+  setStatus("Reading Pencil selection…", "working");
+  setActivity("Checking which top-level pages are selected in Pencil…");
+  try {
+    const message = await request("/pen/selection", { method: "GET" });
+    const screens = parseScreens(message.text);
+    if (screens.length === 1) {
+      setActivity(`Found “${screens[0]!.name}”. Preparing it for Figma…`);
+      await importScreen(screens[0]!.id);
+      return;
+    }
+    renderScreens(message.text, "selection");
+    setStatus(
+      screens.length ? "Selection ready" : "Nothing selected",
+      screens.length ? "success" : "neutral",
+    );
+  } catch (error) {
+    showOperationError(
+      errorMessage(error, "The Pencil selection could not be read."),
+    );
+  }
+}
+
 async function searchScreens(): Promise<void> {
   const query = screenQuery.value.trim();
   if (!query) {
@@ -693,29 +720,46 @@ async function searchScreens(): Promise<void> {
   }
 }
 
-function renderScreens(text: string): void {
+function renderScreens(
+  text: string,
+  source: "browse" | "selection" = "browse",
+): void {
   screenList.replaceChildren();
-  const screens = String(text ?? "")
-    .split("\n")
-    .map((line) => /^([A-Za-z0-9]+)\s+\|\s+(.+?)\s*$/.exec(line))
-    .filter((match): match is RegExpExecArray => Boolean(match));
+  const screens = parseScreens(text);
   if (!screens.length) {
     const empty = document.createElement("p");
-    empty.textContent = "No matching Pencil screens were found.";
+    empty.textContent =
+      source === "selection"
+        ? "No top-level Pencil pages are selected."
+        : "No matching Pencil pages were found.";
     screenList.append(empty);
-    setActivity("No matching screens were found. Try a shorter name.");
+    setActivity(
+      source === "selection"
+        ? "In Pencil, select one or more complete page frames, then try again."
+        : "No matching pages were found. Try a shorter name.",
+    );
     return;
   }
-  for (const match of screens) {
+  for (const screen of screens) {
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = match[2] ?? "Untitled";
-    button.addEventListener("click", () => void importScreen(match[1]!));
+    button.textContent = screen.name;
+    button.addEventListener("click", () => void importScreen(screen.id));
     screenList.append(button);
   }
   setActivity(
-    `${screens.length} Pencil screen${screens.length === 1 ? "" : "s"} found. Choose one to review.`,
+    source === "selection"
+      ? `${screens.length} selected Pencil page${screens.length === 1 ? "" : "s"} found. Choose one to review.`
+      : `${screens.length} Pencil page${screens.length === 1 ? "" : "s"} found. Choose one to review.`,
   );
+}
+
+function parseScreens(text: unknown): { id: string; name: string }[] {
+  return String(text ?? "")
+    .split("\n")
+    .map((line) => /^([A-Za-z0-9]+)\s+\|\s+(.+?)\s*$/.exec(line))
+    .filter((match): match is RegExpExecArray => Boolean(match))
+    .map((match) => ({ id: match[1]!, name: match[2] ?? "Untitled" }));
 }
 
 async function importScreen(nodeId: string): Promise<void> {

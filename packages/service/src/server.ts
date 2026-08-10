@@ -450,6 +450,18 @@ export class BridgeServer {
       }
       if (
         request.method === "GET" &&
+        requestUrl.pathname === "/pen/selection"
+      ) {
+        const text = await this.#pen.listSelectedRootFrames(12);
+        json(response, 200, {
+          type: "pen-screens",
+          requestId: "selection",
+          text,
+        });
+        return;
+      }
+      if (
+        request.method === "GET" &&
         requestUrl.pathname === "/pen/screen-search"
       ) {
         const query = requestUrl.searchParams.get("query") ?? "";

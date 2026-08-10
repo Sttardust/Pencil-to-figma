@@ -13,7 +13,7 @@ describe("companion health presentation", () => {
       assessCompanionHealth({
         ok: true,
         protocol: 1,
-        companionVersion: "0.1.6",
+        companionVersion: "0.1.7",
         capabilities: [
           "automatic-reconnect",
           "native-approval",
@@ -22,9 +22,10 @@ describe("companion health presentation", () => {
           "multi-screen-export",
           "grouped-export-placement",
           "typed-public-errors",
+          "pencil-selection",
         ],
       }),
-    ).toEqual({ compatible: true, version: "0.1.6" });
+    ).toEqual({ compatible: true, version: "0.1.7" });
   });
 
   it("requires an update for legacy or incompatible health responses", () => {

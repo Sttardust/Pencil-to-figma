@@ -9,7 +9,7 @@ export {
   penMcpCandidates,
   resolvePenMcpPath,
 } from "./config.js";
-export { PenMcpClient } from "./pen/mcp-client.js";
+export { PenMcpClient, selectedNodeIdsFromAppState } from "./pen/mcp-client.js";
 export { SessionManager } from "./session.js";
 export { ManifestRepository } from "./manifest/repository.js";
 export {
