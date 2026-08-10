@@ -17,3 +17,9 @@ export {
   type PublicBridgeError,
   type PublicErrorPhase,
 } from "./public-error.js";
+export {
+  defaultOperationJournalPath,
+  OperationJournal,
+  type OperationEntry,
+  type OperationPhase,
+} from "./operation-journal.js";

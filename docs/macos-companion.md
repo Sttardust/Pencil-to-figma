@@ -15,7 +15,7 @@ On the first connection, macOS displays an Allow/Cancel message. Choosing **Allo
 private saved connection without asking the user to copy or type a code. The older pairing-code
 flow remains collapsed in the plugin as a troubleshooting fallback.
 
-Version 0.1.7 supports multi-screen Figma → Pencil export with grouped placement. A Figma batch is
+Version 0.1.8 supports multi-screen Figma → Pencil export with grouped placement. A Figma batch is
 sent as individually verified screen operations so a failure cannot leave a completed-looking
 partial screen. Each completed root becomes the placement anchor for the next screen, keeping the
 batch together from left to right. The shared sidecar retains separate root ownership for every
@@ -29,6 +29,11 @@ from error details before they leave the companion.
 The plugin can also read the current Pencil canvas selection. Selecting one top-level page in
 Pencil and choosing **Use selected Pencil pages** opens its Figma review immediately. Selecting
 several pages shows only those pages as choices, without searching the full Pencil document.
+
+Figma → Pencil creation is recorded in a private operation journal containing only operation
+IDs, bridge IDs, phases, timestamps, and failure codes. If the companion stops during writing,
+verification, or manifest commit, the next launch marks the operation interrupted and asks the
+user to compare the linked design. A successful comparison clears that recovery notice.
 
 Authenticated HTTP calls use the `x-pen-fig-token` header; tokens in URLs are rejected so they do
 not leak into request logs or browser history. CORS access is restricted to Figma and its sandboxed

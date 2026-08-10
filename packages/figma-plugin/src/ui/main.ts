@@ -63,6 +63,7 @@ const clearRecentExports = required<HTMLButtonElement>("clear-recent-exports");
 
 let token: string | undefined;
 let savedReconnectToken: string | undefined;
+let reconciliationRequired = false;
 let pendingExportPreview: any;
 let pendingExportPlan: any;
 let pendingSyncPreview: any;
@@ -590,6 +591,7 @@ function handleAdoptResult(message: any): void {
 
 function handleSyncPreview(message: any): void {
   compareSync.disabled = false;
+  if (message.ok) reconciliationRequired = false;
   pendingSyncPreview = message.ok ? message : undefined;
   const presented = presentSync(message);
   syncReviewTitle.textContent = presented.title;
@@ -942,6 +944,7 @@ async function requireCompatibleCompanion(): Promise<void> {
   const compatibility = assessCompanionHealth(health);
   if (!compatibility.compatible)
     throw new CompanionProblem("update", compatibility.version);
+  reconciliationRequired = health?.reconciliationRequired === true;
 }
 
 async function finishConnection(credentials: any): Promise<void> {
@@ -966,7 +969,11 @@ async function finishConnection(credentials: any): Promise<void> {
   connection.hidden = true;
   workspace.hidden = false;
   setStatus("Connected", "success");
-  setActivity("Pencil is ready. Choose what you want to move.");
+  setActivity(
+    reconciliationRequired
+      ? "A previous transfer stopped unexpectedly. Compare its linked design before sending more changes."
+      : "Pencil is ready. Choose what you want to move.",
+  );
 }
 
 function resolveConflict(direction: "pen" | "figma"): void {

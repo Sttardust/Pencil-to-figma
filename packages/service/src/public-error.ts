@@ -100,7 +100,7 @@ export function toPublicBridgeError(error: unknown): PublicBridgeError {
     normalized.includes("adopt this pencil root")
   )
     return failure("MAPPING_STALE", message, "comparison", true, 409);
-  if (normalized.includes("manifest"))
+  if (normalized.includes("manifest") || normalized.includes("journal"))
     return failure("MANIFEST_INVALID", message, "persistence", true, 409);
 
   return failure("WRITE_FAILED", message, "write", false, 500);

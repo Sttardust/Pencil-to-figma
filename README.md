@@ -138,6 +138,9 @@ showing the same developer error for all three conditions.
 Transfer failures also identify whether validation, fonts, assets, comparison, writing,
 verification, or persistence failed. Retry guidance appears only for operations that are safe to
 repeat, and local filesystem paths are removed from public error details.
+The companion also journals Figma → Pencil creation phases without design content. An interrupted
+operation is marked failed on restart, and the plugin asks for a mapped comparison before normal
+work continues.
 
 ### Automatic connection
 

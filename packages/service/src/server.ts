@@ -45,6 +45,7 @@ import {
   type PenBridgeMapping,
 } from "./manifest/figma-export.js";
 import { toPublicBridgeError } from "./public-error.js";
+import type { OperationJournal } from "./operation-journal.js";
 
 export interface BridgeServerOptions {
   host: string;
@@ -52,6 +53,7 @@ export interface BridgeServerOptions {
   pen: PenMcpClient;
   sessions?: SessionManager;
   approval?: LocalApprovalProvider;
+  journal?: OperationJournal;
 }
 
 export class BridgeServer {
@@ -60,6 +62,7 @@ export class BridgeServer {
   readonly #pen: PenMcpClient;
   readonly #sessions: SessionManager;
   readonly #approval: LocalApprovalProvider;
+  readonly #journal: OperationJournal | undefined;
   readonly #host: string;
   readonly #port: number;
   readonly #manifests = new ManifestRepository();
@@ -92,6 +95,7 @@ export class BridgeServer {
     this.#pen = options.pen;
     this.#sessions = options.sessions ?? new SessionManager();
     this.#approval = options.approval ?? new MacOSApprovalProvider();
+    this.#journal = options.journal;
     this.#http = createServer((request, response) => {
       void this.#handleHttp(request, response);
     });
@@ -113,6 +117,7 @@ export class BridgeServer {
   }
 
   async start(): Promise<number> {
+    await this.#journal?.recoverInterrupted();
     await new Promise<void>((resolve, reject) => {
       this.#http.once("error", reject);
       this.#http.listen(this.#port, this.#host, () => resolve());
@@ -283,6 +288,7 @@ export class BridgeServer {
         capabilities: COMPANION_CAPABILITIES,
         platform: process.platform,
         architecture: process.arch,
+        reconciliationRequired: this.#journal?.reconciliationRequired ?? false,
       });
       return;
     }
@@ -579,78 +585,99 @@ export class BridgeServer {
           await readJsonBody(request, 50 * 1024 * 1024),
         );
         const penPath = await this.#requireActivePenPath();
-        const result = await writeFigmaCopyToPen(
-          exportRequest.document,
-          exportRequest.assetData,
-          penPath,
-          this.#pen,
-          {
-            ...(exportRequest.placementAnchorId
-              ? { placementAnchorId: exportRequest.placementAnchorId }
-              : {}),
-          },
-        );
-        const { mappings, ...summary } = result;
-        const rootBridgeIds = new Set<string>();
-        visitBridgeNodes(exportRequest.document.root, (node) =>
-          rootBridgeIds.add(node.bridgeId),
-        );
-        const syncMappings = mappings.filter((mapping) =>
-          rootBridgeIds.has(mapping.bridgeId),
-        );
-        let manifest: {
-          revision: number;
-          mappingCount: number;
-          manifestPath: string;
-        };
+        const journalId = await this.#journal?.begin("figma-export", [
+          exportRequest.document.root.bridgeId,
+        ]);
         try {
-          const writtenRoot = await this.#pen.getNode(result.rootId);
-          const penDocument = await this.#importPenDocumentWithComponents(
-            writtenRoot,
-            penPath,
-            true,
-            mappings,
-          );
-          manifest = await this.#commitFigmaExportManifest(
+          const result = await writeFigmaCopyToPen(
             exportRequest.document,
-            syncMappings,
+            exportRequest.assetData,
             penPath,
-            penDocument,
+            this.#pen,
+            {
+              ...(exportRequest.placementAnchorId
+                ? { placementAnchorId: exportRequest.placementAnchorId }
+                : {}),
+            },
           );
-        } catch (error) {
-          const componentRootIds = (exportRequest.document.components ?? [])
-            .map(
-              (component) =>
-                mappings.find(
-                  (mapping) => mapping.bridgeId === component.bridgeId,
-                )?.penNodeId,
-            )
-            .filter((nodeId): nodeId is string => Boolean(nodeId));
-          const artifactIds = [
-            ...new Set([result.rootId, ...componentRootIds]),
-          ];
-          let rollback = `Rolled back ${artifactIds.length} unverified Pencil root${artifactIds.length === 1 ? "" : "s"}`;
+          if (journalId)
+            await this.#journal
+              ?.setPhase(journalId, "verifying")
+              .catch(() => undefined);
+          const { mappings, ...summary } = result;
+          const rootBridgeIds = new Set<string>();
+          visitBridgeNodes(exportRequest.document.root, (node) =>
+            rootBridgeIds.add(node.bridgeId),
+          );
+          const syncMappings = mappings.filter((mapping) =>
+            rootBridgeIds.has(mapping.bridgeId),
+          );
+          let manifest: {
+            revision: number;
+            mappingCount: number;
+            manifestPath: string;
+          };
           try {
-            await this.#pen.executeWrite(
-              artifactIds
-                .map((nodeId) => `Delete(${JSON.stringify(nodeId)})`)
-                .join(";"),
-              30_000,
+            const writtenRoot = await this.#pen.getNode(result.rootId);
+            const penDocument = await this.#importPenDocumentWithComponents(
+              writtenRoot,
+              penPath,
+              true,
+              mappings,
             );
-          } catch {
-            rollback = `Could not roll back ${artifactIds.length} unverified Pencil root${artifactIds.length === 1 ? "" : "s"}`;
+            if (journalId)
+              await this.#journal
+                ?.setPhase(journalId, "committing")
+                .catch(() => undefined);
+            manifest = await this.#commitFigmaExportManifest(
+              exportRequest.document,
+              syncMappings,
+              penPath,
+              penDocument,
+            );
+          } catch (error) {
+            const componentRootIds = (exportRequest.document.components ?? [])
+              .map(
+                (component) =>
+                  mappings.find(
+                    (mapping) => mapping.bridgeId === component.bridgeId,
+                  )?.penNodeId,
+              )
+              .filter((nodeId): nodeId is string => Boolean(nodeId));
+            const artifactIds = [
+              ...new Set([result.rootId, ...componentRootIds]),
+            ];
+            let rollback = `Rolled back ${artifactIds.length} unverified Pencil root${artifactIds.length === 1 ? "" : "s"}`;
+            try {
+              await this.#pen.executeWrite(
+                artifactIds
+                  .map((nodeId) => `Delete(${JSON.stringify(nodeId)})`)
+                  .join(";"),
+                30_000,
+              );
+            } catch {
+              rollback = `Could not roll back ${artifactIds.length} unverified Pencil root${artifactIds.length === 1 ? "" : "s"}`;
+            }
+            const message =
+              error instanceof Error ? error.message : "Unknown error";
+            throw new Error(`${message}. ${rollback}`);
           }
-          const message =
-            error instanceof Error ? error.message : "Unknown error";
-          throw new Error(`${message}. ${rollback}`);
+          if (journalId)
+            await this.#journal?.complete(journalId).catch(() => undefined);
+          json(response, 200, {
+            type: "figma-export-result",
+            ok: true,
+            operation: "created-copy",
+            ...summary,
+            manifest,
+          });
+        } catch (error) {
+          if (journalId)
+            await this.#journal
+              ?.fail(journalId, toPublicBridgeError(error).code)
+              .catch(() => undefined);
+          throw error;
         }
-        json(response, 200, {
-          type: "figma-export-result",
-          ok: true,
-          operation: "created-copy",
-          ...summary,
-          manifest,
-        });
         return;
       }
       if (
@@ -743,6 +770,7 @@ export class BridgeServer {
         );
         const actions = countSyncDirections(diff.entries);
         const structural = hasStructuralDifference(diff.entries);
+        await this.#journal?.acknowledgeReconciliation().catch(() => undefined);
         json(response, 200, {
           type: "figma-sync-preview",
           ok: true,

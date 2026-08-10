@@ -9,6 +9,7 @@ import type { PenMcpClient } from "../src/pen/mcp-client.js";
 import { importPenDocument, type PenNode } from "@pen-fig/core";
 import type { BridgeDocument } from "@pen-fig/bridge-schema";
 import type { LocalApprovalProvider } from "../src/approval.js";
+import { OperationJournal } from "../src/operation-journal.js";
 
 const servers: BridgeServer[] = [];
 const temporaryDirectories: string[] = [];
@@ -164,6 +165,34 @@ describe("BridgeServer", () => {
       type: "failed",
       code: "AUTH_TOKEN_URL_FORBIDDEN",
     });
+  });
+
+  it("reports an interrupted operation until the design is reconciled", async () => {
+    const directory = await mkdtemp(
+      path.join(os.tmpdir(), "pen-fig-recovery-"),
+    );
+    temporaryDirectories.push(directory);
+    const journalPath = path.join(directory, "operation-journal.json");
+    const interrupted = new OperationJournal(journalPath);
+    await interrupted.begin("figma-export", ["pen:root"]);
+    const recovered = new OperationJournal(journalPath);
+    const server = new BridgeServer({
+      host: "127.0.0.1",
+      port: 0,
+      pen: {} as PenMcpClient,
+      journal: recovered,
+    });
+    servers.push(server);
+    const port = await server.start();
+
+    const health = await globalThis.fetch(`http://localhost:${port}/health`);
+    expect(await health.json()).toMatchObject({
+      ok: true,
+      reconciliationRequired: true,
+    });
+    expect(await recovered.entries()).toMatchObject([
+      { phase: "failed", failureCode: "INTERRUPTED" },
+    ]);
   });
 
   it("returns a retryable response when approval prompts are rate-limited", async () => {
@@ -1208,7 +1237,15 @@ describe("BridgeServer", () => {
         throw new Error(`Unexpected Pencil node ${nodeId}`);
       },
     } as PenMcpClient;
-    const server = new BridgeServer({ host: "127.0.0.1", port: 0, pen });
+    const journal = new OperationJournal(
+      path.join(directory, "operation-journal.json"),
+    );
+    const server = new BridgeServer({
+      host: "127.0.0.1",
+      port: 0,
+      pen,
+      journal,
+    });
     servers.push(server);
     const port = await server.start();
     const origin = `http://localhost:${port}`;
@@ -1242,6 +1279,13 @@ describe("BridgeServer", () => {
       nodeCount: 4,
       manifest: { revision: 0, mappingCount: 2 },
     });
+    expect(await journal.entries()).toMatchObject([
+      {
+        kind: "figma-export",
+        bridgeIds: ["pen:root"],
+        phase: "completed",
+      },
+    ]);
 
     const unchangedPreview = await bridgeFetch(
       `${origin}/figma/sync/preview?token=${token}`,

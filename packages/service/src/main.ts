@@ -3,6 +3,7 @@ import { PenMcpClient } from "./pen/mcp-client.js";
 import { BridgeServer } from "./server.js";
 import { loadOrCreateReconnectToken } from "./credentials.js";
 import { SessionManager } from "./session.js";
+import { OperationJournal } from "./operation-journal.js";
 
 const config = await loadServiceConfig();
 const pen = new PenMcpClient(config.penMcpPath);
@@ -12,6 +13,7 @@ const server = new BridgeServer({
   port: config.port,
   pen,
   sessions: new SessionManager(reconnectToken),
+  journal: new OperationJournal(),
 });
 const port = await server.start();
 
