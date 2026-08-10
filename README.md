@@ -1,4 +1,4 @@
-# Pencil ↔ Figma Bridge
+# Pencil–Figma Bridge
 
 Development prototype for transferring editable design trees between Pencil and Figma.
 
@@ -56,7 +56,7 @@ Load the development plugin in Figma Desktop:
 
 1. Open **Plugins → Development → Import plugin from manifest…**.
 2. Select `packages/figma-plugin/manifest.json`.
-3. Run **Pencil Bridge (Development)**.
+3. Run **Pencil–Figma Bridge**.
 4. Approve the macOS connection message. No code needs to be typed.
 
 The development plugin currently supports both directions:

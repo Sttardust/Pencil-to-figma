@@ -1,6 +1,6 @@
 :root {
   --bridge-accent: #5b74f7;
-  --bridge-accent-hover: #6d84ff;
+  --bridge-accent-hover: #647cf9;
   --bridge-accent-soft: rgba(91, 116, 247, 0.1);
   --bridge-accent-line: rgba(91, 116, 247, 0.22);
   --bridge-accent-shadow: rgba(91, 116, 247, 0.24);
@@ -8,6 +8,7 @@
   --bridge-card: #ffffff;
   --bridge-soft: #f7f7f5;
   --bridge-line: #e3e4e4;
+  --bridge-hover: #f0f1f5;
   --bridge-text: #20232a;
   --bridge-text-secondary: #6d7179;
   --bridge-code: #202124;
@@ -197,9 +198,8 @@ label,
   margin-bottom: 9px;
   color: var(--figma-color-text-secondary, var(--bridge-text-secondary));
   font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .app-dot {
@@ -284,9 +284,8 @@ button {
   font-size: 11px;
   font-weight: 600;
   transition:
-    background 120ms ease,
-    box-shadow 120ms ease,
-    transform 120ms ease;
+    background-color 120ms ease,
+    border-color 120ms ease;
 }
 
 button.secondary {
@@ -302,14 +301,11 @@ button.quiet {
 
 button:hover:not(:disabled) {
   background: var(--bridge-accent-hover);
-  box-shadow: 0 4px 14px var(--bridge-accent-shadow);
-  transform: translateY(-1px);
 }
 
 button.secondary:hover:not(:disabled),
 button.quiet:hover:not(:disabled) {
-  background: var(--bridge-accent-soft);
-  color: var(--bridge-accent);
+  background: var(--bridge-hover);
   box-shadow: none;
 }
 
@@ -360,6 +356,12 @@ button:disabled {
   flex: none;
   color: var(--bridge-accent);
   font-size: 10px;
+}
+
+.screen-list button:hover:not(:disabled) {
+  color: var(--figma-color-text, var(--bridge-text));
+  background: var(--bridge-hover);
+  box-shadow: none;
 }
 
 .review-panel {
@@ -584,8 +586,8 @@ button.icon-button {
 }
 
 button.icon-button:hover:not(:disabled) {
-  color: var(--bridge-accent);
-  background: var(--bridge-accent-soft);
+  color: var(--figma-color-text-secondary, var(--bridge-text-secondary));
+  background: var(--bridge-hover);
   box-shadow: none;
   transform: none;
 }
@@ -620,7 +622,7 @@ button.icon-button:hover:not(:disabled) {
 
 .more-menu-popover button:hover:not(:disabled) {
   color: var(--figma-color-text, var(--bridge-text));
-  background: var(--bridge-accent-soft);
+  background: var(--bridge-hover);
   box-shadow: none;
   transform: none;
 }
@@ -693,6 +695,7 @@ button.icon-button:hover:not(:disabled) {
     --bridge-card: #292e37;
     --bridge-soft: #323844;
     --bridge-line: #434b59;
+    --bridge-hover: #39404d;
     --bridge-text: #edf0f5;
     --bridge-text-secondary: #aeb5c1;
     --bridge-code: #1b1f27;
