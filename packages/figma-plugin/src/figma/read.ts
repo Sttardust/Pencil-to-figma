@@ -40,12 +40,7 @@ export async function readSelectedFigmaDocument(
   options: { collectAssetData?: boolean } = {},
 ): Promise<FigmaReadResult> {
   await figma.currentPage.loadAsync();
-  const selection = figma.currentPage.selection;
-  if (selection.length !== 1)
-    throw new Error("Select exactly one Figma frame or component");
-  const selected = selection[0]!;
-  if (selected.type !== "FRAME" && selected.type !== "COMPONENT")
-    throw new Error("The selected root must be a Figma frame or component");
+  const selected = resolveFigmaExportRoot(figma.currentPage.selection);
 
   const documentId = figma.fileKey ?? "figma-local";
   const assets: BridgeAsset[] = [];
@@ -111,6 +106,35 @@ export async function readSelectedFigmaDocument(
         ? {}
         : await collectAssetData(document.assets),
   };
+}
+
+export function resolveFigmaExportRoot(
+  selection: readonly SceneNode[],
+): FrameNode | ComponentNode {
+  if (!selection.length)
+    throw new Error("Select a Figma screen, or any layer inside it");
+
+  const roots = new Map<string, FrameNode | ComponentNode>();
+  for (const node of selection) {
+    let current: BaseNode | null = node;
+    let root: FrameNode | ComponentNode | undefined;
+    while (current && current.type !== "PAGE" && current.type !== "DOCUMENT") {
+      if (current.type === "FRAME" || current.type === "COMPONENT")
+        root = current;
+      current = current.parent;
+    }
+    if (!root)
+      throw new Error(
+        `“${node.name}” is not inside a Figma frame. Select the full screen instead.`,
+      );
+    roots.set(root.id, root);
+  }
+
+  if (roots.size !== 1)
+    throw new Error(
+      "The selected layers belong to different screens. Select one screen at a time.",
+    );
+  return roots.values().next().value!;
 }
 
 async function readNativeVariables(): Promise<NativeVariableReadContext> {
