@@ -6,7 +6,7 @@ import {
 } from "@pen-fig/bridge-schema";
 import type { FigmaReadResult } from "./read.js";
 
-export const MAX_PENCIL_IMPORT_SCREENS = 12;
+export const MAX_PENCIL_IMPORT_SCREENS = 50;
 export const MAX_PENCIL_IMPORT_NODES = 5_000;
 export const MAX_PENCIL_IMPORT_ASSET_BYTES = 64 * 1024 * 1024;
 

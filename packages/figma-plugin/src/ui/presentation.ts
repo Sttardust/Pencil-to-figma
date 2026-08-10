@@ -5,6 +5,38 @@ export interface CompanionCompatibility {
   version?: string;
 }
 
+export interface OperationErrorPresentation {
+  title: string;
+  message: string;
+}
+
+export function presentOperationError(
+  message: string,
+): OperationErrorPresentation {
+  const pageLimit = /select no more than (\d+) pencil pages/i.exec(
+    message,
+  )?.[1];
+  if (pageLimit)
+    return {
+      title: "Too many Pencil pages selected",
+      message: `Select up to ${pageLimit} complete Pencil pages, then try again.`,
+    };
+  const normalized = message.toLowerCase();
+  if (normalized.includes("no top-level pencil pages"))
+    return {
+      title: "No complete Pencil pages selected",
+      message:
+        "Select one or more complete page frames in Pencil, then try again.",
+    };
+  if (normalized.includes("font"))
+    return { title: "A font is unavailable", message };
+  if (normalized.includes("asset") || normalized.includes("image"))
+    return { title: "An image needs attention", message };
+  if (normalized.includes("connection") || normalized.includes("timed out"))
+    return { title: "Pencil could not be reached", message };
+  return { title: "The transfer needs attention", message };
+}
+
 export function assessCompanionHealth(value: unknown): CompanionCompatibility {
   const health =
     value && typeof value === "object"
@@ -34,6 +66,7 @@ export function assessCompanionHealth(value: unknown): CompanionCompatibility {
       capabilities.includes("grouped-export-placement") &&
       capabilities.includes("typed-public-errors") &&
       capabilities.includes("pencil-selection") &&
+      capabilities.includes("large-pencil-selection") &&
       capabilities.includes("operation-recovery"),
     ),
     ...(version ? { version } : {}),

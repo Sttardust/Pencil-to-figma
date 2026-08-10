@@ -41,6 +41,20 @@ describe("public bridge errors", () => {
     });
   });
 
+  it("reports selection limits before the write phase", () => {
+    expect(
+      toPublicBridgeError(
+        new Error("Select no more than 50 Pencil pages at once"),
+      ),
+    ).toEqual({
+      code: "SCHEMA_SELECTION_LIMIT",
+      message: "Select no more than 50 Pencil pages at once",
+      phase: "validation",
+      retrySafe: true,
+      httpStatus: 422,
+    });
+  });
+
   it("redacts local paths from responses", () => {
     const result = toPublicBridgeError(
       new Error(

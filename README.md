@@ -132,7 +132,7 @@ explicit details panels and remain available for troubleshooting or sharing a te
 For Pencil → Figma, **Use Selected Pencil Pages** reads the current top-level page selection
 directly from Pencil. One selected page opens immediately for review. Several selected pages are
 reviewed together and then created or updated one at a time in separate open Figma canvas space,
-with progress and safe partial-failure reporting. A selection can contain up to 12 pages and 5,000
+with progress and safe partial-failure reporting. A selection can contain up to 50 pages and 5,000
 editable layers.
 Connection onboarding distinguishes a missing companion, an outdated companion, and Pencil without
 an open design. The plugin offers the appropriate download, update, or retry action instead of

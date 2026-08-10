@@ -52,6 +52,12 @@ export function toPublicBridgeError(error: unknown): PublicBridgeError {
       413,
     );
   if (
+    normalized.includes("select no more than") ||
+    normalized.includes("select fewer pencil") ||
+    normalized.includes("select fewer layers")
+  )
+    return failure("SCHEMA_SELECTION_LIMIT", message, "validation", true, 422);
+  if (
     normalized.includes("limit exceeded") ||
     normalized.includes("atomic limit") ||
     normalized.includes("too many")

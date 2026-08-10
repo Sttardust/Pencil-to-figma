@@ -31,14 +31,14 @@ describe("multi-page Pencil import", () => {
     ).toThrow("Select each page once");
   });
 
-  it("limits a Pencil selection to twelve pages", () => {
+  it("limits a Pencil selection to fifty pages", () => {
     expect(() =>
       validatePencilImportBatch(
-        Array.from({ length: 13 }, (_, index) =>
+        Array.from({ length: 51 }, (_, index) =>
           document(`page-${index}`, `Page ${index + 1}`),
         ),
       ),
-    ).toThrow("no more than 12 Pencil pages");
+    ).toThrow("no more than 50 Pencil pages");
   });
 
   it("limits total ready image bytes across the batch", () => {

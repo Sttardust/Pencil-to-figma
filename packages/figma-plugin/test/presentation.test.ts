@@ -3,6 +3,7 @@ import {
   assessCompanionHealth,
   editableNodeSummary,
   friendlyWarning,
+  presentOperationError,
   presentSync,
   technicalJson,
 } from "../src/ui/presentation.js";
@@ -13,7 +14,7 @@ describe("companion health presentation", () => {
       assessCompanionHealth({
         ok: true,
         protocol: 1,
-        companionVersion: "0.1.8",
+        companionVersion: "0.1.9",
         capabilities: [
           "automatic-reconnect",
           "native-approval",
@@ -23,10 +24,11 @@ describe("companion health presentation", () => {
           "grouped-export-placement",
           "typed-public-errors",
           "pencil-selection",
+          "large-pencil-selection",
           "operation-recovery",
         ],
       }),
-    ).toEqual({ compatible: true, version: "0.1.8" });
+    ).toEqual({ compatible: true, version: "0.1.9" });
   });
 
   it("requires an update for legacy or incompatible health responses", () => {
@@ -53,6 +55,15 @@ describe("companion health presentation", () => {
 });
 
 describe("plugin UI presentation", () => {
+  it("turns a Pencil page limit into visible corrective guidance", () => {
+    expect(
+      presentOperationError("Select no more than 50 Pencil pages at once"),
+    ).toEqual({
+      title: "Too many Pencil pages selected",
+      message: "Select up to 50 complete Pencil pages, then try again.",
+    });
+  });
+
   it("explains an unchanged comparison without developer terminology", () => {
     expect(
       presentSync({

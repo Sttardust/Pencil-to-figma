@@ -260,12 +260,16 @@ describe("BridgeServer", () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "pen-fig-server-"));
     temporaryDirectories.push(directory);
     const penPath = path.join(directory, "test.pen");
+    let selectedPageLimit: number | undefined;
     const pen = {
       getAppState: async () => ({
         text: `- Currently active canvas editor: \`${penPath}\``,
       }),
       listRootFrames: async () => "abc | Screen",
-      listSelectedRootFrames: async () => "abc | Screen",
+      listSelectedRootFrames: async (limit?: number) => {
+        selectedPageLimit = limit;
+        return "abc | Screen";
+      },
       searchRootFrames: async () => "abc | Screen",
       getNode: async () => ({
         id: "abc",
@@ -324,6 +328,7 @@ describe("BridgeServer", () => {
       requestId: "selection",
       text: "abc | Screen",
     });
+    expect(selectedPageLimit).toBe(50);
     const search = await bridgeFetch(
       `${origin}/pen/screen-search?query=Screen&token=${token}`,
     );

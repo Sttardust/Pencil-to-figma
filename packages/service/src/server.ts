@@ -458,7 +458,7 @@ export class BridgeServer {
         request.method === "GET" &&
         requestUrl.pathname === "/pen/selection"
       ) {
-        const text = await this.#pen.listSelectedRootFrames(12);
+        const text = await this.#pen.listSelectedRootFrames(50);
         json(response, 200, {
           type: "pen-screens",
           requestId: "selection",

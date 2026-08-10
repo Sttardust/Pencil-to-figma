@@ -2,6 +2,7 @@ import {
   assessCompanionHealth,
   editableNodeSummary,
   friendlyWarning,
+  presentOperationError,
   presentSync,
   technicalJson,
 } from "./presentation.js";
@@ -10,6 +11,12 @@ import { copyText } from "./clipboard.js";
 const form = required<HTMLFormElement>("pair-form");
 const pairInput = required<HTMLInputElement>("pair-code");
 const statusBadge = required<HTMLElement>("status");
+const operationAlert = required<HTMLElement>("operation-alert");
+const operationAlertTitle = required<HTMLElement>("operation-alert-title");
+const operationAlertMessage = required<HTMLElement>("operation-alert-message");
+const dismissOperationAlert = required<HTMLButtonElement>(
+  "dismiss-operation-alert",
+);
 const connection = required<HTMLElement>("connection");
 const connectionHelp = required<HTMLElement>("connection-help");
 const connectionTitle = required<HTMLElement>("connection-title");
@@ -291,6 +298,9 @@ copyJson.addEventListener("click", () => void copyTechnicalJson());
 copyExportIds.addEventListener("click", () => void copyRecentExportIds());
 clearRecentExports.addEventListener("click", () => {
   parent.postMessage({ pluginMessage: { type: "clear-recent-exports" } }, "*");
+});
+dismissOperationAlert.addEventListener("click", () => {
+  operationAlert.hidden = true;
 });
 
 window.onmessage = (event) => {
@@ -1286,8 +1296,12 @@ function showCompanionProblem(error: unknown): boolean {
 }
 
 function showOperationError(message: string): void {
+  const presented = presentOperationError(message);
   setStatus("Needs attention", "error");
-  setActivity(message);
+  operationAlertTitle.textContent = presented.title;
+  operationAlertMessage.textContent = presented.message;
+  operationAlert.hidden = false;
+  setActivity(presented.message);
 }
 
 function setActivity(message: string): void {
@@ -1298,6 +1312,7 @@ function setStatus(
   text: string,
   tone: "success" | "working" | "error" | "neutral",
 ): void {
+  if (tone !== "error") operationAlert.hidden = true;
   statusBadge.textContent = text;
   statusBadge.className = `badge ${tone}`;
 }

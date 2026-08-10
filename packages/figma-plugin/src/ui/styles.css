@@ -141,6 +141,51 @@ label,
   box-shadow: var(--bridge-shadow);
 }
 
+.operation-alert {
+  position: sticky;
+  z-index: 18;
+  top: 8px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 30px;
+  align-items: start;
+  gap: 9px;
+  margin-bottom: 12px;
+  border: 1px solid var(--figma-color-border-danger-strong, #d88b84);
+  border-radius: 13px;
+  padding: 10px;
+  background: var(--figma-color-bg-danger-tertiary, #fff0ef);
+  box-shadow: var(--bridge-shadow);
+}
+
+.operation-alert-mark {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--figma-color-text-onbrand, #ffffff);
+  background: var(--figma-color-bg-danger, #c7443e);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.operation-alert strong {
+  display: block;
+  margin: 1px 0 3px;
+  font-size: 11px;
+}
+
+.operation-alert p {
+  margin: 0;
+  color: var(--figma-color-text, var(--bridge-text));
+}
+
+.operation-alert button.icon-button {
+  border-color: transparent;
+  background: transparent;
+  font-size: 16px;
+}
+
 .connection-card,
 .transfer-card,
 .activity-card {

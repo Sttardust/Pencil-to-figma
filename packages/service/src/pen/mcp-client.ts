@@ -71,7 +71,7 @@ export class PenMcpClient {
     return extractText(result);
   }
 
-  async listSelectedRootFrames(limit = 12): Promise<string> {
+  async listSelectedRootFrames(limit = 50): Promise<string> {
     const selectedIds = selectedNodeIdsFromAppState(
       (await this.getAppState()).text,
     );

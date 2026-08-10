@@ -52,6 +52,22 @@
         <span id="status" class="badge working">Connecting…</span>
       </header>
 
+      <section id="operation-alert" class="operation-alert" role="alert" hidden>
+        <div class="operation-alert-mark" aria-hidden="true">!</div>
+        <div>
+          <strong id="operation-alert-title">Something needs attention</strong>
+          <p id="operation-alert-message"></p>
+        </div>
+        <button
+          id="dismiss-operation-alert"
+          type="button"
+          class="icon-button"
+          aria-label="Dismiss message"
+        >
+          ×
+        </button>
+      </section>
+
       <section id="connection" class="connection-card">
         <h2 id="connection-title">Connect to Pencil</h2>
         <p id="connection-help">Looking for your saved local connection…</p>
