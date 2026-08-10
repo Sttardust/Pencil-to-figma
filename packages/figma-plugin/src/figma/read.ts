@@ -16,6 +16,7 @@ import {
   VARIABLE_ID_KEY,
   VARIABLE_MODE_MAP_KEY,
 } from "./identity.js";
+import { fromFigmaLayoutPositioning } from "./layout-position.js";
 import { longestTextSegment } from "./text.js";
 
 export interface FigmaReadResult {
@@ -468,8 +469,8 @@ function readNode(
     opacity: "opacity" in node ? node.opacity : 1,
     locked: node.locked,
     layoutPosition:
-      "layoutPosition" in node && node.layoutPosition === "ABSOLUTE"
-        ? "absolute"
+      "layoutPositioning" in node
+        ? fromFigmaLayoutPositioning(node.layoutPositioning)
         : "auto",
     children: [],
   };

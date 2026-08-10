@@ -23,11 +23,12 @@ import {
 } from "./identity.js";
 import { directFontCandidates, fontKey } from "./fonts.js";
 import { normalizeGeometryForFigma, uniformValue } from "./geometry.js";
+import { toFigmaLayoutPositioning } from "./layout-position.js";
 import { needsOverlayLayoutRebuild } from "./migration.js";
 import { findCleanRightSidePosition } from "./placement.js";
 import { autoLayoutFillFallback, type LayoutAxis } from "./sizing.js";
 
-const WRITE_SCHEMA_VERSION = "5";
+const WRITE_SCHEMA_VERSION = "6";
 const ROOT_GAP = 120;
 const COMPONENT_GAP = 40;
 
@@ -325,8 +326,9 @@ function describeRootLayout(
           bridgeId: source.bridgeId,
           name: source.name,
           layoutPosition:
-            "layoutPosition" in node && typeof node.layoutPosition === "string"
-              ? node.layoutPosition
+            "layoutPositioning" in node &&
+            typeof node.layoutPositioning === "string"
+              ? node.layoutPositioning
               : "NONE",
           width: node.width,
           height: node.height,
@@ -1248,8 +1250,8 @@ function initialDimension(
         "width" in sibling &&
         "height" in sibling &&
         sibling.visible &&
-        (!("layoutPosition" in sibling) ||
-          sibling.layoutPosition !== "ABSOLUTE"),
+        (!("layoutPositioning" in sibling) ||
+          sibling.layoutPositioning !== "ABSOLUTE"),
     )
     .map((sibling) => ({ width: sibling.width, height: sibling.height }));
   return autoLayoutFillFallback(axis, {
@@ -1566,10 +1568,9 @@ function applyLayoutPosition(
   source: BridgeNode,
   parent: BaseNode & ChildrenMixin,
 ): void {
-  if (!("layoutPosition" in node)) return;
+  if (!("layoutPositioning" in node)) return;
   if (!("layoutMode" in parent) || parent.layoutMode === "NONE") return;
-  node.layoutPosition =
-    source.layoutPosition === "absolute" ? "ABSOLUTE" : "AUTO";
+  node.layoutPositioning = toFigmaLayoutPositioning(source.layoutPosition);
 }
 
 function toFigmaPaint(
