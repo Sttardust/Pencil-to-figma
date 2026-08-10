@@ -292,17 +292,12 @@ function rootBridgeIds(document: BridgeDocument): Set<string> {
 }
 
 function recordsForWriter(
-  document: BridgeDocument,
+  _document: BridgeDocument,
   mapped: ReturnType<typeof readMappedSubtree>,
 ): ReturnType<typeof readMappedSubtree>["records"] {
-  const instanceIds = new Set<string>();
-  visit(document.root, (node) => {
-    if (node.kind === "instance") instanceIds.add(node.bridgeId);
-  });
   return mapped.records.map((record) => {
     const node = mapped.nodes.get(record.bridgeId);
-    return instanceIds.has(record.bridgeId) &&
-      node?.getPluginData("penFigSchema") !== WRITE_SCHEMA_VERSION
+    return node?.getPluginData("penFigSchema") !== WRITE_SCHEMA_VERSION
       ? { ...record, authoredHash: "" }
       : record;
   });
