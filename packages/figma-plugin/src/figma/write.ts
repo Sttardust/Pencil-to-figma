@@ -26,7 +26,7 @@ import { normalizeGeometryForFigma, uniformValue } from "./geometry.js";
 import { findCleanRightSidePosition } from "./placement.js";
 import { autoLayoutFillFallback, type LayoutAxis } from "./sizing.js";
 
-const WRITE_SCHEMA_VERSION = "2";
+const WRITE_SCHEMA_VERSION = "3";
 const ROOT_GAP = 120;
 const COMPONENT_GAP = 40;
 
