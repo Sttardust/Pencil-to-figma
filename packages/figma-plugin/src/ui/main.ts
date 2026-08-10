@@ -45,7 +45,13 @@ const keepPencil = required<HTMLButtonElement>("keep-pencil");
 const keepFigma = required<HTMLButtonElement>("keep-figma");
 const cancelConflict = required<HTMLButtonElement>("cancel-conflict");
 const copyJson = required<HTMLButtonElement>("copy-json");
-const technicalDetails = required<HTMLDetailsElement>("technical-details");
+const technicalDetails = required<HTMLElement>("technical-details");
+const advancedDialog = required<HTMLElement>("advanced-dialog");
+const utilityBackdrop = required<HTMLElement>("utility-backdrop");
+const moreMenuButton = required<HTMLButtonElement>("more-menu-button");
+const moreMenuPopover = required<HTMLElement>("more-menu-popover");
+const openAdvanced = required<HTMLButtonElement>("open-advanced");
+const openJson = required<HTMLButtonElement>("open-json");
 const retryConnection = required<HTMLButtonElement>("retry-connection");
 const authorizeConnection = required<HTMLButtonElement>("authorize-connection");
 const manualPairing = required<HTMLDetailsElement>("manual-pairing");
@@ -247,6 +253,28 @@ required("forget-connection").addEventListener("click", () => {
   connection.hidden = false;
   showAuthorizationReady("The saved connection was removed.");
   setStatus("Not connected", "neutral");
+  closeUtilityPanel();
+});
+
+moreMenuButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setMoreMenuOpen(moreMenuPopover.hidden);
+});
+moreMenuPopover.addEventListener("click", (event) => event.stopPropagation());
+openAdvanced.addEventListener("click", () => openUtilityPanel("advanced"));
+openJson.addEventListener("click", () => openUtilityPanel("json"));
+for (const button of document.querySelectorAll<HTMLButtonElement>(
+  ".close-utility",
+))
+  button.addEventListener("click", closeUtilityPanel);
+utilityBackdrop.addEventListener("click", (event) => {
+  if (event.target === utilityBackdrop) closeUtilityPanel();
+});
+document.addEventListener("click", () => setMoreMenuOpen(false));
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (!utilityBackdrop.hidden) closeUtilityPanel();
+  else setMoreMenuOpen(false);
 });
 
 copyJson.addEventListener("click", () => void copyTechnicalJson());
@@ -973,10 +1001,31 @@ async function copyTechnicalJson(): Promise<void> {
     setTimeout(() => (copyJson.textContent = "Copy JSON"), 1_200);
     setActivity("JSON copied to the clipboard.");
   } else {
-    technicalDetails.open = true;
+    openUtilityPanel("json");
     selectTechnicalJson();
     setActivity("JSON is selected. Press ⌘C to copy it.");
   }
+}
+
+function setMoreMenuOpen(open: boolean): void {
+  moreMenuPopover.hidden = !open;
+  moreMenuButton.setAttribute("aria-expanded", String(open));
+}
+
+function openUtilityPanel(panel: "advanced" | "json"): void {
+  setMoreMenuOpen(false);
+  utilityBackdrop.hidden = false;
+  advancedDialog.hidden = panel !== "advanced";
+  technicalDetails.hidden = panel !== "json";
+  const dialog = panel === "advanced" ? advancedDialog : technicalDetails;
+  dialog.querySelector<HTMLButtonElement>(".close-utility")?.focus();
+}
+
+function closeUtilityPanel(): void {
+  utilityBackdrop.hidden = true;
+  advancedDialog.hidden = true;
+  technicalDetails.hidden = true;
+  moreMenuButton.focus();
 }
 
 function selectTechnicalJson(): void {

@@ -1,15 +1,20 @@
 :root {
-  --bridge-accent: #ff4f00;
-  --bridge-accent-hover: #e94800;
+  --bridge-accent: #5b74f7;
+  --bridge-accent-hover: #6d84ff;
+  --bridge-accent-soft: rgba(91, 116, 247, 0.1);
+  --bridge-accent-line: rgba(91, 116, 247, 0.22);
+  --bridge-accent-shadow: rgba(91, 116, 247, 0.24);
   --bridge-canvas: #f1f2f2;
   --bridge-card: #ffffff;
   --bridge-soft: #f7f7f5;
   --bridge-line: #e3e4e4;
+  --bridge-text: #20232a;
+  --bridge-text-secondary: #6d7179;
   --bridge-code: #202124;
   --bridge-code-text: #f4f4f2;
   --bridge-shadow: 0 8px 26px rgba(24, 27, 30, 0.07);
   font-family: Inter, system-ui, sans-serif;
-  color: var(--figma-color-text);
+  color: var(--figma-color-text, var(--bridge-text));
   background: var(--bridge-canvas);
   color-scheme: light dark;
 }
@@ -56,7 +61,7 @@ main {
   place-items: center;
   border-radius: 999px;
   background: var(--bridge-accent);
-  box-shadow: 0 4px 12px rgba(255, 79, 0, 0.24);
+  box-shadow: 0 4px 14px var(--bridge-accent-shadow);
 }
 
 .brand-mark span {
@@ -86,7 +91,7 @@ h2 {
 
 p {
   margin-bottom: 10px;
-  color: var(--figma-color-text-secondary);
+  color: var(--figma-color-text-secondary, var(--bridge-text-secondary));
   font-size: 11px;
   line-height: 1.45;
 }
@@ -102,7 +107,7 @@ label,
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: var(--figma-color-text-secondary);
+  color: var(--figma-color-text-secondary, var(--bridge-text-secondary));
 }
 
 .badge {
@@ -127,12 +132,12 @@ label,
 
 .badge.working {
   color: var(--bridge-accent);
-  background: rgba(255, 79, 0, 0.08);
-  border-color: rgba(255, 79, 0, 0.16);
+  background: var(--bridge-accent-soft);
+  border-color: var(--bridge-accent-line);
 }
 
 .badge.neutral {
-  color: var(--figma-color-text-secondary);
+  color: var(--figma-color-text-secondary, var(--bridge-text-secondary));
   background: var(--figma-color-bg-secondary);
 }
 
@@ -182,7 +187,7 @@ label,
 }
 
 .sync-card {
-  --card-accent: #23886b;
+  --card-accent: #5d899a;
 }
 
 .direction-label {
@@ -190,7 +195,7 @@ label,
   align-items: center;
   gap: 6px;
   margin-bottom: 9px;
-  color: var(--figma-color-text-secondary);
+  color: var(--figma-color-text-secondary, var(--bridge-text-secondary));
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -204,7 +209,7 @@ label,
 }
 
 .pencil-dot {
-  background: var(--bridge-accent);
+  background: #bd6844;
 }
 
 .figma-dot {
@@ -212,7 +217,7 @@ label,
 }
 
 .sync-dot {
-  background: #2f9b78;
+  background: #5d899a;
 }
 
 .row,
@@ -242,7 +247,7 @@ input {
 
 input:focus {
   border-color: var(--bridge-accent);
-  box-shadow: 0 0 0 2px rgba(255, 79, 0, 0.12);
+  box-shadow: 0 0 0 2px var(--bridge-accent-soft);
 }
 
 .pair-code {
@@ -252,7 +257,7 @@ input:focus {
 
 .manual-pairing {
   margin-top: 10px;
-  color: var(--figma-color-text-secondary);
+  color: var(--figma-color-text-secondary, var(--bridge-text-secondary));
   font-size: 10px;
 }
 
@@ -287,23 +292,23 @@ button {
 button.secondary {
   border: 1px solid var(--bridge-line);
   background: var(--bridge-soft);
-  color: var(--figma-color-text);
+  color: var(--figma-color-text, var(--bridge-text));
 }
 
 button.quiet {
   background: transparent;
-  color: var(--figma-color-text-secondary);
+  color: var(--figma-color-text-secondary, var(--bridge-text-secondary));
 }
 
 button:hover:not(:disabled) {
   background: var(--bridge-accent-hover);
-  box-shadow: 0 4px 12px rgba(255, 79, 0, 0.16);
+  box-shadow: 0 4px 14px var(--bridge-accent-shadow);
   transform: translateY(-1px);
 }
 
 button.secondary:hover:not(:disabled),
 button.quiet:hover:not(:disabled) {
-  background: rgba(255, 79, 0, 0.07);
+  background: var(--bridge-accent-soft);
   color: var(--bridge-accent);
   box-shadow: none;
 }
@@ -346,7 +351,7 @@ button:disabled {
   width: 100%;
   border: 1px solid var(--bridge-line);
   background: var(--bridge-soft);
-  color: var(--figma-color-text);
+  color: var(--figma-color-text, var(--bridge-text));
   text-align: left;
 }
 
@@ -419,7 +424,7 @@ button:disabled {
 
 .recent-export-id {
   flex: none;
-  color: var(--figma-color-text-secondary);
+  color: var(--figma-color-text-secondary, var(--bridge-text-secondary));
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 9px;
 }
@@ -466,7 +471,7 @@ button.recent-export-id {
 }
 
 .comparison span {
-  color: var(--figma-color-text-secondary);
+  color: var(--figma-color-text-secondary, var(--bridge-text-secondary));
   font-size: 9px;
   line-height: 1.3;
 }
@@ -502,23 +507,13 @@ button.recent-export-id {
 
 .activity-card p {
   margin: 0;
-  color: var(--figma-color-text);
-}
-
-details summary {
-  cursor: pointer;
-  padding: 12px 13px;
-  color: var(--figma-color-text-secondary);
-  font-size: 11px;
-  font-weight: 500;
-  list-style-position: inside;
+  color: var(--figma-color-text, var(--bridge-text));
 }
 
 .advanced-content {
   display: grid;
   gap: 8px;
-  border-top: 1px solid var(--bridge-line);
-  padding: 10px 12px 12px;
+  padding: 13px;
 }
 
 .advanced-content p {
@@ -529,8 +524,8 @@ details summary {
   align-items: center;
   justify-content: space-between;
   border-top: 1px solid var(--bridge-line);
-  padding: 6px 8px 0 12px;
-  color: var(--figma-color-text-secondary);
+  padding: 9px 10px 2px 13px;
+  color: var(--figma-color-text-secondary, var(--bridge-text-secondary));
   font-size: 9px;
 }
 
@@ -559,17 +554,153 @@ pre {
 }
 
 pre:focus {
-  box-shadow: 0 0 0 2px rgba(255, 79, 0, 0.35);
+  box-shadow: 0 0 0 2px var(--bridge-accent-line);
+}
+
+.header-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.more-menu {
+  position: relative;
+}
+
+button.icon-button {
+  display: grid;
+  width: 30px;
+  min-height: 30px;
+  place-items: center;
+  border: 1px solid var(--bridge-line);
+  border-radius: 999px;
+  padding: 0;
+  color: var(--figma-color-text-secondary, var(--bridge-text-secondary));
+  background: var(--bridge-soft);
+  box-shadow: none;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+button.icon-button:hover:not(:disabled) {
+  color: var(--bridge-accent);
+  background: var(--bridge-accent-soft);
+  box-shadow: none;
+  transform: none;
+}
+
+.more-menu-popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  width: 226px;
+  gap: 4px;
+  border: 1px solid var(--bridge-line);
+  border-radius: 13px;
+  padding: 6px;
+  background: var(--bridge-card);
+  box-shadow: 0 16px 34px rgba(20, 24, 32, 0.2);
+}
+
+.more-menu-popover button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 50px;
+  padding: 8px 10px;
+  color: var(--figma-color-text, var(--bridge-text));
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
+}
+
+.more-menu-popover button:hover:not(:disabled) {
+  color: var(--figma-color-text, var(--bridge-text));
+  background: var(--bridge-accent-soft);
+  box-shadow: none;
+  transform: none;
+}
+
+.more-menu-popover button > span:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.more-menu-popover strong {
+  font-size: 11px;
+}
+
+.more-menu-popover small {
+  color: var(--figma-color-text-secondary, var(--bridge-text-secondary));
+  font-size: 9px;
+  font-weight: 400;
+}
+
+.utility-backdrop {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  display: grid;
+  align-items: start;
+  overflow: auto;
+  padding: 58px 14px 14px;
+  background: rgba(24, 28, 36, 0.46);
+  backdrop-filter: blur(5px);
+}
+
+.utility-dialog {
+  width: 100%;
+  max-width: 372px;
+  max-height: calc(100vh - 72px);
+  margin: 0 auto;
+  overflow: auto;
+  border: 1px solid var(--bridge-line);
+  border-radius: 16px;
+  color: var(--figma-color-text, var(--bridge-text));
+  background: var(--bridge-card);
+  box-shadow: 0 24px 50px rgba(15, 18, 24, 0.3);
+}
+
+.utility-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--bridge-line);
+  padding: 12px 13px;
+}
+
+.utility-header h2 {
+  margin: 2px 0 0;
+  font-size: 14px;
+}
+
+.eyebrow {
+  color: var(--bridge-accent);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bridge-canvas: #181818;
-    --bridge-card: #242424;
-    --bridge-soft: #2c2c2c;
-    --bridge-line: #3a3a3a;
-    --bridge-code: #111111;
-    --bridge-shadow: 0 8px 26px rgba(0, 0, 0, 0.24);
+    --bridge-canvas: #20242c;
+    --bridge-card: #292e37;
+    --bridge-soft: #323844;
+    --bridge-line: #434b59;
+    --bridge-text: #edf0f5;
+    --bridge-text-secondary: #aeb5c1;
+    --bridge-code: #1b1f27;
+    --bridge-shadow: 0 10px 28px rgba(10, 13, 18, 0.22);
+  }
+
+  .utility-backdrop {
+    background: rgba(15, 18, 24, 0.52);
   }
 }
 

@@ -17,7 +17,42 @@
             <p class="subtitle">Move editable designs between both apps.</p>
           </div>
         </div>
-        <span id="status" class="badge working">Connecting…</span>
+        <div class="header-actions">
+          <span id="status" class="badge working">Connecting…</span>
+          <div class="more-menu">
+            <button
+              id="more-menu-button"
+              type="button"
+              class="icon-button"
+              aria-label="More options"
+              aria-haspopup="menu"
+              aria-expanded="false"
+            >
+              <span aria-hidden="true">•••</span>
+            </button>
+            <div
+              id="more-menu-popover"
+              class="more-menu-popover"
+              role="menu"
+              hidden
+            >
+              <button id="open-advanced" type="button" role="menuitem">
+                <span>
+                  <strong>Advanced options</strong>
+                  <small>Link, inspect, or reset</small>
+                </span>
+                <span aria-hidden="true">›</span>
+              </button>
+              <button id="open-json" type="button" role="menuitem">
+                <span>
+                  <strong>View JSON details</strong>
+                  <small>See or copy the latest response</small>
+                </span>
+                <span aria-hidden="true">›</span>
+              </button>
+            </div>
+          </div>
+        </div>
       </header>
 
       <section id="connection" class="connection-card">
@@ -193,49 +228,85 @@
           <span class="section-label">Latest activity</span>
           <p id="detail">Connected. Choose what you want to move.</p>
         </section>
-
-        <details class="advanced-panel">
-          <summary>Advanced options</summary>
-          <div class="advanced-content">
-            <p>
-              Use these only when reconnecting an existing copy or diagnosing
-              the plugin.
-            </p>
-            <label for="adopt-root-id">Existing Pencil page ID</label>
-            <div class="row">
-              <input id="adopt-root-id" placeholder="Example: BLdoF" />
-              <button id="adopt-copy" type="button" class="secondary" disabled>
-                Link copy
-              </button>
-            </div>
-            <button id="selection" type="button" class="quiet full-width">
-              Inspect Figma selection
-            </button>
-            <button id="write-test" type="button" class="quiet full-width">
-              Test Figma write access
-            </button>
-            <button
-              id="forget-connection"
-              type="button"
-              class="quiet full-width"
-            >
-              Forget saved connection
-            </button>
-          </div>
-        </details>
-
-        <details id="technical-details" class="technical-panel">
-          <summary>View JSON details</summary>
-          <div class="technical-toolbar">
-            <span>Latest bridge response</span>
-            <button id="copy-json" type="button" class="quiet">
-              Copy JSON
-            </button>
-          </div>
-          <pre id="output" tabindex="0">No technical details yet.</pre>
-        </details>
       </section>
     </main>
+
+    <div id="utility-backdrop" class="utility-backdrop" hidden>
+      <section
+        id="advanced-dialog"
+        class="utility-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="advanced-dialog-title"
+        hidden
+      >
+        <header class="utility-header">
+          <div>
+            <span class="eyebrow">Plugin tools</span>
+            <h2 id="advanced-dialog-title">Advanced options</h2>
+          </div>
+          <button
+            type="button"
+            class="icon-button close-utility"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </header>
+        <div class="advanced-content">
+          <p>
+            Use these only when reconnecting an existing copy or diagnosing the
+            plugin.
+          </p>
+          <label for="adopt-root-id">Existing Pencil page ID</label>
+          <div class="row">
+            <input id="adopt-root-id" placeholder="Example: BLdoF" />
+            <button id="adopt-copy" type="button" class="secondary" disabled>
+              Link copy
+            </button>
+          </div>
+          <button id="selection" type="button" class="secondary full-width">
+            Inspect Figma selection
+          </button>
+          <button id="write-test" type="button" class="secondary full-width">
+            Test Figma write access
+          </button>
+          <button id="forget-connection" type="button" class="quiet full-width">
+            Forget saved connection
+          </button>
+        </div>
+      </section>
+
+      <section
+        id="technical-details"
+        class="utility-dialog technical-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="json-dialog-title"
+        hidden
+      >
+        <header class="utility-header">
+          <div>
+            <span class="eyebrow">Latest bridge response</span>
+            <h2 id="json-dialog-title">JSON details</h2>
+          </div>
+          <button
+            type="button"
+            class="icon-button close-utility"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </header>
+        <div class="technical-toolbar">
+          <span>Useful when reporting a problem</span>
+          <button id="copy-json" type="button" class="secondary">
+            Copy JSON
+          </button>
+        </div>
+        <pre id="output" tabindex="0">No technical details yet.</pre>
+      </section>
+    </div>
     <script>
       /* __SCRIPT__ */
     </script>
