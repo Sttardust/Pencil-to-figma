@@ -132,6 +132,9 @@ explicit details panels and remain available for troubleshooting or sharing a te
 Connection onboarding distinguishes a missing companion, an outdated companion, and Pencil without
 an open design. The plugin offers the appropriate download, update, or retry action instead of
 showing the same developer error for all three conditions.
+Transfer failures also identify whether validation, fonts, assets, comparison, writing,
+verification, or persistence failed. Retry guidance appears only for operations that are safe to
+repeat, and local filesystem paths are removed from public error details.
 
 ### Automatic connection
 

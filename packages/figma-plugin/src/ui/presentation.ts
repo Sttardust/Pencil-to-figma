@@ -31,7 +31,8 @@ export function assessCompanionHealth(value: unknown): CompanionCompatibility {
       capabilities.includes("header-auth") &&
       capabilities.includes("restricted-origins") &&
       capabilities.includes("multi-screen-export") &&
-      capabilities.includes("grouped-export-placement"),
+      capabilities.includes("grouped-export-placement") &&
+      capabilities.includes("typed-public-errors"),
     ),
     ...(version ? { version } : {}),
   };

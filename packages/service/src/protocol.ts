@@ -43,4 +43,11 @@ export type ServerMessage =
   | { type: "ready"; protocol: 1; penState: string }
   | { type: "pen-state"; requestId: string; text: string }
   | { type: "pen-screens"; requestId: string; text: string }
-  | { type: "failed"; requestId?: string; code: string; message: string };
+  | {
+      type: "failed";
+      requestId?: string;
+      code: string;
+      message: string;
+      phase?: string;
+      retrySafe?: boolean;
+    };

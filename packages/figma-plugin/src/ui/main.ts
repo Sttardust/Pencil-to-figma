@@ -986,6 +986,8 @@ async function request(
       message.message ?? `Bridge error ${response.status}`,
       response.status,
       typeof message.code === "string" ? message.code : undefined,
+      typeof message.phase === "string" ? message.phase : undefined,
+      message.retrySafe === true,
     );
   return message;
 }
@@ -1123,7 +1125,14 @@ function setStatus(
 }
 
 function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
+  if (!(error instanceof Error)) return fallback;
+  if (
+    error instanceof BridgeRequestError &&
+    error.retrySafe &&
+    error.phase !== "connection"
+  )
+    return `${error.message} You can try this action again.`;
+  return error.message;
 }
 
 class BridgeRequestError extends Error {
@@ -1131,6 +1140,8 @@ class BridgeRequestError extends Error {
     message: string,
     readonly status: number,
     readonly code?: string,
+    readonly phase?: string,
+    readonly retrySafe = false,
   ) {
     super(message);
   }

@@ -44,6 +44,7 @@ import {
   collectPenBridgeMappings,
   type PenBridgeMapping,
 } from "./manifest/figma-export.js";
+import { toPublicBridgeError } from "./public-error.js";
 
 export interface BridgeServerOptions {
   host: string;
@@ -144,6 +145,8 @@ export class BridgeServer {
           type: "failed",
           code: "SCHEMA_JSON",
           message: "Invalid JSON",
+          phase: "validation",
+          retrySafe: false,
         });
         return;
       }
@@ -153,7 +156,9 @@ export class BridgeServer {
         send(socket, {
           type: "failed",
           code: "SCHEMA_MESSAGE",
-          message: parsed.error.message,
+          message: "The bridge received an invalid message.",
+          phase: "validation",
+          retrySafe: false,
         });
         return;
       }
@@ -166,6 +171,8 @@ export class BridgeServer {
             type: "failed",
             code: "AUTH_PAIRING",
             message: "Invalid or expired pairing code",
+            phase: "connection",
+            retrySafe: true,
           });
           return;
         }
@@ -180,6 +187,8 @@ export class BridgeServer {
             type: "failed",
             code: "AUTH_RECONNECT",
             message: "Saved connection is no longer valid",
+            phase: "connection",
+            retrySafe: true,
           });
           return;
         }
@@ -194,6 +203,8 @@ export class BridgeServer {
             type: "failed",
             code: "AUTH_TOKEN",
             message: "Invalid session token",
+            phase: "connection",
+            retrySafe: true,
           });
           return;
         }
@@ -206,10 +217,13 @@ export class BridgeServer {
             penState: summarizeState(state.text),
           });
         } catch (error) {
+          const failure = toPublicBridgeError(error);
           send(socket, {
             type: "failed",
-            code: "CONNECTION_PEN",
-            message: publicMessage(error),
+            code: failure.code,
+            message: failure.message,
+            phase: failure.phase,
+            retrySafe: failure.retrySafe,
           });
         }
         return;
@@ -220,6 +234,8 @@ export class BridgeServer {
           type: "failed",
           code: "AUTH_REQUIRED",
           message: "Pair and authenticate first",
+          phase: "connection",
+          retrySafe: true,
         });
         return;
       }
@@ -239,6 +255,8 @@ export class BridgeServer {
         type: "failed",
         code: "ORIGIN_FORBIDDEN",
         message: "This local bridge accepts browser requests only from Figma",
+        phase: "connection",
+        retrySafe: false,
       });
       return;
     }
@@ -252,6 +270,8 @@ export class BridgeServer {
         type: "failed",
         code: "AUTH_TOKEN_URL_FORBIDDEN",
         message: "Send the session token in the x-pen-fig-token header",
+        phase: "connection",
+        retrySafe: false,
       });
       return;
     }
@@ -277,6 +297,8 @@ export class BridgeServer {
             type: "failed",
             code: "SCHEMA_MESSAGE",
             message: "Expected a valid local authorization request",
+            phase: "validation",
+            retrySafe: false,
           });
           return;
         }
@@ -286,6 +308,8 @@ export class BridgeServer {
             type: "failed",
             code: "AUTH_APPROVAL_BUSY",
             message: "A connection approval is already waiting on this Mac",
+            phase: "connection",
+            retrySafe: true,
           });
           return;
         }
@@ -294,6 +318,8 @@ export class BridgeServer {
             type: "failed",
             code: "AUTH_APPROVAL_RATE_LIMITED",
             message: "Wait a moment before requesting another approval",
+            phase: "connection",
+            retrySafe: true,
           });
           return;
         }
@@ -302,6 +328,8 @@ export class BridgeServer {
             type: "failed",
             code: "AUTH_APPROVAL_UNAVAILABLE",
             message: "Native connection approval is unavailable",
+            phase: "connection",
+            retrySafe: false,
           });
           return;
         }
@@ -310,6 +338,8 @@ export class BridgeServer {
             type: "failed",
             code: "AUTH_APPROVAL_DENIED",
             message: "Connection was not allowed on this Mac",
+            phase: "connection",
+            retrySafe: true,
           });
           return;
         }
@@ -330,6 +360,8 @@ export class BridgeServer {
             type: "failed",
             code: "SCHEMA_MESSAGE",
             message: "Expected a valid pair message",
+            phase: "validation",
+            retrySafe: false,
           });
           return;
         }
@@ -339,6 +371,8 @@ export class BridgeServer {
             type: "failed",
             code: "AUTH_PAIRING",
             message: "Invalid or expired pairing code",
+            phase: "connection",
+            retrySafe: true,
           });
           return;
         }
@@ -359,6 +393,8 @@ export class BridgeServer {
             type: "failed",
             code: "SCHEMA_MESSAGE",
             message: "Expected a valid reconnect message",
+            phase: "validation",
+            retrySafe: false,
           });
           return;
         }
@@ -370,6 +406,8 @@ export class BridgeServer {
             type: "failed",
             code: "AUTH_RECONNECT",
             message: "Saved connection is no longer valid",
+            phase: "connection",
+            retrySafe: true,
           });
           return;
         }
@@ -390,6 +428,8 @@ export class BridgeServer {
           type: "failed",
           code: "AUTH_REQUIRED",
           message: "Pair and authenticate first",
+          phase: "connection",
+          retrySafe: true,
         });
         return;
       }
@@ -1195,13 +1235,17 @@ export class BridgeServer {
         type: "failed",
         code: "NOT_FOUND",
         message: "Not found",
+        phase: "validation",
+        retrySafe: false,
       });
     } catch (error) {
-      const message = publicMessage(error);
-      json(response, message === "Request body too large" ? 413 : 500, {
+      const failure = toPublicBridgeError(error);
+      json(response, failure.httpStatus, {
         type: "failed",
-        code: "CONNECTION_PEN",
-        message,
+        code: failure.code,
+        message: failure.message,
+        phase: failure.phase,
+        retrySafe: failure.retrySafe,
       });
     }
   }
@@ -1473,10 +1517,13 @@ export class BridgeServer {
         });
       }
     } catch (error) {
+      const publicError = toPublicBridgeError(error);
       const failure: ServerMessage = {
         type: "failed",
-        code: "CONNECTION_PEN",
-        message: publicMessage(error),
+        code: publicError.code,
+        message: publicError.message,
+        phase: publicError.phase,
+        retrySafe: publicError.retrySafe,
         ...(message.type === "pen-state" || message.type === "list-pen-screens"
           ? { requestId: message.requestId }
           : {}),
@@ -1748,10 +1795,6 @@ function includeDiffAncestors(
 function send(socket: WebSocket, message: ServerMessage): void {
   if (socket.readyState === WebSocket.OPEN)
     socket.send(JSON.stringify(message));
-}
-
-function publicMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Unknown service error";
 }
 
 function summarizeState(text: string): string {

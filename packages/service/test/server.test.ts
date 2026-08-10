@@ -194,6 +194,39 @@ describe("BridgeServer", () => {
     });
   });
 
+  it("returns structured validation errors from authenticated endpoints", async () => {
+    const sessions = new SessionManager();
+    const credentials = sessions.approve();
+    const server = new BridgeServer({
+      host: "127.0.0.1",
+      port: 0,
+      pen: {} as PenMcpClient,
+      sessions,
+    });
+    servers.push(server);
+    const port = await server.start();
+    const response = await globalThis.fetch(
+      `http://localhost:${port}/figma/export`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-pen-fig-token": credentials.token,
+        },
+        body: "{",
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      type: "failed",
+      code: "SCHEMA_JSON",
+      message: "The bridge received invalid JSON.",
+      phase: "validation",
+      retrySafe: false,
+    });
+  });
+
   it("pairs and reads Pen screens over loopback HTTP", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "pen-fig-server-"));
     temporaryDirectories.push(directory);

@@ -12,3 +12,8 @@ export {
 export { PenMcpClient } from "./pen/mcp-client.js";
 export { SessionManager } from "./session.js";
 export { ManifestRepository } from "./manifest/repository.js";
+export {
+  toPublicBridgeError,
+  type PublicBridgeError,
+  type PublicErrorPhase,
+} from "./public-error.js";
