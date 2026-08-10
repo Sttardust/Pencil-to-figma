@@ -833,7 +833,10 @@ function parseHex(input: string): {
 function gradientTransform(
   rotation: number,
 ): [[number, number, number], [number, number, number]] {
-  const radians = ((rotation - 90) * Math.PI) / 180;
+  // Pencil and Figma measure a linear gradient's zero axis in opposite
+  // vertical directions. The quarter-turn offset keeps Pencil's stop order
+  // intact while matching the direction users see on the canvas.
+  const radians = ((rotation + 90) * Math.PI) / 180;
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
   return [

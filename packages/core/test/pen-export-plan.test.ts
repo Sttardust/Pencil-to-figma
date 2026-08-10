@@ -124,6 +124,36 @@ describe("planFigmaToPenCreate", () => {
     });
   });
 
+  it("round-trips Pencil gradient rotation without reversing its stops", () => {
+    const document = importPenDocument(
+      {
+        id: "scrim",
+        type: "rectangle",
+        width: 393,
+        height: 500,
+        fill: {
+          type: "gradient",
+          gradientType: "linear",
+          rotation: 180,
+          colors: [
+            { color: "#1a151200", position: 0 },
+            { color: "#1a1512ff", position: 0.72 },
+          ],
+        },
+      },
+      { documentId: "test.pen" },
+    );
+    document.source = { app: "figma", documentId: "figma-local" };
+
+    const insert = planFigmaToPenCreate(document).operations.find(
+      (operation) => operation.type === "insert",
+    );
+
+    expect(insert?.payload).toMatchObject({
+      fill: [expect.objectContaining({ rotation: 180 })],
+    });
+  });
+
   it("preserves managed Pencil variable references in reverse payloads", () => {
     const document = importPenDocument(
       {

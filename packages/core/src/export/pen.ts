@@ -370,7 +370,7 @@ function gradientRotation(
   transform: [[number, number, number], [number, number, number]],
 ): number {
   const radians = Math.atan2(transform[1][0], transform[0][0]);
-  return ((radians * 180) / Math.PI + 90 + 360) % 360;
+  return ((radians * 180) / Math.PI - 90 + 360) % 360;
 }
 
 function rgbaToHex(color: {

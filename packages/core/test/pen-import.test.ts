@@ -116,6 +116,37 @@ describe("importPenDocument", () => {
     );
   });
 
+  it("maps Pencil's downward gradient direction to Figma", () => {
+    const document = importPenDocument(
+      {
+        id: "scrim",
+        type: "rectangle",
+        width: 393,
+        height: 500,
+        fill: {
+          type: "gradient",
+          gradientType: "linear",
+          rotation: 180,
+          colors: [
+            { color: "#1a151200", position: 0 },
+            { color: "#1a1512ff", position: 0.72 },
+          ],
+        },
+      },
+      { documentId: "test.pen" },
+    );
+
+    const fill = document.root.fills?.[0];
+    expect(fill?.type).toBe("gradient");
+    if (fill?.type !== "gradient") throw new Error("Expected gradient fill");
+    expect(fill.transform[0][0]).toBeCloseTo(0);
+    expect(fill.transform[0][1]).toBeCloseTo(1);
+    expect(fill.transform[0][2]).toBeCloseTo(0);
+    expect(fill.transform[1][0]).toBeCloseTo(-1);
+    expect(fill.transform[1][1]).toBeCloseTo(0);
+    expect(fill.transform[1][2]).toBeCloseTo(1);
+  });
+
   it("preserves negative gaps, per-side strokes, and nonuniform radii", () => {
     const root: PenNode = {
       id: "geometry",

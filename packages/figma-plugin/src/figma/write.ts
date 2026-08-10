@@ -27,8 +27,9 @@ import { toFigmaLayoutPositioning } from "./layout-position.js";
 import { needsOverlayLayoutRebuild } from "./migration.js";
 import { findCleanRightSidePosition } from "./placement.js";
 import { autoLayoutFillFallback, type LayoutAxis } from "./sizing.js";
+import { bridgeStackOrder } from "./stacking.js";
 
-const WRITE_SCHEMA_VERSION = "6";
+const WRITE_SCHEMA_VERSION = "7";
 const ROOT_GAP = 120;
 const COMPONENT_GAP = 40;
 
@@ -49,6 +50,7 @@ export interface LayoutDiagnostics {
   children: Array<{
     bridgeId: string;
     name: string;
+    stackIndex: number;
     layoutPosition: string;
     width: number;
     height: number;
@@ -189,6 +191,7 @@ export async function writeBridgeDocument(
       await materializeComponentDependencies(document, context);
       await applySyncPlan(document, mappedRoot, plan, context);
       stabilizeOverlayRootLayout(document.root, mappedRoot, context);
+      stabilizeOverlayRootStacking(document.root, mappedRoot, context);
       discardUnusedPreparedComponents(context);
       figma.commitUndo();
     } catch (error) {
@@ -224,6 +227,7 @@ export async function writeBridgeDocument(
     await materializeComponentDependencies(document, context);
     root = await createNode(document.root, figma.currentPage, context);
     stabilizeOverlayRootLayout(document.root, root, context);
+    stabilizeOverlayRootStacking(document.root, root, context);
     discardUnusedPreparedComponents(context);
     placeCreatedDocumentRoots(root, document, context, options);
     figma.currentPage.selection = [root];
@@ -268,6 +272,7 @@ async function rebuildMappedDocumentRoot(
     await materializeComponentDependencies(document, context);
     replacement = await createNode(document.root, figma.currentPage, context);
     stabilizeOverlayRootLayout(document.root, replacement, context);
+    stabilizeOverlayRootStacking(document.root, replacement, context);
     discardUnusedPreparedComponents(context);
     replacement.x = originalPosition.x;
     replacement.y = options.preferredRootTop ?? originalPosition.y;
@@ -325,6 +330,10 @@ function describeRootLayout(
         {
           bridgeId: source.bridgeId,
           name: source.name,
+          stackIndex:
+            node.parent && "children" in node.parent
+              ? node.parent.children.indexOf(node)
+              : -1,
           layoutPosition:
             "layoutPositioning" in node &&
             typeof node.layoutPositioning === "string"
@@ -413,6 +422,19 @@ function stabilizeOverlayRootLayout(
     fillNode.layoutSizingHorizontal = "FIXED";
     fillNode.layoutSizingVertical = "FIXED";
   }
+}
+
+function stabilizeOverlayRootStacking(
+  sourceRoot: BridgeNode,
+  root: SceneNode,
+  context: WriteContext,
+): void {
+  if (!("children" in root)) return;
+
+  bridgeStackOrder(sourceRoot).forEach((bridgeId, index) => {
+    const node = context.nodes.get(bridgeId);
+    if (node?.parent === root) root.insertChild(index, node);
+  });
 }
 
 export async function writeBridgeNodeUpdates(
