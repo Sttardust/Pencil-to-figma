@@ -532,7 +532,7 @@ function renderRecentPencilExports(value: unknown): void {
     const name = document.createElement("span");
     name.className = "recent-export-name";
     name.textContent = entry.name;
-    name.title = `${entry.name} — canvas ${Math.round(entry.x)}, ${Math.round(entry.y)}`;
+    name.title = `${entry.name}, canvas ${Math.round(entry.x)}, ${Math.round(entry.y)}`;
     const copy = document.createElement("button");
     copy.type = "button";
     copy.className = "quiet recent-export-id";
@@ -1148,9 +1148,7 @@ function showCompanionProblem(error: unknown): boolean {
   authorizeConnection.hidden = true;
   retryConnection.hidden = false;
   retryConnection.textContent =
-    error.kind === "missing"
-      ? "I've installed it — check again"
-      : "Check again";
+    error.kind === "missing" ? "I've installed it, check again" : "Check again";
   downloadCompanion.hidden = false;
   downloadCompanion.textContent =
     error.kind === "missing" ? "Download Pencil Bridge" : "Download update";

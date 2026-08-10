@@ -100,9 +100,6 @@
           </div>
           <h2>Bring a Pencil screen into Figma</h2>
           <p>Find a screen, review what will be created, then send it.</p>
-          <button id="selected-screens" type="button" class="full-width">
-            Use selected Pencil pages
-          </button>
           <div class="row">
             <input
               id="screen-query"
@@ -112,9 +109,14 @@
               Find
             </button>
           </div>
-          <button id="screens" type="button" class="secondary full-width">
-            Browse all Pencil pages
-          </button>
+          <div class="page-source-actions">
+            <button id="selected-screens" type="button">
+              Use Selected Pencil Pages
+            </button>
+            <button id="screens" type="button" class="secondary">
+              Browse All Pencil Pages
+            </button>
+          </div>
           <div id="screen-list" class="screen-list"></div>
           <div id="import-review" class="review-panel" hidden>
             <div>
@@ -138,8 +140,8 @@
           </div>
           <h2>Send selected Figma screens to Pencil</h2>
           <p>
-            Select one or more screens—or layers inside them. Each screen
-            becomes a separate editable Pencil copy.
+            Select one or more screens, including layers inside them. Each
+            screen becomes a separate editable Pencil copy.
           </p>
           <button id="prepare-export" type="button" class="full-width">
             Review selected screens
