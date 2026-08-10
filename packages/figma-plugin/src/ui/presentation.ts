@@ -67,7 +67,8 @@ export function assessCompanionHealth(value: unknown): CompanionCompatibility {
       capabilities.includes("typed-public-errors") &&
       capabilities.includes("pencil-selection") &&
       capabilities.includes("large-pencil-selection") &&
-      capabilities.includes("operation-recovery"),
+      capabilities.includes("operation-recovery") &&
+      capabilities.includes("correct-gradient-direction"),
     ),
     ...(version ? { version } : {}),
   };

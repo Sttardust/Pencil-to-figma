@@ -14,7 +14,7 @@ describe("companion health presentation", () => {
       assessCompanionHealth({
         ok: true,
         protocol: 1,
-        companionVersion: "0.1.9",
+        companionVersion: "0.1.10",
         capabilities: [
           "automatic-reconnect",
           "native-approval",
@@ -26,9 +26,10 @@ describe("companion health presentation", () => {
           "pencil-selection",
           "large-pencil-selection",
           "operation-recovery",
+          "correct-gradient-direction",
         ],
       }),
-    ).toEqual({ compatible: true, version: "0.1.9" });
+    ).toEqual({ compatible: true, version: "0.1.10" });
   });
 
   it("requires an update for legacy or incompatible health responses", () => {
@@ -51,6 +52,24 @@ describe("companion health presentation", () => {
         capabilities: ["native-approval"],
       }),
     ).toEqual({ compatible: false, version: "0.1.2" });
+    expect(
+      assessCompanionHealth({
+        ok: true,
+        protocol: 1,
+        companionVersion: "0.1.9",
+        capabilities: [
+          "native-approval",
+          "header-auth",
+          "restricted-origins",
+          "multi-screen-export",
+          "grouped-export-placement",
+          "typed-public-errors",
+          "pencil-selection",
+          "large-pencil-selection",
+          "operation-recovery",
+        ],
+      }),
+    ).toEqual({ compatible: false, version: "0.1.9" });
   });
 });
 

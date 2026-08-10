@@ -15,7 +15,8 @@ On the first connection, macOS displays an Allow/Cancel message. Choosing **Allo
 private saved connection without asking the user to copy or type a code. The older pairing-code
 flow remains collapsed in the plugin as a troubleshooting fallback.
 
-Version 0.1.9 supports multi-screen Figma → Pencil export with grouped placement. A Figma batch is
+Version 0.1.10 supports multi-screen Figma → Pencil export with grouped placement and corrected
+Pencil/Figma gradient direction conversion. A Figma batch is
 sent as individually verified screen operations so a failure cannot leave a completed-looking
 partial screen. Each completed root becomes the placement anchor for the next screen, keeping the
 batch together from left to right. The shared sidecar retains separate root ownership for every
