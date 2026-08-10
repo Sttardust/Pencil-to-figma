@@ -1,5 +1,14 @@
 import { authoredDocumentHashes } from "@pen-fig/core";
+import {
+  bridgeDocumentSchema,
+  type BridgeDocument,
+  type BridgeNode,
+} from "@pen-fig/bridge-schema";
 import type { FigmaReadResult } from "./read.js";
+
+export const MAX_PENCIL_IMPORT_SCREENS = 12;
+export const MAX_PENCIL_IMPORT_NODES = 5_000;
+export const MAX_PENCIL_IMPORT_ASSET_BYTES = 64 * 1024 * 1024;
 
 export interface ExportPlanCounts {
   assets: number;
@@ -64,5 +73,60 @@ export function sumExportPlanCounts(
       finalizes: total.finalizes + current.finalizes,
     }),
     { assets: 0, inserts: 0, finalizes: 0 },
+  );
+}
+
+export interface PencilImportBatchSummary {
+  documents: BridgeDocument[];
+  nodeCount: number;
+  assetBytes: number;
+}
+
+export function validatePencilImportBatch(
+  inputs: unknown[],
+): PencilImportBatchSummary {
+  if (!inputs.length)
+    throw new Error("Select at least one Pencil page to send to Figma.");
+  if (inputs.length > MAX_PENCIL_IMPORT_SCREENS)
+    throw new Error(
+      `Select no more than ${MAX_PENCIL_IMPORT_SCREENS} Pencil pages at once.`,
+    );
+
+  const documents = inputs.map((input) => bridgeDocumentSchema.parse(input));
+  const rootOwners = new Map<string, string>();
+  let nodeCount = 0;
+  let assetBytes = 0;
+  for (const document of documents) {
+    const previousOwner = rootOwners.get(document.root.bridgeId);
+    if (previousOwner)
+      throw new Error(
+        `“${previousOwner}” and “${document.root.name}” refer to the same Pencil page. Select each page once.`,
+      );
+    rootOwners.set(document.root.bridgeId, document.root.name);
+    nodeCount += countBridgeNodes(document.root);
+    for (const component of document.components ?? [])
+      nodeCount += countBridgeNodes(component);
+    assetBytes += document.assets.reduce(
+      (total, asset) =>
+        total + (asset.status === "ready" ? asset.byteLength : 0),
+      0,
+    );
+  }
+
+  if (nodeCount > MAX_PENCIL_IMPORT_NODES)
+    throw new Error(
+      `The selected Pencil pages contain ${nodeCount} editable layers. Send a smaller batch of ${MAX_PENCIL_IMPORT_NODES.toLocaleString()} layers or fewer.`,
+    );
+  if (assetBytes > MAX_PENCIL_IMPORT_ASSET_BYTES)
+    throw new Error(
+      "The selected Pencil pages contain more than 64 MiB of images. Send fewer pages at once.",
+    );
+  return { documents, nodeCount, assetBytes };
+}
+
+function countBridgeNodes(node: BridgeNode): number {
+  return (
+    1 +
+    node.children.reduce((total, child) => total + countBridgeNodes(child), 0)
   );
 }

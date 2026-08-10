@@ -12,6 +12,7 @@ import { authoredDocumentHashes, planFigmaToPenCreate } from "@pen-fig/core";
 import {
   sumExportPlanCounts,
   validateFigmaExportBatch,
+  validatePencilImportBatch,
 } from "./figma/batch.js";
 import {
   mergeRecentPencilExports,
@@ -36,6 +37,9 @@ figma.ui.onmessage = async (message: {
   penRootId?: unknown;
   direction?: unknown;
   bridgeId?: unknown;
+  document?: unknown;
+  documents?: unknown;
+  assetData?: unknown;
 }) => {
   if (message.type === "load-recent-exports") {
     figma.ui.postMessage({
@@ -404,13 +408,11 @@ figma.ui.onmessage = async (message: {
     }
   }
 
-  if (message.type === "apply-document" && "document" in message) {
+  if (message.type === "apply-document" && message.document !== undefined) {
     try {
       const result = await writeBridgeDocument(
         message.document,
-        "assetData" in message &&
-          message.assetData &&
-          typeof message.assetData === "object"
+        message.assetData && typeof message.assetData === "object"
           ? (message.assetData as Record<string, string>)
           : {},
       );
@@ -437,7 +439,7 @@ figma.ui.onmessage = async (message: {
     }
   }
 
-  if (message.type === "preview-document" && "document" in message) {
+  if (message.type === "preview-document" && message.document !== undefined) {
     try {
       const result = await previewBridgeDocument(message.document);
       figma.ui.postMessage({ type: "import-preview", ok: true, ...result });
@@ -446,6 +448,53 @@ figma.ui.onmessage = async (message: {
         type: "import-preview",
         ok: false,
         message: error instanceof Error ? error.message : "Preview failed",
+      });
+    }
+  }
+
+  if (message.type === "preview-documents") {
+    try {
+      if (!Array.isArray(message.documents))
+        throw new Error("The Pencil page selection is invalid");
+      const batch = validatePencilImportBatch(message.documents);
+      const results = [];
+      for (const document of batch.documents)
+        results.push({
+          name: document.root.name,
+          ...(await previewBridgeDocument(document)),
+        });
+      const operations = results.reduce(
+        (total, result) => ({
+          create: total.create + Number(result.operations.create ?? 0),
+          update: total.update + Number(result.operations.update ?? 0),
+          move: total.move + Number(result.operations.move ?? 0),
+          delete: total.delete + Number(result.operations.delete ?? 0),
+        }),
+        { create: 0, update: 0, move: 0, delete: 0 },
+      );
+      figma.ui.postMessage({
+        type: "import-preview",
+        ok: true,
+        operation: results.every((result) => result.operation === "unchanged")
+          ? "unchanged"
+          : results.every((result) => result.operation === "created")
+            ? "created"
+            : "mixed",
+        screenCount: results.length,
+        nodeCount: results.reduce(
+          (total, result) => total + result.nodeCount,
+          0,
+        ),
+        operations,
+        screens: results,
+        warnings: results.flatMap((result) => result.warnings),
+      });
+    } catch (error) {
+      figma.ui.postMessage({
+        type: "import-preview",
+        ok: false,
+        message:
+          error instanceof Error ? error.message : "Batch preview failed",
       });
     }
   }

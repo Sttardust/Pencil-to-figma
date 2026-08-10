@@ -23,6 +23,7 @@ const importReviewTitle = required<HTMLElement>("import-review-title");
 const importReviewSummary = required<HTMLElement>("import-review-summary");
 const importWarnings = required<HTMLElement>("import-warnings");
 const confirmImport = required<HTMLButtonElement>("confirm-import");
+const cancelImport = required<HTMLButtonElement>("cancel-import");
 const prepareExport = required<HTMLButtonElement>("prepare-export");
 const exportReview = required<HTMLElement>("export-review");
 const exportReviewTitle = required<HTMLElement>("export-review-title");
@@ -69,13 +70,16 @@ let pendingExportPlan: any;
 let pendingSyncPreview: any;
 let pendingConflict: any;
 let recentPencilExports: any[] = [];
-let pendingImport:
-  | {
-      document: any;
-      assetData: Record<string, string>;
-      transferId: string;
-    }
-  | undefined;
+interface PendingImport {
+  name: string;
+  document: any;
+  assetData: Record<string, string>;
+  transferId: string;
+}
+
+let pendingImports: PendingImport[] = [];
+let activeImportIndex = 0;
+let completedImportResults: any[] = [];
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -112,27 +116,28 @@ screenQuery.addEventListener("keydown", (event) => {
 });
 
 confirmImport.addEventListener("click", () => {
-  if (!pendingImport) return;
+  if (!pendingImports.length) return;
+  activeImportIndex = Math.min(activeImportIndex, pendingImports.length - 1);
+  if (activeImportIndex === 0) completedImportResults = [];
   confirmImport.disabled = true;
-  setStatus("Sending to Figma…", "working");
-  setActivity("Creating the editable Figma design…");
-  parent.postMessage(
-    {
-      pluginMessage: {
-        type: "apply-document",
-        document: pendingImport.document,
-        assetData: pendingImport.assetData,
-      },
-    },
-    "*",
-  );
+  cancelImport.disabled = true;
+  applyCurrentPencilImport();
 });
 
-required("cancel-import").addEventListener("click", () => {
-  pendingImport = undefined;
+cancelImport.addEventListener("click", () => {
+  const completed = completedImportResults.length;
+  const total = pendingImports.length;
+  pendingImports = [];
+  activeImportIndex = 0;
+  completedImportResults = [];
   importReview.hidden = true;
-  setStatus("Connected", "success");
-  setActivity("Transfer cancelled. No Figma layers were changed.");
+  cancelImport.disabled = false;
+  setStatus(completed ? "Transfer stopped" : "Connected", "success");
+  setActivity(
+    completed
+      ? `${completed} of ${total} pages were already created and linked. The remaining pages were not sent.`
+      : "Transfer cancelled. No Figma layers were changed.",
+  );
 });
 
 prepareExport.addEventListener("click", () => {
@@ -331,7 +336,7 @@ window.onmessage = (event) => {
     renderRecentPencilExports(message.exports);
 
   if (message.type === "import-preview") handleImportPreview(message);
-  if (message.type === "import-result") handleImportResult(message);
+  if (message.type === "import-result") void handleImportResult(message);
   if (message.type === "figma-export-preview")
     handleFigmaExportPreview(message);
   if (message.type === "figma-export-plan") handleFigmaExportPlan(message);
@@ -345,8 +350,11 @@ window.onmessage = (event) => {
 
 function handleImportPreview(message: any): void {
   if (!message.ok) {
-    pendingImport = undefined;
+    pendingImports = [];
+    activeImportIndex = 0;
+    completedImportResults = [];
     confirmImport.disabled = false;
+    cancelImport.disabled = false;
     importReview.hidden = true;
     showOperationError(
       message.message ?? "This Pencil screen could not be reviewed.",
@@ -354,38 +362,64 @@ function handleImportPreview(message: any): void {
     return;
   }
   const counts = message.operations ?? {};
-  importReviewTitle.textContent =
-    message.operation === "created"
-      ? "Ready to create a Figma copy"
-      : message.operation === "unchanged"
-        ? "This screen is already in Figma"
-        : "Ready to update the Figma copy";
-  importReviewSummary.textContent =
-    message.operation === "created"
-      ? `${editableNodeSummary(Number(counts.create ?? message.nodeCount ?? 0))} will be created in open canvas space.`
-      : message.operation === "unchanged"
-        ? "No design changes were found. Continue to select and refresh its saved link."
-        : `${message.nodeCount} change${message.nodeCount === 1 ? "" : "s"} will be applied to the existing Figma copy.`;
+  const screenCount = Number(message.screenCount ?? 1);
+  if (screenCount > 1) {
+    importReviewTitle.textContent =
+      message.operation === "unchanged"
+        ? "These pages are already in Figma"
+        : `Ready to send ${screenCount} Pencil pages`;
+    importReviewSummary.textContent =
+      message.operation === "unchanged"
+        ? "No design changes were found. Continue to open and refresh their saved links."
+        : `${editableNodeSummary(Number(message.nodeCount ?? counts.create ?? 0))} across ${screenCount} pages will be created or updated separately in Figma.`;
+  } else {
+    importReviewTitle.textContent =
+      message.operation === "created"
+        ? "Ready to create a Figma copy"
+        : message.operation === "unchanged"
+          ? "This screen is already in Figma"
+          : "Ready to update the Figma copy";
+    importReviewSummary.textContent =
+      message.operation === "created"
+        ? `${editableNodeSummary(Number(counts.create ?? message.nodeCount ?? 0))} will be created in open canvas space.`
+        : message.operation === "unchanged"
+          ? "No design changes were found. Continue to select and refresh its saved link."
+          : `${message.nodeCount} change${message.nodeCount === 1 ? "" : "s"} will be applied to the existing Figma copy.`;
+  }
   renderWarnings(importWarnings, message.warnings);
   confirmImport.textContent =
-    message.operation === "unchanged" ? "Open existing copy" : "Send to Figma";
+    screenCount > 1
+      ? message.operation === "unchanged"
+        ? "Open existing copies"
+        : `Send ${screenCount} pages to Figma`
+      : message.operation === "unchanged"
+        ? "Open existing copy"
+        : "Send to Figma";
   confirmImport.disabled = false;
+  cancelImport.disabled = false;
   importReview.hidden = false;
   setStatus("Ready to send", "success");
   setActivity("Review the summary, then send when you are ready.");
 }
 
-function handleImportResult(message: any): void {
+async function handleImportResult(message: any): Promise<void> {
   confirmImport.disabled = false;
+  cancelImport.disabled = false;
   if (!message.ok) {
-    showOperationError(
-      message.message ?? "The Pencil screen could not be sent to Figma.",
-    );
+    const completed = completedImportResults.length;
+    if (completed > 0) {
+      setStatus("Partly sent", "error");
+      setActivity(
+        `${completed} of ${pendingImports.length} pages were created and linked safely. “${pendingImports[activeImportIndex]?.name ?? "The next page"}” could not be sent: ${message.message ?? "Unknown error"}`,
+      );
+    } else
+      showOperationError(
+        message.message ?? "The Pencil screen could not be sent to Figma.",
+      );
+    confirmImport.textContent = "Try this page again";
     return;
   }
-  const completedImport = pendingImport;
-  pendingImport = undefined;
-  importReview.hidden = true;
+  const completedImport = pendingImports[activeImportIndex];
   if (!completedImport) {
     setStatus("Sent, but not linked", "error");
     setActivity(
@@ -394,35 +428,69 @@ function handleImportResult(message: any): void {
     return;
   }
   setStatus("Saving link…", "working");
-  setActivity("The Figma design is ready. Saving its Pencil connection…");
-  void request("/sync/complete", {
-    method: "POST",
-    body: JSON.stringify({
-      transferId: completedImport.transferId,
-      mappings: message.mappings,
-      ...(message.figmaBaselineHashes &&
-      typeof message.figmaBaselineHashes === "object"
-        ? { figmaBaselineHashes: message.figmaBaselineHashes }
-        : {}),
-      ...(message.figmaDocumentId
-        ? { figmaDocumentId: message.figmaDocumentId }
-        : {}),
-    }),
-  })
-    .then((committed) => {
-      setTechnical({ ...message, manifest: committed });
-      setStatus("Sent to Figma", "success");
-      const mappedCount = Array.isArray(message.mappings)
-        ? message.mappings.length
-        : Number(message.nodeCount ?? 0);
-      setActivity(
-        `${editableNodeSummary(mappedCount)} are ready in Figma and linked for future comparisons.`,
-      );
-    })
-    .catch((error) => {
-      setStatus("Sent, but link failed", "error");
-      setActivity(errorMessage(error, "The sync link could not be saved."));
+  setActivity(`Saving the Pencil connection for “${completedImport.name}”…`);
+  try {
+    const committed = await request("/sync/complete", {
+      method: "POST",
+      body: JSON.stringify({
+        transferId: completedImport.transferId,
+        mappings: message.mappings,
+        ...(message.figmaBaselineHashes &&
+        typeof message.figmaBaselineHashes === "object"
+          ? { figmaBaselineHashes: message.figmaBaselineHashes }
+          : {}),
+        ...(message.figmaDocumentId
+          ? { figmaDocumentId: message.figmaDocumentId }
+          : {}),
+      }),
     });
+    completedImportResults.push({
+      name: completedImport.name,
+      ...message,
+      manifest: committed,
+    });
+    activeImportIndex += 1;
+    if (activeImportIndex < pendingImports.length) {
+      confirmImport.disabled = true;
+      cancelImport.disabled = true;
+      applyCurrentPencilImport();
+      return;
+    }
+
+    const screenCount = pendingImports.length;
+    const mappedCount = completedImportResults.reduce(
+      (total, result) =>
+        total +
+        (Array.isArray(result.mappings)
+          ? result.mappings.length
+          : Number(result.nodeCount ?? 0)),
+      0,
+    );
+    setTechnical({
+      type: "import-batch-result",
+      ok: true,
+      screenCount,
+      nodeCount: mappedCount,
+      results: completedImportResults,
+    });
+    pendingImports = [];
+    activeImportIndex = 0;
+    completedImportResults = [];
+    importReview.hidden = true;
+    cancelImport.disabled = false;
+    setStatus("Sent to Figma", "success");
+    setActivity(
+      screenCount === 1
+        ? `${editableNodeSummary(mappedCount)} are ready in Figma and linked for future comparisons.`
+        : `${screenCount} pages with ${editableNodeSummary(mappedCount)} are ready in separate Figma canvas space and linked for future comparisons.`,
+    );
+  } catch (error) {
+    confirmImport.disabled = false;
+    cancelImport.disabled = false;
+    confirmImport.textContent = "Try this page again";
+    setStatus("Sent, but link failed", "error");
+    setActivity(errorMessage(error, "The sync link could not be saved."));
+  }
 }
 
 function handleFigmaExportPreview(message: any): void {
@@ -681,9 +749,13 @@ async function loadSelectedScreens(): Promise<void> {
   try {
     const message = await request("/pen/selection", { method: "GET" });
     const screens = parseScreens(message.text);
-    if (screens.length === 1) {
-      setActivity(`Found “${screens[0]!.name}”. Preparing it for Figma…`);
-      await importScreen(screens[0]!.id);
+    if (screens.length) {
+      setActivity(
+        screens.length === 1
+          ? `Found “${screens[0]!.name}”. Preparing it for Figma…`
+          : `Found ${screens.length} selected Pencil pages. Preparing them together…`,
+      );
+      await importScreens(screens);
       return;
     }
     renderScreens(message.text, "selection");
@@ -765,30 +837,87 @@ function parseScreens(text: unknown): { id: string; name: string }[] {
 }
 
 async function importScreen(nodeId: string): Promise<void> {
+  await importScreens([{ id: nodeId, name: "Selected Pencil page" }]);
+}
+
+async function importScreens(
+  screens: Array<{ id: string; name: string }>,
+): Promise<void> {
   try {
+    pendingImports = [];
+    activeImportIndex = 0;
+    completedImportResults = [];
     importReview.hidden = true;
-    setStatus("Reviewing screen…", "working");
-    setActivity(
-      "Reading the Pencil screen and checking what Figma will create…",
+    setStatus(
+      screens.length === 1 ? "Reviewing screen…" : "Reviewing pages…",
+      "working",
     );
-    const message = await request(`/pen/nodes/${nodeId}`, { method: "GET" });
-    pendingImport = {
-      document: message.document,
-      assetData: message.assetData ?? {},
-      transferId: message.transferId,
-    };
+    setActivity(
+      screens.length === 1
+        ? "Reading the Pencil screen and checking what Figma will create…"
+        : `Reading 1 of ${screens.length} selected Pencil pages…`,
+    );
+    for (const [index, screen] of screens.entries()) {
+      if (screens.length > 1)
+        setActivity(
+          `Reading ${index + 1} of ${screens.length}: “${screen.name}”…`,
+        );
+      const message = await request(`/pen/nodes/${screen.id}`, {
+        method: "GET",
+      });
+      pendingImports.push({
+        name: String(message.document?.root?.name ?? screen.name),
+        document: message.document,
+        assetData: message.assetData ?? {},
+        transferId: message.transferId,
+      });
+    }
     parent.postMessage(
       {
-        pluginMessage: { type: "preview-document", document: message.document },
+        pluginMessage:
+          pendingImports.length === 1
+            ? {
+                type: "preview-document",
+                document: pendingImports[0]!.document,
+              }
+            : {
+                type: "preview-documents",
+                documents: pendingImports.map((item) => item.document),
+              },
       },
       "*",
     );
   } catch (error) {
-    pendingImport = undefined;
+    pendingImports = [];
+    activeImportIndex = 0;
+    completedImportResults = [];
     showOperationError(
-      errorMessage(error, "The Pencil screen could not be reviewed."),
+      errorMessage(error, "The selected Pencil pages could not be reviewed."),
     );
   }
+}
+
+function applyCurrentPencilImport(): void {
+  const item = pendingImports[activeImportIndex];
+  if (!item) return;
+  const total = pendingImports.length;
+  setStatus(
+    total === 1
+      ? "Sending to Figma…"
+      : `Sending ${activeImportIndex + 1} of ${total}…`,
+    "working",
+  );
+  setActivity(`Creating or updating “${item.name}” in Figma…`);
+  parent.postMessage(
+    {
+      pluginMessage: {
+        type: "apply-document",
+        document: item.document,
+        assetData: item.assetData,
+      },
+    },
+    "*",
+  );
 }
 
 async function connect(code: string): Promise<void> {
