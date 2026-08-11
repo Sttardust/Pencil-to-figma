@@ -34,7 +34,7 @@ const RECENT_EXPORTS_STORAGE_KEY = "penFigRecentPencilExportsV1";
 const COMPANION_DOWNLOAD_URL =
   "https://github.com/Sttardust/Pencil-to-figma/releases";
 
-figma.showUI(__html__, { width: 400, height: 700, themeColors: true });
+figma.showUI(__html__, { width: 400, height: 450, themeColors: true });
 
 figma.ui.onmessage = async (message: {
   type: string;
