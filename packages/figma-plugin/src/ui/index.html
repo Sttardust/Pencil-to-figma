@@ -109,206 +109,270 @@
       </section>
 
       <section id="workspace" class="workspace" hidden>
-        <section class="transfer-card pencil-card">
-          <div class="direction-label">
-            <span class="app-dot pencil-dot"></span>
-            Pencil to Figma
-          </div>
-          <h2>Bring Pencil pages into Figma</h2>
-          <p>
-            Find or select pages, review what will be created, then send them.
-          </p>
-          <div class="row">
-            <input
-              id="screen-query"
-              placeholder="Search screens or enter id:XW8AE"
-            />
-            <button id="search-screens" type="button" class="secondary">
-              Find
-            </button>
-          </div>
-          <div class="page-source-actions">
-            <button id="selected-screens" type="button">
-              Use Selected Pencil Pages
-            </button>
-            <button id="screens" type="button" class="secondary">
-              Browse All Pencil Pages
-            </button>
-          </div>
-          <div id="screen-list" class="screen-list"></div>
-          <div id="import-review" class="review-panel" hidden>
-            <div class="review-panel-heading">
-              <div>
-                <strong id="import-review-title">Ready to send</strong>
-                <p id="import-review-summary"></p>
-              </div>
-              <button
-                id="dismiss-import-review"
-                type="button"
-                class="icon-button card-dismiss"
-                aria-label="Close Pencil to Figma review"
-              >
-                ×
-              </button>
-            </div>
-            <ul id="import-warnings" class="warning-list"></ul>
-            <div class="review-actions">
-              <button id="confirm-import" type="button">Send to Figma</button>
-              <button id="cancel-import" type="button" class="quiet">
-                Cancel
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <section class="transfer-card figma-card">
-          <div class="direction-label">
-            <span class="app-dot figma-dot"></span>
+        <nav class="workflow-tabs" role="tablist" aria-label="Bridge actions">
+          <button
+            id="tab-figma-to-pencil"
+            class="workflow-tab active"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            aria-controls="panel-figma-to-pencil"
+            tabindex="0"
+          >
             Figma to Pencil
-          </div>
-          <h2>Send selected Figma screens to Pencil</h2>
-          <p>
-            Select one or more screens, including layers inside them. Each
-            screen becomes a separate editable Pencil copy.
-          </p>
-          <button id="prepare-export" type="button" class="full-width">
-            Review selected screens
           </button>
-          <div id="export-review" class="review-panel" hidden>
-            <div class="review-panel-heading">
-              <div>
-                <strong id="export-review-title">Ready to send</strong>
-                <p id="export-review-summary"></p>
+          <button
+            id="tab-pencil-to-figma"
+            class="workflow-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="panel-pencil-to-figma"
+            tabindex="-1"
+          >
+            Pencil to Figma
+          </button>
+          <button
+            id="tab-comparison"
+            class="workflow-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="panel-comparison"
+            tabindex="-1"
+          >
+            Comparison
+          </button>
+        </nav>
+
+        <div class="workflow-stage">
+          <section
+            id="panel-pencil-to-figma"
+            class="workflow-panel pencil-panel"
+            role="tabpanel"
+            aria-labelledby="tab-pencil-to-figma"
+            tabindex="0"
+            hidden
+          >
+            <div class="direction-label">
+              <span class="app-dot pencil-dot"></span>
+              Pencil to Figma
+            </div>
+            <h2>Bring Pencil pages into Figma</h2>
+            <p>
+              Find or select pages, review what will be created, then send them.
+            </p>
+            <div class="row">
+              <input
+                id="screen-query"
+                placeholder="Search screens or enter id:XW8AE"
+              />
+              <button id="search-screens" type="button" class="secondary">
+                Find
+              </button>
+            </div>
+            <div class="page-source-actions">
+              <button id="selected-screens" type="button">
+                Use Selected Pencil Pages
+              </button>
+              <button id="screens" type="button" class="secondary">
+                Browse All Pencil Pages
+              </button>
+            </div>
+            <div id="screen-list" class="screen-list"></div>
+            <div id="import-review" class="review-panel" hidden>
+              <div class="review-panel-heading">
+                <div>
+                  <strong id="import-review-title">Ready to send</strong>
+                  <p id="import-review-summary"></p>
+                </div>
+                <button
+                  id="dismiss-import-review"
+                  type="button"
+                  class="icon-button card-dismiss"
+                  aria-label="Close Pencil to Figma review"
+                >
+                  ×
+                </button>
               </div>
+              <ul id="import-warnings" class="warning-list"></ul>
+              <div class="review-actions">
+                <button id="confirm-import" type="button">Send to Figma</button>
+                <button id="cancel-import" type="button" class="quiet">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section
+            id="panel-figma-to-pencil"
+            class="workflow-panel figma-panel"
+            role="tabpanel"
+            aria-labelledby="tab-figma-to-pencil"
+            tabindex="0"
+          >
+            <div class="direction-label">
+              <span class="app-dot figma-dot"></span>
+              Figma to Pencil
+            </div>
+            <h2>Send selected Figma screens to Pencil</h2>
+            <p>
+              Select one or more screens, including layers inside them. Each
+              screen becomes a separate editable Pencil copy.
+            </p>
+            <button id="prepare-export" type="button" class="full-width">
+              Review selected screens
+            </button>
+            <div id="export-review" class="review-panel" hidden>
+              <div class="review-panel-heading">
+                <div>
+                  <strong id="export-review-title">Ready to send</strong>
+                  <p id="export-review-summary"></p>
+                </div>
+                <button
+                  id="dismiss-export-review"
+                  type="button"
+                  class="icon-button card-dismiss"
+                  aria-label="Close Figma to Pencil review"
+                >
+                  ×
+                </button>
+              </div>
+              <ul id="export-warnings" class="warning-list"></ul>
+              <div class="review-actions">
+                <button id="confirm-export" type="button">
+                  Send copy to Pencil
+                </button>
+                <button id="cancel-export" type="button" class="quiet">
+                  Cancel
+                </button>
+              </div>
+            </div>
+            <div id="recent-exports" class="recent-exports" hidden>
+              <div class="recent-exports-heading">
+                <div>
+                  <strong>Recently sent to Pencil</strong>
+                  <p>
+                    These names and IDs match the new top-level Pencil pages.
+                  </p>
+                </div>
+                <button id="clear-recent-exports" type="button" class="quiet">
+                  Clear
+                </button>
+              </div>
+              <div id="recent-export-list" class="recent-export-list"></div>
               <button
-                id="dismiss-export-review"
+                id="copy-export-ids"
                 type="button"
-                class="icon-button card-dismiss"
-                aria-label="Close Figma to Pencil review"
+                class="secondary full-width"
               >
-                ×
+                Copy page names and IDs
               </button>
             </div>
-            <ul id="export-warnings" class="warning-list"></ul>
-            <div class="review-actions">
-              <button id="confirm-export" type="button">
-                Send copy to Pencil
-              </button>
-              <button id="cancel-export" type="button" class="quiet">
-                Cancel
-              </button>
+          </section>
+
+          <section
+            id="panel-comparison"
+            class="workflow-panel comparison-panel"
+            role="tabpanel"
+            aria-labelledby="tab-comparison"
+            tabindex="0"
+            hidden
+          >
+            <div class="direction-label">
+              <span class="app-dot sync-dot"></span>
+              Keep both versions aligned
             </div>
-          </div>
-          <div id="recent-exports" class="recent-exports" hidden>
-            <div class="recent-exports-heading">
-              <div>
-                <strong>Recently sent to Pencil</strong>
-                <p>These names and IDs match the new top-level Pencil pages.</p>
-              </div>
-              <button id="clear-recent-exports" type="button" class="quiet">
-                Clear
-              </button>
-            </div>
-            <div id="recent-export-list" class="recent-export-list"></div>
+            <h2>Compare a synced design</h2>
+            <p>
+              Select its complete Figma frame. We will show which app changed.
+            </p>
             <button
-              id="copy-export-ids"
+              id="compare-sync"
               type="button"
               class="secondary full-width"
             >
-              Copy page names and IDs
+              Compare Pencil and Figma
             </button>
-          </div>
-        </section>
-
-        <section class="transfer-card sync-card">
-          <div class="direction-label">
-            <span class="app-dot sync-dot"></span>
-            Keep both versions aligned
-          </div>
-          <h2>Compare a synced design</h2>
-          <p>
-            Select its complete Figma frame. We will show which app changed.
-          </p>
-          <button id="compare-sync" type="button" class="secondary full-width">
-            Compare Pencil and Figma
-          </button>
-          <div id="sync-review" class="review-panel" hidden>
-            <div class="review-panel-heading">
-              <div>
-                <strong id="sync-review-title"></strong>
-                <p id="sync-review-summary"></p>
+            <div id="sync-review" class="review-panel" hidden>
+              <div class="review-panel-heading">
+                <div>
+                  <strong id="sync-review-title"></strong>
+                  <p id="sync-review-summary"></p>
+                </div>
+                <button
+                  id="dismiss-sync-review"
+                  type="button"
+                  class="icon-button card-dismiss"
+                  aria-label="Close comparison"
+                >
+                  ×
+                </button>
               </div>
-              <button
-                id="dismiss-sync-review"
-                type="button"
-                class="icon-button card-dismiss"
-                aria-label="Close comparison"
-              >
-                ×
+              <div id="comparison" class="comparison" hidden>
+                <div>
+                  <span>Changed in Pencil</span>
+                  <strong id="pencil-change-count">0</strong>
+                </div>
+                <div>
+                  <span>Changed in Figma</span>
+                  <strong id="figma-change-count">0</strong>
+                </div>
+              </div>
+              <div id="appearance-review" class="appearance-review">
+                <div class="appearance-heading">
+                  <span>Appearance</span>
+                  <strong id="appearance-score">Checking…</strong>
+                </div>
+                <p id="appearance-summary">
+                  Rendering the linked Pencil and Figma screens…
+                </p>
+                <button
+                  id="toggle-appearance-diff"
+                  type="button"
+                  class="quiet full-width"
+                  hidden
+                >
+                  Show highlighted differences
+                </button>
+                <img
+                  id="appearance-diff"
+                  alt="Highlighted visual differences between Pencil and Figma"
+                  hidden
+                />
+              </div>
+              <button id="apply-sync" type="button" class="full-width" hidden>
+                Apply changes
               </button>
             </div>
-            <div id="comparison" class="comparison" hidden>
-              <div>
-                <span>Changed in Pencil</span>
-                <strong id="pencil-change-count">0</strong>
+            <aside id="conflict-panel" class="conflict-panel" hidden>
+              <div class="review-panel-heading">
+                <div>
+                  <strong>Changed in both apps</strong>
+                  <p id="conflict-summary"></p>
+                </div>
+                <button
+                  id="dismiss-conflict"
+                  type="button"
+                  class="icon-button card-dismiss"
+                  aria-label="Close conflict warning"
+                >
+                  ×
+                </button>
               </div>
-              <div>
-                <span>Changed in Figma</span>
-                <strong id="figma-change-count">0</strong>
+              <div class="conflict-actions">
+                <button id="keep-pencil" type="button">Use Pencil</button>
+                <button id="keep-figma" type="button" class="secondary">
+                  Use Figma
+                </button>
+                <button id="cancel-conflict" type="button" class="quiet">
+                  Decide later
+                </button>
               </div>
-            </div>
-            <div id="appearance-review" class="appearance-review">
-              <div class="appearance-heading">
-                <span>Appearance</span>
-                <strong id="appearance-score">Checking…</strong>
-              </div>
-              <p id="appearance-summary">
-                Rendering the linked Pencil and Figma screens…
-              </p>
-              <button
-                id="toggle-appearance-diff"
-                type="button"
-                class="quiet full-width"
-                hidden
-              >
-                Show highlighted differences
-              </button>
-              <img
-                id="appearance-diff"
-                alt="Highlighted visual differences between Pencil and Figma"
-                hidden
-              />
-            </div>
-            <button id="apply-sync" type="button" class="full-width" hidden>
-              Apply changes
-            </button>
-          </div>
-          <aside id="conflict-panel" class="conflict-panel" hidden>
-            <div class="review-panel-heading">
-              <div>
-                <strong>Changed in both apps</strong>
-                <p id="conflict-summary"></p>
-              </div>
-              <button
-                id="dismiss-conflict"
-                type="button"
-                class="icon-button card-dismiss"
-                aria-label="Close conflict warning"
-              >
-                ×
-              </button>
-            </div>
-            <div class="conflict-actions">
-              <button id="keep-pencil" type="button">Use Pencil</button>
-              <button id="keep-figma" type="button" class="secondary">
-                Use Figma
-              </button>
-              <button id="cancel-conflict" type="button" class="quiet">
-                Decide later
-              </button>
-            </div>
-          </aside>
-        </section>
+            </aside>
+          </section>
+        </div>
 
         <section
           id="transfer-quality"

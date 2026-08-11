@@ -93,6 +93,12 @@ const transferQualityList = required<HTMLElement>("transfer-quality-list");
 const dismissTransferQuality = required<HTMLButtonElement>(
   "dismiss-transfer-quality",
 );
+const workflowTabs = Array.from(
+  document.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+);
+const workflowPanels = Array.from(
+  document.querySelectorAll<HTMLElement>('[role="tabpanel"]'),
+);
 
 let token: string | undefined;
 let savedReconnectToken: string | undefined;
@@ -142,6 +148,31 @@ dismissTransferQuality.addEventListener("click", () => {
   transferQuality.hidden = true;
   setActivity("Appearance results closed.");
 });
+
+for (const [index, tab] of workflowTabs.entries()) {
+  tab.addEventListener("click", () => activateWorkflowTab(tab));
+  tab.addEventListener("keydown", (event) => {
+    const last = workflowTabs.length - 1;
+    const nextIndex =
+      event.key === "ArrowRight"
+        ? index === last
+          ? 0
+          : index + 1
+        : event.key === "ArrowLeft"
+          ? index === 0
+            ? last
+            : index - 1
+          : event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? last
+              : undefined;
+    if (nextIndex === undefined) return;
+    event.preventDefault();
+    const nextTab = workflowTabs[nextIndex];
+    if (nextTab) activateWorkflowTab(nextTab, true);
+  });
+}
 
 required("screens").addEventListener("click", () => void loadScreens());
 required("selected-screens").addEventListener(
@@ -1697,6 +1728,21 @@ function showOperationError(message: string): void {
 
 function setActivity(message: string): void {
   detail.textContent = message;
+}
+
+function activateWorkflowTab(
+  selectedTab: HTMLButtonElement,
+  focus = false,
+): void {
+  const panelId = selectedTab.getAttribute("aria-controls");
+  for (const tab of workflowTabs) {
+    const selected = tab === selectedTab;
+    tab.classList.toggle("active", selected);
+    tab.setAttribute("aria-selected", String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+  }
+  for (const panel of workflowPanels) panel.hidden = panel.id !== panelId;
+  if (focus) selectedTab.focus();
 }
 
 function setStatus(

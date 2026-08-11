@@ -44,11 +44,7 @@ main {
   row-gap: 8px;
   align-items: start;
   margin-bottom: 12px;
-  border: 1px solid var(--bridge-line);
-  border-radius: 15px;
-  padding: 13px;
-  background: var(--bridge-card);
-  box-shadow: var(--bridge-shadow);
+  padding: 4px 2px 8px;
 }
 
 .brand {
@@ -97,7 +93,7 @@ label,
 
 .badge {
   grid-area: status;
-  justify-self: end;
+  justify-self: start;
   max-width: 100%;
   border: 1px solid transparent;
   border-radius: 999px;
@@ -106,7 +102,7 @@ label,
   font-weight: 600;
   line-height: 1.35;
   overflow-wrap: anywhere;
-  text-align: right;
+  text-align: left;
 }
 
 .badge.success {
@@ -131,7 +127,8 @@ label,
 }
 
 .connection-card,
-.transfer-card,
+.workflow-tabs,
+.workflow-stage,
 .activity-card,
 .advanced-panel,
 .technical-panel {
@@ -187,7 +184,6 @@ label,
 }
 
 .connection-card,
-.transfer-card,
 .activity-card {
   padding: 13px;
 }
@@ -197,31 +193,63 @@ label,
   gap: 12px;
 }
 
-.transfer-card {
-  position: relative;
+.workflow-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  box-shadow: none;
+}
+
+button.workflow-tab {
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 6px 5px;
+  color: var(--figma-color-text-secondary, var(--bridge-text-secondary));
+  background: transparent;
+  font-size: 9px;
+  line-height: 1.25;
+}
+
+button.workflow-tab:hover:not(:disabled) {
+  color: var(--figma-color-text-secondary, var(--bridge-text-secondary));
+  background: var(--bridge-hover);
+}
+
+button.workflow-tab.active {
+  border-color: var(--bridge-accent-line);
+  color: var(--bridge-accent);
+  background: var(--bridge-accent-soft);
+}
+
+button.workflow-tab:focus-visible {
+  outline: 2px solid var(--bridge-accent-line);
+  outline-offset: 1px;
+}
+
+.workflow-stage {
   overflow: hidden;
 }
 
-.transfer-card::before {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: 3px;
-  background: var(--card-accent);
-  content: "";
+.workflow-panel {
+  min-height: 230px;
+  padding: 16px;
+  outline: none;
 }
 
-.pencil-card {
-  --card-accent: var(--bridge-accent);
+.workflow-panel[hidden] {
+  display: none;
 }
 
-.figma-card {
-  --card-accent: #7b61ff;
+.workflow-panel h2 {
+  margin-bottom: 6px;
+  font-size: 15px;
 }
 
-.sync-card {
-  --card-accent: #5d899a;
+.workflow-panel > p {
+  margin-bottom: 14px;
 }
 
 .direction-label {
@@ -367,8 +395,8 @@ button:disabled {
   margin-top: 8px;
 }
 
-.transfer-card > .full-width,
-.transfer-card > .row + .full-width {
+.workflow-panel > .full-width,
+.workflow-panel > .row + .full-width {
   margin-top: 8px;
 }
 
