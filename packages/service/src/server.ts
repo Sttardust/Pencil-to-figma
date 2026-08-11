@@ -34,6 +34,7 @@ import {
 import { resolveAssets } from "./assets/resolve.js";
 import { ManifestRepository } from "./manifest/repository.js";
 import { writeFigmaCopyToPen } from "./export/pen-writer.js";
+import { verifyPencilWriteFidelity } from "./export/pen-verification.js";
 import {
   writeFigmaStructureToPen,
   writeFigmaUpdatesToPen,
@@ -625,6 +626,7 @@ export class BridgeServer {
               true,
               mappings,
             );
+            verifyPencilWriteFidelity(exportRequest.document, penDocument);
             if (journalId)
               await this.#journal
                 ?.setPhase(journalId, "committing")
@@ -952,6 +954,16 @@ export class BridgeServer {
           true,
           verifiedMappings,
         );
+        const existingPenHashes = authoredDocumentHashes(state.penDocument);
+        verifyPencilWriteFidelity(
+          syncRequest.document,
+          verifiedPenDocument,
+          structural
+            ? changedPenBridgeIds.filter(
+                (bridgeId) => !existingPenHashes[bridgeId],
+              )
+            : changedPenBridgeIds,
+        );
         const committed = structural
           ? await this.#commitFigmaExportManifest(
               syncRequest.document,
@@ -1097,6 +1109,13 @@ export class BridgeServer {
               true,
               verifiedMappings,
             );
+          verifyPencilWriteFidelity(
+            resolutionRequest.document,
+            verifiedPenDocument,
+            structural
+              ? bridgeIds.filter((bridgeId) => !initialPenHashes[bridgeId])
+              : bridgeIds,
+          );
           const verifiedHashes = authoredDocumentHashes(verifiedPenDocument);
           if (structural)
             assertMatchingStructure(

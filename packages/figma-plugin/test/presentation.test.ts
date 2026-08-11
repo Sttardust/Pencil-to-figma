@@ -14,7 +14,7 @@ describe("companion health presentation", () => {
       assessCompanionHealth({
         ok: true,
         protocol: 1,
-        companionVersion: "0.1.10",
+        companionVersion: "0.1.11",
         capabilities: [
           "automatic-reconnect",
           "native-approval",
@@ -27,9 +27,10 @@ describe("companion health presentation", () => {
           "large-pencil-selection",
           "operation-recovery",
           "correct-gradient-direction",
+          "pencil-write-fidelity-verification",
         ],
       }),
-    ).toEqual({ compatible: true, version: "0.1.10" });
+    ).toEqual({ compatible: true, version: "0.1.11" });
   });
 
   it("requires an update for legacy or incompatible health responses", () => {
@@ -83,6 +84,18 @@ describe("operation error presentation", () => {
       title: "Figma changed part of the design",
       message:
         "The bridge checked the imported layers and found a visual or layout difference. No new sync baseline was saved. Open JSON details for the affected layer, then try again after updating the plugin or companion.",
+    });
+  });
+
+  it("explains a failed Pencil read-back without developer language", () => {
+    expect(
+      presentOperationError(
+        "Pencil verification failed: Scrim: gradient direction changed",
+      ),
+    ).toEqual({
+      title: "Pencil changed part of the design",
+      message:
+        "The bridge checked the transferred layers and found a visual or layout difference. No new sync baseline was saved. Open JSON details for the affected layer, then try again after updating the companion.",
     });
   });
 });

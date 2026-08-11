@@ -28,6 +28,12 @@ export function presentOperationError(
       message:
         "The bridge checked the imported layers and found a visual or layout difference. No new sync baseline was saved. Open JSON details for the affected layer, then try again after updating the plugin or companion.",
     };
+  if (normalized.includes("pencil verification failed"))
+    return {
+      title: "Pencil changed part of the design",
+      message:
+        "The bridge checked the transferred layers and found a visual or layout difference. No new sync baseline was saved. Open JSON details for the affected layer, then try again after updating the companion.",
+    };
   if (normalized.includes("no top-level pencil pages"))
     return {
       title: "No complete Pencil pages selected",
@@ -74,7 +80,8 @@ export function assessCompanionHealth(value: unknown): CompanionCompatibility {
       capabilities.includes("pencil-selection") &&
       capabilities.includes("large-pencil-selection") &&
       capabilities.includes("operation-recovery") &&
-      capabilities.includes("correct-gradient-direction"),
+      capabilities.includes("correct-gradient-direction") &&
+      capabilities.includes("pencil-write-fidelity-verification"),
     ),
     ...(version ? { version } : {}),
   };
