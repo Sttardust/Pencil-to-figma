@@ -188,6 +188,17 @@ npm run format:check
 npm audit
 ```
 
+For a 2× Pencil/Figma render pair, run the visual acceptance check:
+
+```sh
+npm run visual:compare -- pencil.png figma.png \
+  --diff artifacts/visual/screen.diff.png \
+  --report artifacts/visual/screen.json
+```
+
+See [Visual acceptance testing](docs/visual-acceptance.md) for capture rules, thresholds, and the
+minimum release fixture set.
+
 ## Configuration
 
 | Variable               | Purpose                            | Default                        |

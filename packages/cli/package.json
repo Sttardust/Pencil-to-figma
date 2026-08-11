@@ -6,9 +6,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "doctor": "tsx src/main.ts doctor",
+    "visual:compare": "tsx src/main.ts visual-compare",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@pen-fig/service": "0.0.0"
+    "@pen-fig/service": "0.0.0",
+    "pixelmatch": "^7.2.0",
+    "pngjs": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/pngjs": "^6.0.5"
   }
 }

@@ -14,6 +14,7 @@
     "service:uninstall": "tsx scripts/macos-service.ts uninstall",
     "companion:build": "npm --workspace @pen-fig/macos-companion run build:app --",
     "doctor": "npm --workspace @pen-fig/cli run doctor",
+    "visual:compare": "npm --workspace @pen-fig/cli run visual:compare --",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
