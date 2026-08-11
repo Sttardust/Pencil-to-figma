@@ -423,6 +423,25 @@ button:disabled {
   margin: 3px 0 0;
 }
 
+.review-panel-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 26px;
+  align-items: start;
+  gap: 8px;
+}
+
+button.card-dismiss {
+  width: 26px;
+  min-height: 26px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 14px;
+}
+
+button.card-dismiss:hover:not(:disabled) {
+  background: var(--bridge-hover);
+}
+
 .recent-exports {
   margin-top: 10px;
   border-top: 1px solid var(--bridge-line);

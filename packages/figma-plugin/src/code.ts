@@ -48,6 +48,7 @@ figma.ui.onmessage = async (message: {
   importBatchId?: unknown;
   importBatchIndex?: unknown;
   importBatchSize?: unknown;
+  comparisonId?: unknown;
 }) => {
   if (message.type === "load-recent-exports") {
     figma.ui.postMessage({
@@ -296,6 +297,11 @@ figma.ui.onmessage = async (message: {
   }
 
   if (message.type === "preview-mapped-sync") {
+    const comparisonId =
+      typeof message.comparisonId === "number" &&
+      Number.isSafeInteger(message.comparisonId)
+        ? message.comparisonId
+        : undefined;
     try {
       if (typeof message.token !== "string" || !message.token)
         throw new Error("Pair and authenticate first");
@@ -320,7 +326,7 @@ figma.ui.onmessage = async (message: {
             ? result.message
             : `Bridge error ${response.status}`,
         );
-      figma.ui.postMessage(result);
+      figma.ui.postMessage({ ...result, comparisonId });
       try {
         const figmaPng = await exportSelectedFigmaPng(2);
         const visualResponse = await fetch(
@@ -347,7 +353,7 @@ figma.ui.onmessage = async (message: {
               ? visualResult.message
               : `Bridge error ${visualResponse.status}`,
           );
-        figma.ui.postMessage(visualResult);
+        figma.ui.postMessage({ ...visualResult, comparisonId });
       } catch (error) {
         figma.ui.postMessage({
           type: "visual-comparison-result",
@@ -356,6 +362,7 @@ figma.ui.onmessage = async (message: {
             error instanceof Error
               ? error.message
               : "Appearance comparison failed",
+          comparisonId,
         });
       }
     } catch (error) {
@@ -363,6 +370,7 @@ figma.ui.onmessage = async (message: {
         type: "figma-sync-preview",
         ok: false,
         message: error instanceof Error ? error.message : "Sync preview failed",
+        comparisonId,
       });
     }
   }

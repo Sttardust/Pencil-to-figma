@@ -135,6 +135,9 @@ The plugin UI groups transfers by direction and reduces each transfer to review 
 design comparison uses plain Pencil/Figma change counts and destination-specific update actions.
 Technical response JSON, native IDs, adoption, and diagnostic tools are hidden by default under
 explicit details panels and remain available for troubleshooting or sharing a test result.
+Review cards, comparison results, conflicts, and visible warning messages include a close control.
+Closing one returns to the normal connected view without applying changes; a late appearance
+render from a closed comparison is ignored.
 For Pencil → Figma, **Use Selected Pencil Pages** reads the current top-level page selection
 directly from Pencil. One selected page opens immediately for review. Several selected pages are
 reviewed together and then created or updated one at a time in separate open Figma canvas space,

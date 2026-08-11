@@ -31,12 +31,19 @@ const importReviewSummary = required<HTMLElement>("import-review-summary");
 const importWarnings = required<HTMLElement>("import-warnings");
 const confirmImport = required<HTMLButtonElement>("confirm-import");
 const cancelImport = required<HTMLButtonElement>("cancel-import");
+const dismissImportReview = required<HTMLButtonElement>(
+  "dismiss-import-review",
+);
 const prepareExport = required<HTMLButtonElement>("prepare-export");
 const exportReview = required<HTMLElement>("export-review");
 const exportReviewTitle = required<HTMLElement>("export-review-title");
 const exportReviewSummary = required<HTMLElement>("export-review-summary");
 const exportWarnings = required<HTMLElement>("export-warnings");
 const confirmExport = required<HTMLButtonElement>("confirm-export");
+const cancelExport = required<HTMLButtonElement>("cancel-export");
+const dismissExportReview = required<HTMLButtonElement>(
+  "dismiss-export-review",
+);
 const adoptRootId = required<HTMLInputElement>("adopt-root-id");
 const adoptCopy = required<HTMLButtonElement>("adopt-copy");
 const compareSync = required<HTMLButtonElement>("compare-sync");
@@ -47,6 +54,7 @@ const comparison = required<HTMLElement>("comparison");
 const pencilChangeCount = required<HTMLElement>("pencil-change-count");
 const figmaChangeCount = required<HTMLElement>("figma-change-count");
 const applySync = required<HTMLButtonElement>("apply-sync");
+const dismissSyncReview = required<HTMLButtonElement>("dismiss-sync-review");
 const appearanceReview = required<HTMLElement>("appearance-review");
 const appearanceScore = required<HTMLElement>("appearance-score");
 const appearanceSummary = required<HTMLElement>("appearance-summary");
@@ -59,6 +67,7 @@ const conflictSummary = required<HTMLElement>("conflict-summary");
 const keepPencil = required<HTMLButtonElement>("keep-pencil");
 const keepFigma = required<HTMLButtonElement>("keep-figma");
 const cancelConflict = required<HTMLButtonElement>("cancel-conflict");
+const dismissConflict = required<HTMLButtonElement>("dismiss-conflict");
 const copyJson = required<HTMLButtonElement>("copy-json");
 const technicalDetails = required<HTMLElement>("technical-details");
 const advancedDialog = required<HTMLElement>("advanced-dialog");
@@ -83,6 +92,8 @@ let pendingExportPreview: any;
 let pendingExportPlan: any;
 let pendingSyncPreview: any;
 let pendingConflict: any;
+let comparisonSequence = 0;
+let activeComparisonId: number | undefined;
 let recentPencilExports: any[] = [];
 interface PendingImport {
   name: string;
@@ -137,6 +148,7 @@ confirmImport.addEventListener("click", () => {
   if (activeImportIndex === 0) completedImportResults = [];
   confirmImport.disabled = true;
   cancelImport.disabled = true;
+  dismissImportReview.disabled = true;
   applyCurrentPencilImport();
 });
 
@@ -149,6 +161,7 @@ cancelImport.addEventListener("click", () => {
   activePencilImportBatchId = "";
   importReview.hidden = true;
   cancelImport.disabled = false;
+  dismissImportReview.disabled = false;
   setStatus(completed ? "Transfer stopped" : "Connected", "success");
   setActivity(
     completed
@@ -156,6 +169,7 @@ cancelImport.addEventListener("click", () => {
       : "Transfer cancelled. No Figma layers were changed.",
   );
 });
+dismissImportReview.addEventListener("click", () => cancelImport.click());
 
 prepareExport.addEventListener("click", () => {
   pendingExportPreview = undefined;
@@ -173,6 +187,8 @@ prepareExport.addEventListener("click", () => {
 confirmExport.addEventListener("click", () => {
   if (!pendingExportPlan || !token) return;
   confirmExport.disabled = true;
+  cancelExport.disabled = true;
+  dismissExportReview.disabled = true;
   setStatus("Sending to Pencil…", "working");
   const screenCount = Number(pendingExportPlan.screenCount ?? 1);
   setActivity(
@@ -186,12 +202,15 @@ confirmExport.addEventListener("click", () => {
   );
 });
 
-required("cancel-export").addEventListener("click", () => {
+cancelExport.addEventListener("click", () => {
   pendingExportPlan = undefined;
   exportReview.hidden = true;
+  cancelExport.disabled = false;
+  dismissExportReview.disabled = false;
   setStatus("Connected", "success");
   setActivity("Transfer cancelled. No Pencil layers were changed.");
 });
+dismissExportReview.addEventListener("click", () => cancelExport.click());
 
 adoptCopy.addEventListener("click", () => {
   const penRootId = adoptRootId.value.trim();
@@ -222,15 +241,24 @@ compareSync.addEventListener("click", () => {
   syncReview.hidden = true;
   hideConflict();
   resetAppearanceReview();
+  const comparisonId = ++comparisonSequence;
+  activeComparisonId = comparisonId;
   setStatus("Comparing…", "working");
   setActivity(
     "Comparing the selected Figma frame with its linked Pencil design…",
   );
   parent.postMessage(
-    { pluginMessage: { type: "preview-mapped-sync", token } },
+    {
+      pluginMessage: {
+        type: "preview-mapped-sync",
+        token,
+        comparisonId,
+      },
+    },
     "*",
   );
 });
+dismissSyncReview.addEventListener("click", closeComparisonReview);
 
 toggleAppearanceDiff.addEventListener("click", () => {
   const show = appearanceDiff.hidden;
@@ -243,6 +271,7 @@ toggleAppearanceDiff.addEventListener("click", () => {
 applySync.addEventListener("click", () => {
   if (!token || !pendingSyncPreview) return;
   applySync.disabled = true;
+  dismissSyncReview.disabled = true;
   const target = Number(pendingSyncPreview.actions?.toPencil ?? 0)
     ? "Pencil"
     : "Figma";
@@ -259,11 +288,7 @@ applySync.addEventListener("click", () => {
 keepPencil.addEventListener("click", () => resolveConflict("pen"));
 keepFigma.addEventListener("click", () => resolveConflict("figma"));
 cancelConflict.addEventListener("click", () => {
-  hideConflict();
-  pendingSyncPreview = undefined;
-  applySync.hidden = true;
-  setStatus("Connected", "success");
-  setActivity("No changes were made. You can compare again when ready.");
+  closeComparisonReview();
   setTechnical({
     type: "figma-sync-result",
     ok: true,
@@ -271,6 +296,7 @@ cancelConflict.addEventListener("click", () => {
     writes: 0,
   });
 });
+dismissConflict.addEventListener("click", () => cancelConflict.click());
 
 required("selection").addEventListener("click", () =>
   parent.postMessage({ pluginMessage: { type: "selection-summary" } }, "*"),
@@ -320,6 +346,15 @@ clearRecentExports.addEventListener("click", () => {
 });
 dismissOperationAlert.addEventListener("click", () => {
   operationAlert.hidden = true;
+  setStatus(
+    token ? "Connected" : "Not connected",
+    token ? "success" : "neutral",
+  );
+  setActivity(
+    token
+      ? "The message was closed. Choose what you want to move."
+      : "The message was closed.",
+  );
 });
 
 window.onmessage = (event) => {
@@ -387,6 +422,7 @@ function handleImportPreview(message: any): void {
     activePencilImportBatchId = "";
     confirmImport.disabled = false;
     cancelImport.disabled = false;
+    dismissImportReview.disabled = false;
     importReview.hidden = true;
     showOperationError(
       message.message ?? "This Pencil screen could not be reviewed.",
@@ -429,6 +465,7 @@ function handleImportPreview(message: any): void {
         : "Send to Figma";
   confirmImport.disabled = false;
   cancelImport.disabled = false;
+  dismissImportReview.disabled = false;
   importReview.hidden = false;
   setStatus("Ready to send", "success");
   setActivity("Review the summary, then send when you are ready.");
@@ -437,6 +474,7 @@ function handleImportPreview(message: any): void {
 async function handleImportResult(message: any): Promise<void> {
   confirmImport.disabled = false;
   cancelImport.disabled = false;
+  dismissImportReview.disabled = false;
   if (!message.ok) {
     const completed = completedImportResults.length;
     if (completed > 0) {
@@ -485,6 +523,7 @@ async function handleImportResult(message: any): Promise<void> {
     if (activeImportIndex < pendingImports.length) {
       confirmImport.disabled = true;
       cancelImport.disabled = true;
+      dismissImportReview.disabled = true;
       applyCurrentPencilImport();
       return;
     }
@@ -511,6 +550,7 @@ async function handleImportResult(message: any): Promise<void> {
     activePencilImportBatchId = "";
     importReview.hidden = true;
     cancelImport.disabled = false;
+    dismissImportReview.disabled = false;
     setStatus("Sent to Figma", "success");
     setActivity(
       screenCount === 1
@@ -520,6 +560,7 @@ async function handleImportResult(message: any): Promise<void> {
   } catch (error) {
     confirmImport.disabled = false;
     cancelImport.disabled = false;
+    dismissImportReview.disabled = false;
     confirmImport.textContent = "Try this page again";
     setStatus("Sent, but link failed", "error");
     setActivity(errorMessage(error, "The sync link could not be saved."));
@@ -572,6 +613,8 @@ function handleFigmaExportPlan(message: any): void {
       ? "Send copy to Pencil"
       : `Send ${screenCount} screens to Pencil`;
   confirmExport.disabled = false;
+  cancelExport.disabled = false;
+  dismissExportReview.disabled = false;
   exportReview.hidden = false;
   setStatus("Ready to send", "success");
   setActivity("Review the summary, then send when you are ready.");
@@ -587,6 +630,8 @@ function handleFigmaExportProgress(message: any): void {
 
 function handleFigmaExportResult(message: any): void {
   confirmExport.disabled = false;
+  cancelExport.disabled = false;
+  dismissExportReview.disabled = false;
   if (!message.ok) {
     const completed = Number(message.completedScreenCount ?? 0);
     const total = Number(message.screenCount ?? 1);
@@ -691,7 +736,13 @@ function handleAdoptResult(message: any): void {
 }
 
 function handleSyncPreview(message: any): void {
+  if (
+    typeof message.comparisonId === "number" &&
+    message.comparisonId !== activeComparisonId
+  )
+    return;
   compareSync.disabled = false;
+  dismissSyncReview.disabled = false;
   if (!message.ok) appearanceReview.hidden = true;
   if (message.ok) reconciliationRequired = false;
   pendingSyncPreview = message.ok ? message : undefined;
@@ -725,6 +776,7 @@ function handleSyncPreview(message: any): void {
 }
 
 function handleSyncResult(message: any): void {
+  dismissSyncReview.disabled = false;
   if (!message.ok) {
     showOperationError(
       message.message ?? "The reviewed changes could not be applied.",
@@ -763,6 +815,24 @@ function handleSyncResult(message: any): void {
   setActivity(syncReviewSummary.textContent ?? "The designs are synchronized.");
 }
 
+function closeComparisonReview(): void {
+  activeComparisonId = undefined;
+  comparisonSequence += 1;
+  pendingSyncPreview = undefined;
+  syncReview.hidden = true;
+  applySync.hidden = true;
+  applySync.disabled = true;
+  appearanceReview.hidden = true;
+  appearanceDiff.hidden = true;
+  appearanceDiff.removeAttribute("src");
+  toggleAppearanceDiff.hidden = true;
+  dismissSyncReview.disabled = false;
+  compareSync.disabled = false;
+  hideConflict();
+  setStatus("Connected", "success");
+  setActivity("Comparison closed. No changes were made.");
+}
+
 function resetAppearanceReview(): void {
   appearanceReview.hidden = false;
   appearanceScore.textContent = "Checking…";
@@ -775,6 +845,11 @@ function resetAppearanceReview(): void {
 }
 
 function handleVisualComparison(message: any): void {
+  if (
+    typeof message.comparisonId === "number" &&
+    message.comparisonId !== activeComparisonId
+  )
+    return;
   appearanceReview.hidden = false;
   if (!message.ok) {
     appearanceScore.textContent = "Could not compare";
@@ -1199,6 +1274,7 @@ function resolveConflict(direction: "pen" | "figma"): void {
   keepPencil.disabled = true;
   keepFigma.disabled = true;
   cancelConflict.disabled = true;
+  dismissConflict.disabled = true;
   setStatus(`Using ${winner}…`, "working");
   setActivity(`Updating the other app with the ${winner} version…`);
   parent.postMessage(
@@ -1220,6 +1296,7 @@ function hideConflict(): void {
   keepPencil.disabled = false;
   keepFigma.disabled = false;
   cancelConflict.disabled = false;
+  dismissConflict.disabled = false;
 }
 
 function renderWarnings(target: HTMLElement, warnings: unknown): void {

@@ -137,9 +137,19 @@
           </div>
           <div id="screen-list" class="screen-list"></div>
           <div id="import-review" class="review-panel" hidden>
-            <div>
-              <strong id="import-review-title">Ready to send</strong>
-              <p id="import-review-summary"></p>
+            <div class="review-panel-heading">
+              <div>
+                <strong id="import-review-title">Ready to send</strong>
+                <p id="import-review-summary"></p>
+              </div>
+              <button
+                id="dismiss-import-review"
+                type="button"
+                class="icon-button card-dismiss"
+                aria-label="Close Pencil to Figma review"
+              >
+                ×
+              </button>
             </div>
             <ul id="import-warnings" class="warning-list"></ul>
             <div class="review-actions">
@@ -165,9 +175,19 @@
             Review selected screens
           </button>
           <div id="export-review" class="review-panel" hidden>
-            <div>
-              <strong id="export-review-title">Ready to send</strong>
-              <p id="export-review-summary"></p>
+            <div class="review-panel-heading">
+              <div>
+                <strong id="export-review-title">Ready to send</strong>
+                <p id="export-review-summary"></p>
+              </div>
+              <button
+                id="dismiss-export-review"
+                type="button"
+                class="icon-button card-dismiss"
+                aria-label="Close Figma to Pencil review"
+              >
+                ×
+              </button>
             </div>
             <ul id="export-warnings" class="warning-list"></ul>
             <div class="review-actions">
@@ -213,8 +233,20 @@
             Compare Pencil and Figma
           </button>
           <div id="sync-review" class="review-panel" hidden>
-            <strong id="sync-review-title"></strong>
-            <p id="sync-review-summary"></p>
+            <div class="review-panel-heading">
+              <div>
+                <strong id="sync-review-title"></strong>
+                <p id="sync-review-summary"></p>
+              </div>
+              <button
+                id="dismiss-sync-review"
+                type="button"
+                class="icon-button card-dismiss"
+                aria-label="Close comparison"
+              >
+                ×
+              </button>
+            </div>
             <div id="comparison" class="comparison" hidden>
               <div>
                 <span>Changed in Pencil</span>
@@ -252,8 +284,20 @@
             </button>
           </div>
           <aside id="conflict-panel" class="conflict-panel" hidden>
-            <strong>Changed in both apps</strong>
-            <p id="conflict-summary"></p>
+            <div class="review-panel-heading">
+              <div>
+                <strong>Changed in both apps</strong>
+                <p id="conflict-summary"></p>
+              </div>
+              <button
+                id="dismiss-conflict"
+                type="button"
+                class="icon-button card-dismiss"
+                aria-label="Close conflict warning"
+              >
+                ×
+              </button>
+            </div>
             <div class="conflict-actions">
               <button id="keep-pencil" type="button">Use Pencil</button>
               <button id="keep-figma" type="button" class="secondary">
