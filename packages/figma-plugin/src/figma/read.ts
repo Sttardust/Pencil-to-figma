@@ -63,6 +63,20 @@ export async function readSelectedFigmaDocuments(
   return results;
 }
 
+export async function exportSelectedFigmaPng(scale = 2): Promise<Uint8Array> {
+  if (!Number.isFinite(scale) || scale <= 0 || scale > 4)
+    throw new Error("Figma comparison scale must be between 0 and 4");
+  await figma.currentPage.loadAsync();
+  const selected = resolveFigmaExportRoot(figma.currentPage.selection);
+  const bytes = await selected.exportAsync({
+    format: "PNG",
+    constraint: { type: "SCALE", value: scale },
+  });
+  if (bytes.byteLength > 16 * 1024 * 1024)
+    throw new Error("The Figma comparison image is larger than 16 MB");
+  return bytes;
+}
+
 async function readFigmaDocument(
   selected: FrameNode | ComponentNode,
   options: { collectAssetData?: boolean },

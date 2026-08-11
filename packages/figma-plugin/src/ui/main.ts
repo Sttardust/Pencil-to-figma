@@ -47,6 +47,13 @@ const comparison = required<HTMLElement>("comparison");
 const pencilChangeCount = required<HTMLElement>("pencil-change-count");
 const figmaChangeCount = required<HTMLElement>("figma-change-count");
 const applySync = required<HTMLButtonElement>("apply-sync");
+const appearanceReview = required<HTMLElement>("appearance-review");
+const appearanceScore = required<HTMLElement>("appearance-score");
+const appearanceSummary = required<HTMLElement>("appearance-summary");
+const appearanceDiff = required<HTMLImageElement>("appearance-diff");
+const toggleAppearanceDiff = required<HTMLButtonElement>(
+  "toggle-appearance-diff",
+);
 const conflictPanel = required<HTMLElement>("conflict-panel");
 const conflictSummary = required<HTMLElement>("conflict-summary");
 const keepPencil = required<HTMLButtonElement>("keep-pencil");
@@ -214,6 +221,7 @@ compareSync.addEventListener("click", () => {
   compareSync.disabled = true;
   syncReview.hidden = true;
   hideConflict();
+  resetAppearanceReview();
   setStatus("Comparing…", "working");
   setActivity(
     "Comparing the selected Figma frame with its linked Pencil design…",
@@ -222,6 +230,14 @@ compareSync.addEventListener("click", () => {
     { pluginMessage: { type: "preview-mapped-sync", token } },
     "*",
   );
+});
+
+toggleAppearanceDiff.addEventListener("click", () => {
+  const show = appearanceDiff.hidden;
+  appearanceDiff.hidden = !show;
+  toggleAppearanceDiff.textContent = show
+    ? "Hide highlighted differences"
+    : "Show highlighted differences";
 });
 
 applySync.addEventListener("click", () => {
@@ -359,6 +375,8 @@ window.onmessage = (event) => {
   if (message.type === "figma-export-adopted") handleAdoptResult(message);
   if (message.type === "figma-sync-preview") handleSyncPreview(message);
   if (message.type === "figma-sync-result") handleSyncResult(message);
+  if (message.type === "visual-comparison-result")
+    handleVisualComparison(message);
 };
 
 function handleImportPreview(message: any): void {
@@ -674,6 +692,7 @@ function handleAdoptResult(message: any): void {
 
 function handleSyncPreview(message: any): void {
   compareSync.disabled = false;
+  if (!message.ok) appearanceReview.hidden = true;
   if (message.ok) reconciliationRequired = false;
   pendingSyncPreview = message.ok ? message : undefined;
   const presented = presentSync(message);
@@ -742,6 +761,55 @@ function handleSyncResult(message: any): void {
     "success",
   );
   setActivity(syncReviewSummary.textContent ?? "The designs are synchronized.");
+}
+
+function resetAppearanceReview(): void {
+  appearanceReview.hidden = false;
+  appearanceScore.textContent = "Checking…";
+  appearanceSummary.textContent =
+    "Rendering the linked Pencil and Figma screens…";
+  appearanceDiff.hidden = true;
+  appearanceDiff.removeAttribute("src");
+  toggleAppearanceDiff.hidden = true;
+  toggleAppearanceDiff.textContent = "Show highlighted differences";
+}
+
+function handleVisualComparison(message: any): void {
+  appearanceReview.hidden = false;
+  if (!message.ok) {
+    appearanceScore.textContent = "Could not compare";
+    appearanceSummary.textContent =
+      typeof message.message === "string"
+        ? message.message
+        : "The two screen images could not be compared.";
+    appearanceDiff.hidden = true;
+    toggleAppearanceDiff.hidden = true;
+    setActivity(appearanceSummary.textContent);
+    return;
+  }
+
+  const rawPercent = Number(message.matchPercent);
+  const matchPercent = Number.isFinite(rawPercent)
+    ? Math.max(0, Math.min(100, rawPercent))
+    : 0;
+  const passed = message.report?.passed === true;
+  appearanceScore.textContent = `${matchPercent.toFixed(1)}% match`;
+  appearanceSummary.textContent = passed
+    ? "The rendered screens closely match. Small anti-aliasing differences are ignored."
+    : "Visible differences were found. Red areas in the image show where the screens differ.";
+  if (typeof message.diffPngBase64 === "string" && message.diffPngBase64) {
+    appearanceDiff.src = `data:image/png;base64,${message.diffPngBase64}`;
+    toggleAppearanceDiff.hidden = false;
+  } else {
+    appearanceDiff.hidden = true;
+    toggleAppearanceDiff.hidden = true;
+  }
+  if (!pendingConflict)
+    setStatus(
+      passed ? "Appearance matched" : "Appearance differs",
+      passed ? "success" : "neutral",
+    );
+  setActivity(appearanceSummary.textContent);
 }
 
 async function loadScreens(): Promise<void> {

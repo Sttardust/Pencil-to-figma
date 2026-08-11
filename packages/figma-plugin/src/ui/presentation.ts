@@ -81,7 +81,8 @@ export function assessCompanionHealth(value: unknown): CompanionCompatibility {
       capabilities.includes("large-pencil-selection") &&
       capabilities.includes("operation-recovery") &&
       capabilities.includes("correct-gradient-direction") &&
-      capabilities.includes("pencil-write-fidelity-verification"),
+      capabilities.includes("pencil-write-fidelity-verification") &&
+      capabilities.includes("automatic-visual-comparison"),
     ),
     ...(version ? { version } : {}),
   };
@@ -228,7 +229,9 @@ export function technicalJson(value: unknown): string {
     (key, entry) =>
       ["token", "sessionToken", "reconnectToken"].includes(key)
         ? "[redacted]"
-        : entry,
+        : key.toLowerCase().endsWith("base64")
+          ? "[image data omitted]"
+          : entry,
     2,
   );
 }

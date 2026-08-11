@@ -90,6 +90,12 @@ recent Pencil destinations and shows their page names, native IDs, and canvas po
 **Recently sent to Pencil**. That list remains available after reopening the plugin and can be
 copied for search or troubleshooting.
 
+Selecting one linked Figma screen and choosing **Compare Pencil and Figma** now performs both the
+editable-layer comparison and an automatic 2× appearance check. The plugin renders the linked
+Pencil page and selected Figma frame itself, reports a visual-match percentage, and can reveal a
+highlighted difference image. No PNG export, terminal command, or file path is required for the
+normal plugin workflow.
+
 Pencil → Figma imports also resolve local Pencil `ref` dependencies by native identity. Reusable
 frames become Figma components and resolvable refs become instances; dependency components are
 kept outside the screen's sync manifest. Pencil descendant text overrides become native Figma text
@@ -188,7 +194,8 @@ npm run format:check
 npm audit
 ```
 
-For a 2× Pencil/Figma render pair, run the visual acceptance check:
+The plugin performs this visual check automatically for a linked screen. Maintainers can still run
+the same comparison from the command line for stored release fixtures:
 
 ```sh
 npm run visual:compare -- pencil.png figma.png \

@@ -8,6 +8,11 @@ by Pencil and Figma. It combines two signals:
 - mean absolute color error catches broad, lower-contrast changes such as a reversed scrim or
   altered image treatment.
 
+For a linked screen, the normal user workflow is simpler: select the complete Figma screen and
+choose **Compare Pencil and Figma**. The plugin captures both renders at 2×, shows the match
+percentage, and offers a highlighted difference image. The manual command below remains available
+for maintainers who need persistent release reports and golden fixtures.
+
 ## Capture a comparison pair
 
 Export the complete root frame from both applications as PNG at the same scale. Use 2× for the

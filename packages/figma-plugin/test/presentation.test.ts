@@ -14,7 +14,7 @@ describe("companion health presentation", () => {
       assessCompanionHealth({
         ok: true,
         protocol: 1,
-        companionVersion: "0.1.11",
+        companionVersion: "0.1.12",
         capabilities: [
           "automatic-reconnect",
           "native-approval",
@@ -28,9 +28,10 @@ describe("companion health presentation", () => {
           "operation-recovery",
           "correct-gradient-direction",
           "pencil-write-fidelity-verification",
+          "automatic-visual-comparison",
         ],
       }),
-    ).toEqual({ compatible: true, version: "0.1.11" });
+    ).toEqual({ compatible: true, version: "0.1.12" });
   });
 
   it("requires an update for legacy or incompatible health responses", () => {
@@ -179,5 +180,15 @@ describe("plugin UI presentation", () => {
     expect(value).not.toContain("session-secret");
     expect(value).not.toContain("reconnect-secret");
     expect(value.match(/\[redacted\]/g)).toHaveLength(2);
+  });
+
+  it("omits large rendered images from optional JSON details", () => {
+    const value = technicalJson({
+      type: "visual-comparison-result",
+      diffPngBase64: "large-image-data",
+    });
+
+    expect(value).not.toContain("large-image-data");
+    expect(value).toContain("[image data omitted]");
   });
 });

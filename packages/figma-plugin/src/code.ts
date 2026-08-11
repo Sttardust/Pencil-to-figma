@@ -5,6 +5,7 @@ import {
   writeBridgeNodeUpdates,
 } from "./figma/write.js";
 import {
+  exportSelectedFigmaPng,
   readSelectedFigmaDocument,
   readSelectedFigmaDocuments,
   type FigmaReadResult,
@@ -320,6 +321,43 @@ figma.ui.onmessage = async (message: {
             : `Bridge error ${response.status}`,
         );
       figma.ui.postMessage(result);
+      try {
+        const figmaPng = await exportSelectedFigmaPng(2);
+        const visualResponse = await fetch(
+          "http://localhost:32145/visual/compare",
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-pen-fig-token": message.token,
+            },
+            body: JSON.stringify({
+              rootBridgeId: selectedFigma.document.root.bridgeId,
+              figmaPngBase64: figma.base64Encode(figmaPng),
+            }),
+          },
+        );
+        const visualResult = (await visualResponse.json()) as Record<
+          string,
+          unknown
+        >;
+        if (!visualResponse.ok)
+          throw new Error(
+            typeof visualResult.message === "string"
+              ? visualResult.message
+              : `Bridge error ${visualResponse.status}`,
+          );
+        figma.ui.postMessage(visualResult);
+      } catch (error) {
+        figma.ui.postMessage({
+          type: "visual-comparison-result",
+          ok: false,
+          message:
+            error instanceof Error
+              ? error.message
+              : "Appearance comparison failed",
+        });
+      }
     } catch (error) {
       figma.ui.postMessage({
         type: "figma-sync-preview",

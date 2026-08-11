@@ -3,7 +3,7 @@ import { PNG } from "pngjs";
 import {
   comparePngBuffers,
   ImageDimensionMismatchError,
-} from "../src/visual/compare.js";
+} from "@pen-fig/service/visual";
 import { parseVisualCompareArguments } from "../src/commands/visual-compare.js";
 
 function png(
@@ -22,6 +22,15 @@ function png(
 }
 
 describe("visual PNG comparison", () => {
+  it("explains that documentation paths are placeholders", () => {
+    expect(() =>
+      parseVisualCompareArguments([
+        "/absolute/path/to/pencil.png",
+        "/absolute/path/to/figma.png",
+      ]),
+    ).toThrow("Replace the example PNG paths");
+  });
+
   it("passes identical renders", () => {
     const image = png(4, 4, [24, 30, 36, 255]);
     const comparison = comparePngBuffers(image, image);

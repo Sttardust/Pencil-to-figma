@@ -10,6 +10,7 @@ import { importPenDocument, type PenNode } from "@pen-fig/core";
 import type { BridgeDocument } from "@pen-fig/bridge-schema";
 import type { LocalApprovalProvider } from "../src/approval.js";
 import { OperationJournal } from "../src/operation-journal.js";
+import { PNG } from "pngjs";
 
 const servers: BridgeServer[] = [];
 const temporaryDirectories: string[] = [];
@@ -37,6 +38,86 @@ afterEach(async () => {
 });
 
 describe("BridgeServer", () => {
+  it("compares linked Pencil and Figma renders without manual files", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "pen-fig-visual-"));
+    temporaryDirectories.push(directory);
+    const penPath = path.join(directory, "design.pen");
+    const sidecarPath = path.join(directory, "design.pen-fig.json");
+    const image = new PNG({ width: 2, height: 2 });
+    image.data.fill(255);
+    const png = PNG.sync.write(image);
+    await writeFile(
+      sidecarPath,
+      JSON.stringify({
+        version: 1,
+        penDocumentId: penPath,
+        revision: 1,
+        updatedAt: new Date().toISOString(),
+        mappings: [
+          {
+            bridgeId: "pen:root",
+            rootBridgeId: "pen:root",
+            penNodeId: "penRoot",
+            figmaNodeId: "1:2",
+            baselineHash: "a".repeat(64),
+          },
+        ],
+      }),
+    );
+    const pen = {
+      getAppState: async () => ({
+        text: `- Currently active canvas editor: \`${penPath}\``,
+      }),
+      exportNodePng: async () => png,
+    } as unknown as PenMcpClient;
+    const approval: LocalApprovalProvider = {
+      requestApproval: async () => "approved",
+    };
+    const server = new BridgeServer({
+      host: "127.0.0.1",
+      port: 0,
+      pen,
+      approval,
+    });
+    servers.push(server);
+    const port = await server.start();
+    const approved = (await (
+      await bridgeFetch(`http://localhost:${port}/authorize`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "authorize", protocol: 1 }),
+      })
+    ).json()) as { token: string };
+    await bridgeFetch(
+      `http://localhost:${port}/hello?token=${approved.token}`,
+      {
+        method: "POST",
+      },
+    );
+
+    const response = await bridgeFetch(
+      `http://localhost:${port}/visual/compare?token=${approved.token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          rootBridgeId: "pen:root",
+          figmaPngBase64: png.toString("base64"),
+        }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      type: "visual-comparison-result",
+      ok: true,
+      penRootId: "penRoot",
+      matchPercent: 100,
+      report: { passed: true, mismatchRatio: 0 },
+      diffPngBase64: expect.any(String),
+    });
+  });
+
   it("authorizes a first connection after native macOS approval", async () => {
     const pen = {
       getAppState: async () => ({

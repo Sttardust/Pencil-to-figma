@@ -36,7 +36,7 @@ export class ImageDimensionMismatchError extends Error {
     readonly candidate: { width: number; height: number },
   ) {
     super(
-      `Image dimensions differ: reference is ${reference.width}×${reference.height}, candidate is ${candidate.width}×${candidate.height}`,
+      `Rendered screen sizes differ: Pencil is ${reference.width}×${reference.height}, Figma is ${candidate.width}×${candidate.height}`,
     );
   }
 }

@@ -527,6 +527,48 @@ button.recent-export-id {
   font-size: 14px;
 }
 
+.appearance-review {
+  display: grid;
+  gap: 7px;
+  margin-top: 8px;
+  border: 1px solid var(--bridge-line);
+  border-radius: 10px;
+  padding: 9px;
+  background: var(--bridge-soft);
+}
+
+.appearance-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--figma-color-text-secondary, var(--bridge-text-secondary));
+  font-size: 9px;
+}
+
+.appearance-heading strong {
+  color: var(--figma-color-text, var(--bridge-text));
+  font-size: 11px;
+}
+
+.appearance-review p {
+  margin: 0;
+}
+
+.appearance-review img {
+  display: block;
+  width: 100%;
+  max-height: 280px;
+  border: 1px solid var(--bridge-line);
+  border-radius: 8px;
+  object-fit: contain;
+  background: var(--bridge-card);
+}
+
+.appearance-review img[hidden] {
+  display: none;
+}
+
 .conflict-panel {
   margin-top: 10px;
   border: 1px solid var(--figma-color-border-danger-strong);

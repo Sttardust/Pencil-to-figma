@@ -5,7 +5,7 @@ import {
   DEFAULT_VISUAL_THRESHOLDS,
   ImageDimensionMismatchError,
   type VisualThresholds,
-} from "../visual/compare.js";
+} from "@pen-fig/service/visual";
 
 interface VisualCompareArguments {
   referencePath: string;
@@ -89,6 +89,10 @@ export function parseVisualCompareArguments(
 
   if (positionals.length !== 2)
     throw new Error("Provide one reference PNG and one candidate PNG");
+  if (positionals.some((value) => value.includes("/absolute/path/to/")))
+    throw new Error(
+      "Replace the example PNG paths with the actual exported file locations",
+    );
   const candidatePath = positionals[1]!;
   return {
     referencePath: positionals[0]!,

@@ -2,6 +2,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { PenNode } from "@pen-fig/core";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 export interface PenAppStateSummary {
   text: string;
@@ -203,6 +206,42 @@ export class PenMcpClient {
       30_000,
     );
     return /EXPORT_ROOT\s*\|\s*([A-Za-z0-9]+)/.exec(extractText(result))?.[1];
+  }
+
+  async exportNodePng(
+    filePath: string,
+    nodeId: string,
+    scale = 2,
+  ): Promise<Buffer> {
+    if (!filePath.endsWith(".pen"))
+      throw new Error("A valid Pencil document is required for comparison");
+    if (!/^[A-Za-z0-9]+$/.test(nodeId))
+      throw new Error(`Invalid Pen node id '${nodeId}'`);
+    if (!Number.isFinite(scale) || scale <= 0 || scale > 4)
+      throw new Error("Pencil comparison scale must be between 0 and 4");
+
+    const outputDirectory = await mkdtemp(
+      path.join(os.tmpdir(), "pen-fig-visual-"),
+    );
+    try {
+      await this.#callWithReconnect(
+        "export_nodes",
+        {
+          filePath,
+          outputDir: outputDirectory,
+          nodeIds: [nodeId],
+          format: "png",
+          scale,
+        },
+        60_000,
+      );
+      const png = await readFile(path.join(outputDirectory, `${nodeId}.png`));
+      if (png.byteLength > 16 * 1024 * 1024)
+        throw new Error("The Pencil comparison image is larger than 16 MB");
+      return png;
+    } finally {
+      await rm(outputDirectory, { recursive: true, force: true });
+    }
   }
 
   async executeWrite(input: string, timeout = 60_000): Promise<string> {

@@ -47,6 +47,7 @@ import {
 } from "./manifest/figma-export.js";
 import { toPublicBridgeError } from "./public-error.js";
 import type { OperationJournal } from "./operation-journal.js";
+import { comparePngBuffers } from "./visual/compare.js";
 
 export interface BridgeServerOptions {
   host: string;
@@ -499,6 +500,53 @@ export class BridgeServer {
           type: "pen-document",
           transferId,
           ...resolved,
+        });
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/visual/compare"
+      ) {
+        const comparisonRequest = visualComparisonRequestSchema.parse(
+          await readJsonBody(request, 24 * 1024 * 1024),
+        );
+        const penPath = await this.#requireActivePenPath();
+        const manifest = await this.#manifests.read(sidecarPath(penPath));
+        if (!manifest)
+          throw new Error(
+            "This screen is not linked yet. Send it once before comparing its appearance.",
+          );
+        const rootMapping = manifest.mappings.find(
+          (mapping) =>
+            mapping.bridgeId === comparisonRequest.rootBridgeId &&
+            mapping.penNodeId,
+        );
+        if (!rootMapping?.penNodeId)
+          throw new Error(
+            "The selected Figma screen has no linked Pencil page to compare.",
+          );
+        const figmaPng = Buffer.from(
+          comparisonRequest.figmaPngBase64,
+          "base64",
+        );
+        if (!figmaPng.length || figmaPng.byteLength > 16 * 1024 * 1024)
+          throw new Error(
+            "The Figma comparison image must be 16 MB or smaller",
+          );
+        const pencilPng = await this.#pen.exportNodePng(
+          penPath,
+          rootMapping.penNodeId,
+          2,
+        );
+        const comparison = comparePngBuffers(pencilPng, figmaPng);
+        json(response, 200, {
+          type: "visual-comparison-result",
+          ok: true,
+          rootBridgeId: comparisonRequest.rootBridgeId,
+          penRootId: rootMapping.penNodeId,
+          matchPercent: (1 - comparison.report.mismatchRatio) * 100,
+          report: comparison.report,
+          diffPngBase64: comparison.diffPng.toString("base64"),
         });
         return;
       }
@@ -1610,6 +1658,16 @@ const syncCompletionSchema = z
       )
       .min(1)
       .max(5000),
+  })
+  .strict();
+
+const visualComparisonRequestSchema = z
+  .object({
+    rootBridgeId: z.string().min(1).max(200),
+    figmaPngBase64: z
+      .string()
+      .min(1)
+      .max(22 * 1024 * 1024),
   })
   .strict();
 
