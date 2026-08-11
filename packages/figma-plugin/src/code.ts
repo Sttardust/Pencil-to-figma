@@ -5,6 +5,7 @@ import {
   writeBridgeNodeUpdates,
 } from "./figma/write.js";
 import {
+  exportFigmaNodePng,
   exportSelectedFigmaPng,
   readSelectedFigmaDocument,
   readSelectedFigmaDocuments,
@@ -27,6 +28,7 @@ let pendingFigmaExport: FigmaReadResult | undefined;
 let pendingFigmaExportBatch: FigmaReadResult[] = [];
 let pencilImportBatchPlacement:
   { batchId: string; top: number | undefined } | undefined;
+let cancelFigmaExportRequested = false;
 const CONNECTION_STORAGE_KEY = "penFigSavedConnectionV1";
 const RECENT_EXPORTS_STORAGE_KEY = "penFigRecentPencilExportsV1";
 const COMPANION_DOWNLOAD_URL =
@@ -50,6 +52,11 @@ figma.ui.onmessage = async (message: {
   importBatchSize?: unknown;
   comparisonId?: unknown;
 }) => {
+  if (message.type === "cancel-figma-export") {
+    cancelFigmaExportRequested = true;
+    return;
+  }
+
   if (message.type === "load-recent-exports") {
     figma.ui.postMessage({
       type: "recent-pencil-exports",
@@ -240,6 +247,7 @@ figma.ui.onmessage = async (message: {
         throw new Error("Review the selected Figma screens first");
       if (typeof message.token !== "string" || !message.token)
         throw new Error("Pair and authenticate first");
+      cancelFigmaExportRequested = false;
       await executeFigmaExportBatch(pendingFigmaExportBatch, message.token);
     } catch (error) {
       figma.ui.postMessage({
@@ -512,11 +520,22 @@ figma.ui.onmessage = async (message: {
         result.mappings,
         verified,
       );
+      if (typeof message.token !== "string" || !message.token)
+        throw new Error("Pair and authenticate first");
+      figma.ui.postMessage({
+        type: "pencil-import-progress",
+        phase: "checking",
+        completed: importBatchIndex,
+        total: importBatchSize,
+        currentName: bridgeDocumentSchema.parse(message.document).root.name,
+      });
+      const figmaPng = await exportFigmaNodePng(result.rootId, 2);
       figma.ui.postMessage({
         type: "import-result",
         ok: true,
         ...result,
         figmaBaselineHashes,
+        figmaPngBase64: figma.base64Encode(figmaPng),
         ...(figma.fileKey ? { figmaDocumentId: figma.fileKey } : {}),
       });
       if (importBatchId && importBatchIndex + 1 >= importBatchSize)
@@ -616,6 +635,10 @@ async function executeFigmaExportBatch(
 ): Promise<void> {
   const results: Record<string, unknown>[] = [];
   for (const [index, item] of batch.entries()) {
+    if (cancelFigmaExportRequested) {
+      await postCancelledFigmaExportBatch(batch, results);
+      return;
+    }
     figma.ui.postMessage({
       type: "figma-export-progress",
       completed: index,
@@ -623,6 +646,14 @@ async function executeFigmaExportBatch(
       currentName: item.document.root.name,
     });
     try {
+      const figmaPng = await exportFigmaNodePng(item.figmaRootId, 2);
+      figma.ui.postMessage({
+        type: "figma-export-progress",
+        phase: "checking",
+        completed: index,
+        total: batch.length,
+        currentName: item.document.root.name,
+      });
       const previousRootId = results[results.length - 1]?.rootId;
       const response = await fetch("http://localhost:32145/figma/export", {
         method: "POST",
@@ -633,6 +664,7 @@ async function executeFigmaExportBatch(
         body: JSON.stringify({
           document: item.document,
           assetData: item.assetData,
+          figmaPngBase64: figma.base64Encode(figmaPng),
           ...(typeof previousRootId === "string"
             ? { placementAnchorId: previousRootId }
             : {}),
@@ -646,6 +678,10 @@ async function executeFigmaExportBatch(
             : `Bridge error ${response.status}`,
         );
       results.push(result);
+      if (cancelFigmaExportRequested && index + 1 < batch.length) {
+        await postCancelledFigmaExportBatch(batch, results);
+        return;
+      }
     } catch (error) {
       const exports = await rememberRecentPencilExports(batch, results);
       figma.ui.postMessage({
@@ -685,6 +721,23 @@ async function executeFigmaExportBatch(
     results,
     exports,
     manifest: results[results.length - 1]?.manifest,
+  });
+}
+
+async function postCancelledFigmaExportBatch(
+  batch: FigmaReadResult[],
+  results: Record<string, unknown>[],
+): Promise<void> {
+  const exports = await rememberRecentPencilExports(batch, results);
+  figma.ui.postMessage({
+    type: "figma-export-result",
+    ok: true,
+    cancelled: true,
+    operation: "stopped",
+    screenCount: batch.length,
+    completedScreenCount: results.length,
+    results,
+    exports,
   });
 }
 

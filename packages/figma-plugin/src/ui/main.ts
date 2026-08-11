@@ -84,6 +84,15 @@ const recentExportsPanel = required<HTMLElement>("recent-exports");
 const recentExportList = required<HTMLElement>("recent-export-list");
 const copyExportIds = required<HTMLButtonElement>("copy-export-ids");
 const clearRecentExports = required<HTMLButtonElement>("clear-recent-exports");
+const transferQuality = required<HTMLElement>("transfer-quality");
+const transferQualityTitle = required<HTMLElement>("transfer-quality-title");
+const transferQualitySummary = required<HTMLElement>(
+  "transfer-quality-summary",
+);
+const transferQualityList = required<HTMLElement>("transfer-quality-list");
+const dismissTransferQuality = required<HTMLButtonElement>(
+  "dismiss-transfer-quality",
+);
 
 let token: string | undefined;
 let savedReconnectToken: string | undefined;
@@ -107,6 +116,9 @@ let activeImportIndex = 0;
 let completedImportResults: any[] = [];
 let pencilImportBatchSequence = 0;
 let activePencilImportBatchId = "";
+let pencilImportRunning = false;
+let stopPencilImportRequested = false;
+let figmaExportRunning = false;
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -124,6 +136,11 @@ downloadCompanion.addEventListener("click", () => {
     { pluginMessage: { type: "open-companion-download" } },
     "*",
   );
+});
+
+dismissTransferQuality.addEventListener("click", () => {
+  transferQuality.hidden = true;
+  setActivity("Appearance results closed.");
 });
 
 required("screens").addEventListener("click", () => void loadScreens());
@@ -146,13 +163,23 @@ confirmImport.addEventListener("click", () => {
   if (!pendingImports.length) return;
   activeImportIndex = Math.min(activeImportIndex, pendingImports.length - 1);
   if (activeImportIndex === 0) completedImportResults = [];
+  pencilImportRunning = true;
+  stopPencilImportRequested = false;
   confirmImport.disabled = true;
-  cancelImport.disabled = true;
+  cancelImport.disabled = false;
+  cancelImport.textContent = "Stop after this page";
   dismissImportReview.disabled = true;
   applyCurrentPencilImport();
 });
 
 cancelImport.addEventListener("click", () => {
+  if (pencilImportRunning) {
+    stopPencilImportRequested = true;
+    cancelImport.disabled = true;
+    cancelImport.textContent = "Stopping…";
+    setActivity("Finishing the current page safely, then stopping.");
+    return;
+  }
   const completed = completedImportResults.length;
   const total = pendingImports.length;
   pendingImports = [];
@@ -161,6 +188,7 @@ cancelImport.addEventListener("click", () => {
   activePencilImportBatchId = "";
   importReview.hidden = true;
   cancelImport.disabled = false;
+  cancelImport.textContent = "Cancel";
   dismissImportReview.disabled = false;
   setStatus(completed ? "Transfer stopped" : "Connected", "success");
   setActivity(
@@ -187,7 +215,9 @@ prepareExport.addEventListener("click", () => {
 confirmExport.addEventListener("click", () => {
   if (!pendingExportPlan || !token) return;
   confirmExport.disabled = true;
-  cancelExport.disabled = true;
+  figmaExportRunning = true;
+  cancelExport.disabled = false;
+  cancelExport.textContent = "Stop after this screen";
   dismissExportReview.disabled = true;
   setStatus("Sending to Pencil…", "working");
   const screenCount = Number(pendingExportPlan.screenCount ?? 1);
@@ -203,9 +233,17 @@ confirmExport.addEventListener("click", () => {
 });
 
 cancelExport.addEventListener("click", () => {
+  if (figmaExportRunning) {
+    cancelExport.disabled = true;
+    cancelExport.textContent = "Stopping…";
+    setActivity("Finishing the current screen safely, then stopping.");
+    parent.postMessage({ pluginMessage: { type: "cancel-figma-export" } }, "*");
+    return;
+  }
   pendingExportPlan = undefined;
   exportReview.hidden = true;
   cancelExport.disabled = false;
+  cancelExport.textContent = "Cancel";
   dismissExportReview.disabled = false;
   setStatus("Connected", "success");
   setActivity("Transfer cancelled. No Pencil layers were changed.");
@@ -400,6 +438,8 @@ window.onmessage = (event) => {
     renderRecentPencilExports(message.exports);
 
   if (message.type === "import-preview") handleImportPreview(message);
+  if (message.type === "pencil-import-progress")
+    handlePencilImportProgress(message);
   if (message.type === "import-result") void handleImportResult(message);
   if (message.type === "figma-export-preview")
     handleFigmaExportPreview(message);
@@ -476,6 +516,9 @@ async function handleImportResult(message: any): Promise<void> {
   cancelImport.disabled = false;
   dismissImportReview.disabled = false;
   if (!message.ok) {
+    pencilImportRunning = false;
+    stopPencilImportRequested = false;
+    cancelImport.textContent = "Cancel";
     const completed = completedImportResults.length;
     if (completed > 0) {
       setStatus("Partly sent", "error");
@@ -509,6 +552,9 @@ async function handleImportResult(message: any): Promise<void> {
         typeof message.figmaBaselineHashes === "object"
           ? { figmaBaselineHashes: message.figmaBaselineHashes }
           : {}),
+        ...(typeof message.figmaPngBase64 === "string"
+          ? { figmaPngBase64: message.figmaPngBase64 }
+          : {}),
         ...(message.figmaDocumentId
           ? { figmaDocumentId: message.figmaDocumentId }
           : {}),
@@ -520,9 +566,45 @@ async function handleImportResult(message: any): Promise<void> {
       manifest: committed,
     });
     activeImportIndex += 1;
+    if (
+      stopPencilImportRequested &&
+      activeImportIndex < pendingImports.length
+    ) {
+      const completed = completedImportResults.length;
+      const total = pendingImports.length;
+      showTransferQuality(
+        completedImportResults.map((result) => ({
+          name: String(result.name ?? "Pencil screen"),
+          comparison: result.manifest?.visualComparison,
+        })),
+      );
+      setTechnical({
+        type: "import-batch-result",
+        ok: true,
+        operation: "stopped",
+        screenCount: total,
+        completedScreenCount: completed,
+        results: completedImportResults,
+      });
+      pendingImports = [];
+      activeImportIndex = 0;
+      completedImportResults = [];
+      activePencilImportBatchId = "";
+      pencilImportRunning = false;
+      stopPencilImportRequested = false;
+      importReview.hidden = true;
+      cancelImport.disabled = false;
+      cancelImport.textContent = "Cancel";
+      setStatus("Transfer stopped", "success");
+      setActivity(
+        `${completed} of ${total} pages were created, checked, and linked. The remaining pages were not sent.`,
+      );
+      return;
+    }
     if (activeImportIndex < pendingImports.length) {
       confirmImport.disabled = true;
-      cancelImport.disabled = true;
+      cancelImport.disabled = false;
+      cancelImport.textContent = "Stop after this page";
       dismissImportReview.disabled = true;
       applyCurrentPencilImport();
       return;
@@ -544,12 +626,21 @@ async function handleImportResult(message: any): Promise<void> {
       nodeCount: mappedCount,
       results: completedImportResults,
     });
+    showTransferQuality(
+      completedImportResults.map((result) => ({
+        name: String(result.name ?? "Pencil screen"),
+        comparison: result.manifest?.visualComparison,
+      })),
+    );
     pendingImports = [];
     activeImportIndex = 0;
     completedImportResults = [];
     activePencilImportBatchId = "";
+    pencilImportRunning = false;
+    stopPencilImportRequested = false;
     importReview.hidden = true;
     cancelImport.disabled = false;
+    cancelImport.textContent = "Cancel";
     dismissImportReview.disabled = false;
     setStatus("Sent to Figma", "success");
     setActivity(
@@ -558,12 +649,24 @@ async function handleImportResult(message: any): Promise<void> {
         : `${screenCount} pages with ${editableNodeSummary(mappedCount)} are ready in separate Figma canvas space and linked for future comparisons.`,
     );
   } catch (error) {
+    pencilImportRunning = false;
+    stopPencilImportRequested = false;
     confirmImport.disabled = false;
     cancelImport.disabled = false;
     dismissImportReview.disabled = false;
     confirmImport.textContent = "Try this page again";
+    cancelImport.textContent = "Cancel";
     setStatus("Sent, but link failed", "error");
-    setActivity(errorMessage(error, "The sync link could not be saved."));
+    const message = errorMessage(error, "The sync link could not be saved.");
+    if (message.toLowerCase().includes("appearance verification failed"))
+      showTransferQuality([
+        ...completedImportResults.map((result) => ({
+          name: String(result.name ?? "Pencil screen"),
+          comparison: result.manifest?.visualComparison,
+        })),
+        { name: completedImport.name, failed: true },
+      ]);
+    showOperationError(message);
   }
 }
 
@@ -624,25 +727,104 @@ function handleFigmaExportProgress(message: any): void {
   const total = Number(message.total ?? 1);
   const completed = Number(message.completed ?? 0);
   const currentName = String(message.currentName ?? "next screen");
-  setStatus(`Sending ${completed + 1} of ${total}…`, "working");
-  setActivity(`Creating “${currentName}” in Pencil…`);
+  const checking = message.phase === "checking";
+  setStatus(
+    checking
+      ? `Checking ${completed + 1} of ${total}…`
+      : `Sending ${completed + 1} of ${total}…`,
+    "working",
+  );
+  setActivity(
+    checking
+      ? `Checking that “${currentName}” will look the same in Pencil…`
+      : `Creating “${currentName}” in Pencil…`,
+  );
+}
+
+function handlePencilImportProgress(message: any): void {
+  const total = Number(message.total ?? 1);
+  const completed = Number(message.completed ?? 0);
+  const currentName = String(message.currentName ?? "screen");
+  setStatus(`Checking ${completed + 1} of ${total}…`, "working");
+  setActivity(
+    `Checking that “${currentName}” looks the same in Figma before saving its link…`,
+  );
 }
 
 function handleFigmaExportResult(message: any): void {
+  figmaExportRunning = false;
   confirmExport.disabled = false;
   cancelExport.disabled = false;
+  cancelExport.textContent = "Cancel";
   dismissExportReview.disabled = false;
+  if (message.cancelled === true) {
+    exportReview.hidden = true;
+    const completed = Number(message.completedScreenCount ?? 0);
+    const total = Number(message.screenCount ?? 1);
+    if (completed > 0)
+      showTransferQuality(
+        (Array.isArray(message.results) ? message.results : []).map(
+          (result: any, index: number) => ({
+            name: String(
+              pendingExportPreview?.roots?.[index]?.name ??
+                `Screen ${index + 1}`,
+            ),
+            comparison: result.visualComparison,
+          }),
+        ),
+      );
+    setStatus("Transfer stopped", "success");
+    setActivity(
+      `${completed} of ${total} screens were created, checked, and linked. The remaining screens were not sent.`,
+    );
+    return;
+  }
   if (!message.ok) {
     const completed = Number(message.completedScreenCount ?? 0);
     const total = Number(message.screenCount ?? 1);
     if (completed > 0) {
       exportReview.hidden = true;
+      if (
+        String(message.message ?? "")
+          .toLowerCase()
+          .includes("appearance verification failed")
+      )
+        showTransferQuality([
+          ...(Array.isArray(message.results)
+            ? message.results.map((result: any, index: number) => ({
+                name: String(
+                  pendingExportPreview?.roots?.[index]?.name ??
+                    `Screen ${index + 1}`,
+                ),
+                comparison: result.visualComparison,
+              }))
+            : []),
+          {
+            name: String(message.failedScreenName ?? "The next screen"),
+            failed: true,
+          },
+        ]);
       setStatus("Partly sent", "error");
       setActivity(
         `${completed} of ${total} screens were created safely. “${message.failedScreenName ?? "The next screen"}” could not be sent: ${message.message ?? "Unknown error"}`,
       );
       return;
     }
+    if (
+      String(message.message ?? "")
+        .toLowerCase()
+        .includes("appearance verification failed")
+    )
+      showTransferQuality([
+        {
+          name: String(
+            message.failedScreenName ??
+              pendingExportPreview?.root?.name ??
+              "Selected screen",
+          ),
+          failed: true,
+        },
+      ]);
     showOperationError(
       message.message ??
         "The selected Figma screens could not be sent to Pencil.",
@@ -650,6 +832,19 @@ function handleFigmaExportResult(message: any): void {
     return;
   }
   exportReview.hidden = true;
+  const exportResults = Array.isArray(message.results)
+    ? message.results
+    : [message];
+  showTransferQuality(
+    exportResults.map((result: any, index: number) => ({
+      name: String(
+        pendingExportPreview?.roots?.[index]?.name ??
+          pendingExportPreview?.root?.name ??
+          `Screen ${index + 1}`,
+      ),
+      comparison: result.visualComparison,
+    })),
+  );
   setStatus("Sent to Pencil", "success");
   const screenCount = Number(message.screenCount ?? 1);
   setActivity(
@@ -657,6 +852,46 @@ function handleFigmaExportResult(message: any): void {
       ? `${editableNodeSummary(Number(message.nodeCount ?? 0))} were created in Pencil. Its page name and ID are listed below.`
       : `${screenCount} screens with ${editableNodeSummary(Number(message.nodeCount ?? 0))} were created together in Pencil. Their page names and IDs are listed below.`,
   );
+}
+
+function showTransferQuality(
+  entries: Array<{
+    name: string;
+    comparison?: { matchPercent?: unknown; report?: { passed?: unknown } };
+    failed?: boolean;
+  }>,
+): void {
+  if (!entries.length) return;
+  transferQualityList.replaceChildren();
+  let matched = 0;
+  for (const entry of entries) {
+    const item = document.createElement("div");
+    item.className = "quality-item";
+    const name = document.createElement("span");
+    name.className = "quality-name";
+    name.textContent = entry.name;
+    const result = document.createElement("strong");
+    const percentage = Number(entry.comparison?.matchPercent);
+    const passed = entry.comparison?.report?.passed === true;
+    if (passed) matched += 1;
+    result.className = `quality-result${passed ? "" : " needs-review"}`;
+    result.textContent = passed
+      ? `${percentage.toFixed(1)}% match`
+      : entry.failed
+        ? "Needs review"
+        : "Could not compare";
+    item.append(name, result);
+    transferQualityList.append(item);
+  }
+  transferQualityTitle.textContent =
+    matched === entries.length
+      ? "Every screen passed"
+      : "A screen needs review";
+  transferQualitySummary.textContent =
+    matched === entries.length
+      ? `${entries.length} of ${entries.length} transferred screen${entries.length === 1 ? "" : "s"} closely matched.`
+      : `${matched} of ${entries.length} transferred screen${entries.length === 1 ? "" : "s"} passed the appearance check.`;
+  transferQuality.hidden = false;
 }
 
 function renderRecentPencilExports(value: unknown): void {
@@ -1077,6 +1312,7 @@ function applyCurrentPencilImport(): void {
         importBatchId: activePencilImportBatchId,
         importBatchIndex: activeImportIndex,
         importBatchSize: total,
+        token,
       },
     },
     "*",

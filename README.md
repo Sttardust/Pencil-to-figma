@@ -153,6 +153,9 @@ After every Pencil → Figma write, the plugin reads the imported tree back from
 fixed dimensions, absolute placement, managed layer order, and gradient direction/stops before it
 saves a sync baseline. A mismatch is shown as a user-facing verification error, preventing a
 visually incorrect transfer from being recorded as successfully synchronized.
+The plugin also renders both sides at 2× before saving a new link. It shows a closeable per-screen
+result list for batches, stops before linking a materially different render, and lets the user stop
+a batch safely after the current page finishes.
 Figma → Pencil creation and mapped property updates receive the corresponding Pencil read-back
 check for fixed dimensions, absolute placement, and gradient direction/stops. Structural updates
 continue to use identity and parent/order verification, while newly inserted structural layers also

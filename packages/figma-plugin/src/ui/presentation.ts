@@ -22,6 +22,11 @@ export function presentOperationError(
       message: `Select up to ${pageLimit} complete Pencil pages, then try again.`,
     };
   const normalized = message.toLowerCase();
+  if (normalized.includes("appearance verification failed"))
+    return {
+      title: "The screen needs a visual review",
+      message: `${message}. The transferred copy was not linked, so it cannot overwrite a trusted version. Review the visible differences and try again after correcting the source or bridge.`,
+    };
   if (normalized.includes("figma verification failed"))
     return {
       title: "Figma changed part of the design",
@@ -82,7 +87,8 @@ export function assessCompanionHealth(value: unknown): CompanionCompatibility {
       capabilities.includes("operation-recovery") &&
       capabilities.includes("correct-gradient-direction") &&
       capabilities.includes("pencil-write-fidelity-verification") &&
-      capabilities.includes("automatic-visual-comparison"),
+      capabilities.includes("automatic-visual-comparison") &&
+      capabilities.includes("automatic-transfer-visual-verification"),
     ),
     ...(version ? { version } : {}),
   };

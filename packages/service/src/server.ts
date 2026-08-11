@@ -555,7 +555,7 @@ export class BridgeServer {
         requestUrl.pathname === "/sync/complete"
       ) {
         const completion = syncCompletionSchema.parse(
-          await readJsonBody(request),
+          await readJsonBody(request, 24 * 1024 * 1024),
         );
         const transfer = this.#transfers.get(completion.transferId);
         if (!transfer)
@@ -579,6 +579,21 @@ export class BridgeServer {
           returned.size !== Object.keys(expectedHashes).length
         )
           throw new Error("Figma mapping count does not match the transfer");
+        const visualComparison = completion.figmaPngBase64
+          ? await compareTransferredAppearance(
+              this.#pen,
+              transfer.penPath,
+              transfer.document.root.source.nodeId,
+              completion.figmaPngBase64,
+            )
+          : undefined;
+        if (visualComparison && !visualComparison.report.passed)
+          throw new Error(
+            appearanceVerificationMessage(
+              transfer.document.root.name,
+              visualComparison.matchPercent,
+            ),
+          );
         const mappings: BridgeManifest["mappings"] = [];
         visitBridgeNodes(transfer.document.root, (node) => {
           const mapping = returned.get(node.bridgeId);
@@ -623,6 +638,7 @@ export class BridgeServer {
           revision: (previous?.revision ?? -1) + 1,
           mappingCount: mappings.length,
           manifestPath,
+          ...(visualComparison ? { visualComparison } : {}),
         });
         return;
       }
@@ -666,6 +682,9 @@ export class BridgeServer {
             mappingCount: number;
             manifestPath: string;
           };
+          let visualComparison:
+            | Awaited<ReturnType<typeof compareTransferredAppearance>>
+            | undefined;
           try {
             const writtenRoot = await this.#pen.getNode(result.rootId);
             const penDocument = await this.#importPenDocumentWithComponents(
@@ -675,6 +694,21 @@ export class BridgeServer {
               mappings,
             );
             verifyPencilWriteFidelity(exportRequest.document, penDocument);
+            visualComparison = exportRequest.figmaPngBase64
+              ? await compareTransferredAppearance(
+                  this.#pen,
+                  penPath,
+                  result.rootId,
+                  exportRequest.figmaPngBase64,
+                )
+              : undefined;
+            if (visualComparison && !visualComparison.report.passed)
+              throw new Error(
+                appearanceVerificationMessage(
+                  exportRequest.document.root.name,
+                  visualComparison.matchPercent,
+                ),
+              );
             if (journalId)
               await this.#journal
                 ?.setPhase(journalId, "committing")
@@ -720,6 +754,7 @@ export class BridgeServer {
             operation: "created-copy",
             ...summary,
             manifest,
+            ...(visualComparison ? { visualComparison } : {}),
           });
         } catch (error) {
           if (journalId)
@@ -1644,6 +1679,11 @@ const syncCompletionSchema = z
   .object({
     transferId: z.string().uuid(),
     figmaDocumentId: z.string().min(1).max(500).optional(),
+    figmaPngBase64: z
+      .string()
+      .min(1)
+      .max(22 * 1024 * 1024)
+      .optional(),
     figmaBaselineHashes: z
       .record(z.string().min(1).max(200), z.string().regex(/^[a-f0-9]{64}$/))
       .optional(),
@@ -1696,6 +1736,11 @@ const figmaExportRequestSchema = z
     placementAnchorId: z
       .string()
       .regex(/^[A-Za-z0-9]+$/)
+      .optional(),
+    figmaPngBase64: z
+      .string()
+      .min(1)
+      .max(22 * 1024 * 1024)
       .optional(),
   })
   .strict();
@@ -1907,6 +1952,33 @@ function includeDiffAncestors(
   return entries
     .filter((entry) => included.has(entry.bridgeId))
     .map((entry) => entry.bridgeId);
+}
+
+async function compareTransferredAppearance(
+  pen: PenMcpClient,
+  penPath: string,
+  penRootId: string,
+  figmaPngBase64: string,
+): Promise<{
+  matchPercent: number;
+  report: ReturnType<typeof comparePngBuffers>["report"];
+}> {
+  const figmaPng = Buffer.from(figmaPngBase64, "base64");
+  if (!figmaPng.length || figmaPng.byteLength > 16 * 1024 * 1024)
+    throw new Error("The Figma comparison image must be 16 MB or smaller");
+  const pencilPng = await pen.exportNodePng(penPath, penRootId, 2);
+  const comparison = comparePngBuffers(pencilPng, figmaPng);
+  return {
+    matchPercent: (1 - comparison.report.mismatchRatio) * 100,
+    report: comparison.report,
+  };
+}
+
+function appearanceVerificationMessage(
+  screenName: string,
+  matchPercent: number,
+): string {
+  return `Appearance verification failed for “${screenName}” at ${matchPercent.toFixed(1)}% match. No sync link was saved`;
 }
 
 function send(socket: WebSocket, message: ServerMessage): void {

@@ -588,6 +588,40 @@ button.recent-export-id {
   display: none;
 }
 
+.quality-panel {
+  margin: 0;
+}
+
+.quality-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.quality-item {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.quality-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quality-result {
+  color: var(--figma-color-text-secondary, var(--bridge-text-secondary));
+  flex: none;
+  font-size: 11px;
+}
+
+.quality-result.needs-review {
+  color: var(--figma-color-text-danger, #c2413a);
+}
+
 .conflict-panel {
   margin-top: 10px;
   border: 1px solid var(--figma-color-border-danger-strong);

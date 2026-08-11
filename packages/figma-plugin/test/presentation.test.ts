@@ -14,7 +14,7 @@ describe("companion health presentation", () => {
       assessCompanionHealth({
         ok: true,
         protocol: 1,
-        companionVersion: "0.1.12",
+        companionVersion: "0.1.13",
         capabilities: [
           "automatic-reconnect",
           "native-approval",
@@ -29,9 +29,10 @@ describe("companion health presentation", () => {
           "correct-gradient-direction",
           "pencil-write-fidelity-verification",
           "automatic-visual-comparison",
+          "automatic-transfer-visual-verification",
         ],
       }),
-    ).toEqual({ compatible: true, version: "0.1.12" });
+    ).toEqual({ compatible: true, version: "0.1.13" });
   });
 
   it("requires an update for legacy or incompatible health responses", () => {
@@ -76,6 +77,18 @@ describe("companion health presentation", () => {
 });
 
 describe("operation error presentation", () => {
+  it("explains a transfer appearance failure and protects the link", () => {
+    expect(
+      presentOperationError(
+        "Appearance verification failed for “Home” at 91.2% match. No sync link was saved",
+      ),
+    ).toEqual({
+      title: "The screen needs a visual review",
+      message:
+        "Appearance verification failed for “Home” at 91.2% match. No sync link was saved. The transferred copy was not linked, so it cannot overwrite a trusted version. Review the visible differences and try again after correcting the source or bridge.",
+    });
+  });
+
   it("explains a failed Figma read-back without developer language", () => {
     expect(
       presentOperationError(

@@ -11,7 +11,7 @@ function result(id: string, name: string, nodeCount = 1): FigmaReadResult {
     { id, type: "frame", name, children: [] },
     { documentId: "figma-file" },
   );
-  return { document, nodeCount, fonts: [], assetData: {} };
+  return { figmaRootId: id, document, nodeCount, fonts: [], assetData: {} };
 }
 
 describe("multi-screen Figma export", () => {

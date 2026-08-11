@@ -118,6 +118,76 @@ describe("BridgeServer", () => {
     });
   });
 
+  it("does not save a new link when the transferred screen looks different", async () => {
+    const directory = await mkdtemp(
+      path.join(os.tmpdir(), "pen-fig-transfer-visual-"),
+    );
+    temporaryDirectories.push(directory);
+    const penPath = path.join(directory, "design.pen");
+    const pencilImage = new PNG({ width: 2, height: 2 });
+    pencilImage.data.fill(0);
+    const figmaImage = new PNG({ width: 2, height: 2 });
+    figmaImage.data.fill(255);
+    const pen = {
+      getAppState: async () => ({
+        text: `- Currently active canvas editor: \`${penPath}\``,
+      }),
+      getNode: async () => ({
+        id: "screen",
+        type: "frame",
+        name: "Screen",
+        width: 2,
+        height: 2,
+        children: [],
+      }),
+      exportNodePng: async () => PNG.sync.write(pencilImage),
+    } as unknown as PenMcpClient;
+    const server = new BridgeServer({ host: "127.0.0.1", port: 0, pen });
+    servers.push(server);
+    const port = await server.start();
+    const origin = `http://localhost:${port}`;
+    const paired = (await (
+      await bridgeFetch(`${origin}/pair`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "pair",
+          protocol: 1,
+          code: server.pairingCode,
+        }),
+      })
+    ).json()) as { token: string };
+    await bridgeFetch(`${origin}/hello?token=${paired.token}`, {
+      method: "POST",
+    });
+    const transferred = await bridgeFetch(
+      `${origin}/pen/nodes/screen?token=${paired.token}`,
+    ).then((response) => response.json());
+    const completion = await bridgeFetch(
+      `${origin}/sync/complete?token=${paired.token}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          transferId: transferred.transferId,
+          mappings: [{ bridgeId: "pen:screen", figmaNodeId: "1:2" }],
+          figmaPngBase64: PNG.sync.write(figmaImage).toString("base64"),
+        }),
+      },
+    );
+
+    expect(completion.status).toBe(409);
+    expect(await completion.json()).toMatchObject({
+      type: "failed",
+      code: "WRITE_VERIFICATION",
+      message: expect.stringContaining("Appearance verification failed"),
+      phase: "verification",
+    });
+    await expect(
+      readFile(path.join(directory, "design.pen-fig.json")),
+    ).rejects.toThrow();
+  });
+
   it("authorizes a first connection after native macOS approval", async () => {
     const pen = {
       getAppState: async () => ({
@@ -1223,6 +1293,9 @@ describe("BridgeServer", () => {
     );
     temporaryDirectories.push(directory);
     const penPath = path.join(directory, "test.pen");
+    const rendered = new PNG({ width: 2, height: 2 });
+    rendered.data.fill(255);
+    const renderedPng = PNG.sync.write(rendered);
     await writeFile(
       penPath,
       JSON.stringify({ version: "2.15", children: [] }),
@@ -1280,6 +1353,7 @@ describe("BridgeServer", () => {
         [...input.matchAll(/Print\("MAP","\|","([^"]+)"/g)]
           .map((match) => `MAP | ${match[1]} | ${nativeIds[match[1]!]}`)
           .join("\n") || "OK",
+      exportNodePng: async () => renderedPng,
       getNode: async (nodeId: string): Promise<PenNode> => {
         if (nodeId === "nativeRoot")
           return {
@@ -1352,7 +1426,11 @@ describe("BridgeServer", () => {
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ document, assetData: {} }),
+        body: JSON.stringify({
+          document,
+          assetData: {},
+          figmaPngBase64: renderedPng.toString("base64"),
+        }),
       },
     );
 
@@ -1363,6 +1441,10 @@ describe("BridgeServer", () => {
       operation: "created-copy",
       rootId: "nativeRoot",
       nodeCount: 4,
+      visualComparison: {
+        matchPercent: 100,
+        report: { passed: true, mismatchRatio: 0 },
+      },
       manifest: { revision: 0, mappingCount: 2 },
     });
     expect(await journal.entries()).toMatchObject([

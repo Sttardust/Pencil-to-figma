@@ -13,6 +13,10 @@ choose **Compare Pencil and Figma**. The plugin captures both renders at 2×, sh
 percentage, and offers a highlighted difference image. The manual command below remains available
 for maintainers who need persistent release reports and golden fixtures.
 
+New transfers run the same 2× check automatically before their sync links are saved. Multi-screen
+transfers show progress and a result for each screen. If a screen fails, its link is not committed;
+Figma → Pencil creation also removes the unverified Pencil copy before reporting the failure.
+
 ## Capture a comparison pair
 
 Export the complete root frame from both applications as PNG at the same scale. Use 2× for the
