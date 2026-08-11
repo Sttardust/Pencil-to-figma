@@ -122,4 +122,39 @@ describe("Figma write verification", () => {
       verifyFigmaWriteFidelity(document(source), document(actual)),
     ).toThrow("layer order was not preserved");
   });
+
+  it("accepts tighter Figma bounds for an SVG-derived icon wrapper", () => {
+    const source = node({
+      bridgeId: "pen:signal",
+      kind: "frame",
+      name: "I",
+      bounds: { x: 0, y: 0, width: 16, height: 16 },
+      width: { mode: "fixed", value: 16 },
+      height: { mode: "fixed", value: 16 },
+      icon: { assetId: "pen-icon:signal" },
+    });
+    const actual = structuredClone(source);
+    actual.bounds.width = 10.000006675720215;
+    actual.bounds.height = 15.168421745300293;
+
+    expect(() =>
+      verifyFigmaWriteFidelity(document(source), document(actual)),
+    ).not.toThrow();
+  });
+
+  it("continues to reject the same width drift for normal layers", () => {
+    const source = node({
+      bridgeId: "pen:card",
+      name: "Card",
+      bounds: { x: 0, y: 0, width: 16, height: 16 },
+      width: { mode: "fixed", value: 16 },
+      height: { mode: "fixed", value: 16 },
+    });
+    const actual = structuredClone(source);
+    actual.bounds.width = 10;
+
+    expect(() =>
+      verifyFigmaWriteFidelity(document(source), document(actual)),
+    ).toThrow("Card: expected width 16, received 10");
+  });
 });

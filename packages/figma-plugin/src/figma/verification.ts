@@ -41,20 +41,27 @@ function verifyDimensions(
   actual: BridgeNode,
   issues: string[],
 ): void {
-  if (
-    expected.width.mode === "fixed" &&
-    !close(expected.width.value, actual.bounds.width, GEOMETRY_EPSILON)
-  )
-    issues.push(
-      `${expected.name}: expected width ${expected.width.value}, received ${actual.bounds.width}`,
-    );
-  if (
-    expected.height.mode === "fixed" &&
-    !close(expected.height.value, actual.bounds.height, GEOMETRY_EPSILON)
-  )
-    issues.push(
-      `${expected.name}: expected height ${expected.height.value}, received ${actual.bounds.height}`,
-    );
+  // Figma derives the bounds of createNodeFromSvg() wrappers from the SVG's
+  // visible vector geometry. Those bounds can be tighter than Pencil's icon
+  // box even when the rendered icon is correct (status icons are a common
+  // example). The PNG appearance check that follows this structural check is
+  // the reliable way to verify SVG size, so do not reject the transfer here.
+  if (!expected.icon) {
+    if (
+      expected.width.mode === "fixed" &&
+      !close(expected.width.value, actual.bounds.width, GEOMETRY_EPSILON)
+    )
+      issues.push(
+        `${expected.name}: expected width ${expected.width.value}, received ${actual.bounds.width}`,
+      );
+    if (
+      expected.height.mode === "fixed" &&
+      !close(expected.height.value, actual.bounds.height, GEOMETRY_EPSILON)
+    )
+      issues.push(
+        `${expected.name}: expected height ${expected.height.value}, received ${actual.bounds.height}`,
+      );
+  }
   if (expected.layoutPosition !== "absolute") return;
   if (!close(expected.bounds.x, actual.bounds.x, GEOMETRY_EPSILON))
     issues.push(
