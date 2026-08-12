@@ -116,7 +116,7 @@ export class PenMcpClient {
     const result = await this.#callWithReconnect(
       "execute",
       {
-        input: `Print(Get("${nodeId}",{includePathGeometry:true}));Get("${nodeId}",(n,c)=>{Print("PEN_FIG_BOUNDS","|",n.id,"|",c.bounds.x,"|",c.bounds.y,"|",c.bounds.width,"|",c.bounds.height)})`,
+        input: `Print(Get("${nodeId}",{includePathGeometry:true}));${resolvedRootBoundsScript(nodeId)}`,
       },
       60_000,
     );
@@ -305,6 +305,12 @@ export function selectedRootFrameLookupScript(selectedIds: string[]): string {
       return `let ${variable}=Get(${JSON.stringify(nodeId)});if(${variable}.type==="frame"&&!${variable}.reusable){Print(${variable}.id,"|",${variable}.name||"")}`;
     })
     .join(";");
+}
+
+export function resolvedRootBoundsScript(nodeId: string): string {
+  if (!/^[A-Za-z0-9]+$/.test(nodeId))
+    throw new Error(`Invalid Pen node id '${nodeId}'`);
+  return `Get(${JSON.stringify(nodeId)},(n,c)=>{if(c){c.skipChildren();if(c.bounds)Print("PEN_FIG_BOUNDS","|",n.id,"|",c.bounds.x,"|",c.bounds.y,"|",c.bounds.width,"|",c.bounds.height)}})`;
 }
 
 export function selectedNodeIdsFromAppState(text: string): string[] {

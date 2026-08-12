@@ -3,6 +3,7 @@ import type { PenNode } from "@pen-fig/core";
 import {
   attachResolvedBounds,
   parseResolvedBounds,
+  resolvedRootBoundsScript,
   selectedNodeIdsFromAppState,
   selectedRootFrameLookupScript,
 } from "../src/pen/mcp-client.js";
@@ -66,6 +67,14 @@ PEN_FIG_BOUNDS | body | 0 | 110 | 393 | 673
     expect(script).toContain('let n1=Get("gpVUt")');
     expect(script).not.toContain("Get((n,c)");
     expect(script).not.toContain("skipChildren");
+  });
+
+  it("measures only the selected page root before nested Pencil traversal", () => {
+    const script = resolvedRootBoundsScript("mpCP3");
+
+    expect(script).toContain('Get("mpCP3",(n,c)');
+    expect(script).toContain("c.skipChildren()");
+    expect(script).toContain("if(c.bounds)");
   });
 
   it("rejects unsafe selected node ids", () => {

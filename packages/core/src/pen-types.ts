@@ -62,7 +62,7 @@ export interface PenNode {
   /**
    * Resolved canvas geometry reported by Pencil's layout engine. Dynamic
    * `fit_content`/`fill_container` values do not carry their computed size in
-   * the serialized node, so the companion attaches it while reading a slice.
+   * the serialized node, so the companion can attach it while reading a slice.
    */
   resolvedBounds?: {
     x: number;
