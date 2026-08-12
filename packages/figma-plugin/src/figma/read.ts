@@ -120,7 +120,7 @@ async function readFigmaDocument(
     },
   );
   const selectedNodeIds = collectSceneNodeIds(selected);
-  const components = dependencies.components
+  const allComponents = dependencies.components
     .filter((component) => !selectedNodeIds.has(component.id))
     .map((component) =>
       readNode(
@@ -136,6 +136,7 @@ async function readFigmaDocument(
         },
       ),
     );
+  const components = referencedComponents(root, allComponents);
   removeDerivedInstanceChildren(root, components);
   nodeCount =
     countBridgeNodes(root) +
@@ -144,12 +145,13 @@ async function readFigmaDocument(
       0,
     );
   const referencedVariableIds = collectReferencedVariableIds(root, components);
+  const referencedAssetIds = collectReferencedAssetIds(root, components);
   const document = bridgeDocumentSchema.parse({
     version: 1,
     source: { app: "figma", documentId },
     root,
     ...(components.length ? { components } : {}),
-    assets,
+    assets: assets.filter((asset) => referencedAssetIds.has(asset.id)),
     variables: [...referencedVariableIds]
       .map((bridgeId) => nativeVariables.variablesByBridgeId.get(bridgeId))
       .filter((variable): variable is BridgeVariable => Boolean(variable)),
@@ -410,8 +412,14 @@ async function collectAssetData(
         if (!image) throw new Error(`Figma image ${imageHash} is unavailable`);
         bytes = await image.getBytesAsync();
         mimeType = detectImageMime(bytes);
-      } else if (sourceUri.startsWith("figma-svg://")) {
-        const nodeId = sourceUri.slice("figma-svg://".length);
+      } else if (
+        sourceUri.startsWith("figma-svg://") ||
+        sourceUri.startsWith("figma-rasterized://")
+      ) {
+        const prefix = sourceUri.startsWith("figma-svg://")
+          ? "figma-svg://"
+          : "figma-rasterized://";
+        const nodeId = sourceUri.slice(prefix.length);
         const node = await figma.getNodeByIdAsync(nodeId);
         if (!node || node.type === "DOCUMENT" || node.type === "PAGE")
           throw new Error(`Figma SVG wrapper ${nodeId} is unavailable`);
@@ -485,10 +493,13 @@ function readNode(
       ? readMixedTextFallback(node, bridgeId, warnings)
       : undefined;
   const generatedSvgWrapper = isGeneratedSvgWrapper(node);
+  const rasterizedIconInstance =
+    node.type === "INSTANCE" && shouldRasterizeIconInstance(node);
+  const appearanceAssetWrapper = generatedSvgWrapper || rasterizedIconInstance;
   const storedKind = node.getPluginData(BRIDGE_KIND_KEY);
   const result: BridgeNode = {
     bridgeId,
-    kind: generatedSvgWrapper
+    kind: appearanceAssetWrapper
       ? "frame"
       : isBridgeKind(storedKind)
         ? storedKind
@@ -508,7 +519,11 @@ function readNode(
         : "auto",
     children: [],
   };
-  if ("children" in node && !generatedSvgWrapper && node.type !== "INSTANCE") {
+  if (
+    "children" in node &&
+    !appearanceAssetWrapper &&
+    node.type !== "INSTANCE"
+  ) {
     for (const child of node.children) {
       if (!isSupportedSceneNode(child)) {
         warnings.push(
@@ -535,16 +550,29 @@ function readNode(
       );
     }
   }
-  if (generatedSvgWrapper) {
-    const assetId = node.getPluginData(SVG_ASSET_KEY) || `figma-svg:${node.id}`;
+  if (appearanceAssetWrapper) {
+    const assetId = rasterizedIconInstance
+      ? `figma-rasterized:${node.id}`
+      : node.getPluginData(SVG_ASSET_KEY) || `figma-svg:${node.id}`;
     if (!assets.some((asset) => asset.id === assetId))
       assets.push({
         status: "pending",
         id: assetId,
-        kind: "svg",
-        sourceUri: `figma-svg://${node.id}`,
+        kind: rasterizedIconInstance ? "rasterized" : "svg",
+        sourceUri: rasterizedIconInstance
+          ? `figma-rasterized://${node.id}`
+          : `figma-svg://${node.id}`,
       });
     result.icon = { assetId };
+    if (rasterizedIconInstance)
+      warnings.push(
+        warning(
+          bridgeId,
+          "icon component instance",
+          "rasterize",
+          `Copied icon ${node.name} as an image so its Figma size and color stay unchanged in Pencil`,
+        ),
+      );
   }
 
   if (node.type === "FRAME" || node.type === "COMPONENT") {
@@ -641,7 +669,7 @@ function readNode(
     result.polygonSides = node.pointCount;
   } else if (node.type === "COMPONENT") {
     result.component = { key: node.key || node.id };
-  } else if (node.type === "INSTANCE") {
+  } else if (node.type === "INSTANCE" && !rasterizedIconInstance) {
     const component = instanceComponents.get(node.id);
     result.instance = {
       componentBridgeId:
@@ -771,6 +799,45 @@ function collectReferencedVariableIds(
   collect(root);
   for (const component of components) collect(component);
   return ids;
+}
+
+function collectReferencedAssetIds(
+  root: BridgeNode,
+  components: BridgeNode[],
+): Set<string> {
+  const ids = new Set<string>();
+  const collect = (node: BridgeNode) => {
+    if (node.icon) ids.add(node.icon.assetId);
+    for (const paint of node.fills ?? [])
+      if (paint.type === "image") ids.add(paint.assetId);
+    for (const paint of node.stroke?.paints ?? [])
+      if (paint.type === "image") ids.add(paint.assetId);
+    for (const child of node.children) collect(child);
+  };
+  collect(root);
+  for (const component of components) collect(component);
+  return ids;
+}
+
+function referencedComponents(
+  root: BridgeNode,
+  components: BridgeNode[],
+): BridgeNode[] {
+  const byId = new Map(
+    components.map((component) => [component.bridgeId, component]),
+  );
+  const referenced = new Set<string>();
+  const visitReferences = (node: BridgeNode) => {
+    const componentId = node.instance?.componentBridgeId;
+    if (componentId && !referenced.has(componentId)) {
+      referenced.add(componentId);
+      const component = byId.get(componentId);
+      if (component) visitReferences(component);
+    }
+    for (const child of node.children) visitReferences(child);
+  };
+  visitReferences(root);
+  return components.filter((component) => referenced.has(component.bridgeId));
 }
 
 function readInstanceOverrides(
@@ -921,6 +988,53 @@ function isGeneratedSvgWrapper(node: SceneNode): boolean {
   return node.children.every(
     (child) => child.getPluginData(BRIDGE_ID_KEY) === "",
   );
+}
+
+export interface IconInstanceCandidate {
+  width: number;
+  height: number;
+  hasText: boolean;
+  hasImage: boolean;
+  hasVectorGeometry: boolean;
+}
+
+export function isIconInstanceCandidate(
+  candidate: IconInstanceCandidate,
+): boolean {
+  return (
+    candidate.width > 0 &&
+    candidate.height > 0 &&
+    candidate.width <= 64 &&
+    candidate.height <= 64 &&
+    !candidate.hasText &&
+    !candidate.hasImage &&
+    candidate.hasVectorGeometry
+  );
+}
+
+function shouldRasterizeIconInstance(node: InstanceNode): boolean {
+  const descendants = node.findAll(() => true);
+  return isIconInstanceCandidate({
+    width: node.width,
+    height: node.height,
+    hasText: descendants.some((child) => child.type === "TEXT"),
+    hasImage: descendants.some(hasImageFill),
+    hasVectorGeometry: descendants.some((child) =>
+      [
+        "VECTOR",
+        "BOOLEAN_OPERATION",
+        "LINE",
+        "ELLIPSE",
+        "POLYGON",
+        "STAR",
+      ].includes(child.type),
+    ),
+  });
+}
+
+function hasImageFill(node: SceneNode): boolean {
+  if (!("fills" in node) || node.fills === figma.mixed) return false;
+  return node.fills.some((paint) => paint.type === "IMAGE");
 }
 
 function isBridgeKind(value: string): value is BridgeNode["kind"] {

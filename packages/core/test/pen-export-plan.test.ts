@@ -382,6 +382,54 @@ describe("planFigmaToPenCreate", () => {
     );
   });
 
+  it("writes rasterized Figma icon instances as size-preserving image layers", () => {
+    const document = fixture();
+    const icon = document.root.children[0]!;
+    icon.kind = "frame";
+    delete icon.text;
+    icon.bounds = { x: 0, y: 0, width: 24, height: 24 };
+    icon.width = { mode: "fixed", value: 24 };
+    icon.height = { mode: "fixed", value: 24 };
+    icon.icon = { assetId: "figma-rasterized:icon" };
+    document.assets.push({
+      status: "pending",
+      id: "figma-rasterized:icon",
+      kind: "rasterized",
+      sourceUri: "figma-rasterized://1:2",
+    });
+
+    const plan = planFigmaToPenCreate(document, {
+      assetPaths: {
+        "figma-rasterized:icon": "./.pen-fig-assets/icon.png",
+      },
+    });
+    const insert = plan.operations.find(
+      (operation) =>
+        operation.type === "insert" && operation.bridgeId === "pen:title",
+    );
+
+    expect(
+      insert?.type === "insert" ? insert.payload : undefined,
+    ).toMatchObject({
+      type: "rectangle",
+      width: 24,
+      height: 24,
+      fill: [
+        {
+          type: "image",
+          url: "./.pen-fig-assets/icon.png",
+          mode: "fit",
+        },
+      ],
+    });
+    expect(plan.warnings).toContainEqual(
+      expect.objectContaining({
+        code: "FIGMA_ICON_INSTANCE_RASTERIZED",
+        action: "rasterize",
+      }),
+    );
+  });
+
   it("rejects an operation larger than the byte ceiling", () => {
     const document = fixture();
     document.root.children[0]!.text!.characters = "x".repeat(1000);

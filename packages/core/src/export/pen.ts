@@ -244,6 +244,10 @@ function toPenPayload(
   }
   if (node.kind === "polygon") payload.polygonCount = node.polygonSides ?? 3;
   if (node.icon) {
+    const asset = document.assets.find(
+      (entry) => entry.id === node.icon?.assetId,
+    );
+    const rasterizedInstance = asset?.kind === "rasterized";
     payload.type = "rectangle";
     payload.fill = [
       {
@@ -255,11 +259,15 @@ function toPenPayload(
       },
     ];
     warnings.push({
-      code: "FIGMA_SVG_RASTERIZED",
+      code: rasterizedInstance
+        ? "FIGMA_ICON_INSTANCE_RASTERIZED"
+        : "FIGMA_SVG_RASTERIZED",
       nodeBridgeId: node.bridgeId,
-      construct: "svg wrapper",
+      construct: rasterizedInstance ? "icon component instance" : "svg wrapper",
       action: "rasterize",
-      message: `SVG wrapper ${node.name} will use a rendered image in Pencil`,
+      message: rasterizedInstance
+        ? `Icon ${node.name} will use a rendered image in Pencil to preserve its Figma size and color`
+        : `SVG wrapper ${node.name} will use a rendered image in Pencil`,
     });
   }
   return withoutUndefined(payload);
