@@ -129,7 +129,8 @@ export function assessCompanionHealth(value: unknown): CompanionCompatibility {
       capabilities.includes("pencil-write-fidelity-verification") &&
       capabilities.includes("automatic-visual-comparison") &&
       capabilities.includes("automatic-transfer-visual-verification") &&
-      capabilities.includes("appearance-failure-details"),
+      capabilities.includes("appearance-failure-details") &&
+      capabilities.includes("balanced-appearance-thresholds"),
     ),
     ...(version ? { version } : {}),
   };

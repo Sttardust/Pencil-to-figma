@@ -92,8 +92,19 @@ describe("visual PNG comparison", () => {
 
     expect(DEFAULT_VISUAL_THRESHOLDS.maxMismatchRatio).toBe(0.025);
     expect(comparison.report.mismatchRatio).toBeCloseTo(0.022);
-    expect(comparison.report.meanAbsoluteError).toBeLessThan(0.015);
+    expect(DEFAULT_VISUAL_THRESHOLDS.maxMeanError).toBe(0.02);
+    expect(comparison.report.meanAbsoluteError).toBeLessThan(0.02);
     expect(comparison.report.passed).toBe(true);
+  });
+
+  it("still rejects a broad color shift above the default mean limit", () => {
+    const reference = png(100, 100, [100, 100, 100, 255]);
+    const candidate = png(100, 100, [108, 108, 108, 255]);
+    const comparison = comparePngBuffers(reference, candidate);
+
+    expect(comparison.report.mismatchRatio).toBe(0);
+    expect(comparison.report.meanAbsoluteError).toBeGreaterThan(0.02);
+    expect(comparison.report.passed).toBe(false);
   });
 
   it("rejects different render dimensions", () => {

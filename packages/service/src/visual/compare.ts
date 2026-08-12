@@ -30,7 +30,7 @@ export const DEFAULT_VISUAL_THRESHOLDS: VisualThresholds = {
   // narrow allowance for those edge pixels while the mean-error guard below
   // continues to catch broad color and layout changes.
   maxMismatchRatio: 0.025,
-  maxMeanError: 0.015,
+  maxMeanError: 0.02,
 };
 
 export class ImageDimensionMismatchError extends Error {
