@@ -17,7 +17,7 @@ export function verifyFigmaWriteFidelity(
       issues.push(`${expected.name}: layer is missing`);
       return;
     }
-    if (received.kind !== expected.kind)
+    if (!hasEquivalentKind(expected, received))
       issues.push(
         `${expected.name}: expected ${expected.kind}, received ${received.kind}`,
       );
@@ -34,6 +34,16 @@ export function verifyFigmaWriteFidelity(
     throw new Error(
       `Figma verification failed: ${issues.slice(0, 4).join("; ")}${issues.length > 4 ? `; and ${issues.length - 4} more` : ""}`,
     );
+}
+
+function hasEquivalentKind(expected: BridgeNode, actual: BridgeNode): boolean {
+  if (actual.kind === expected.kind) return true;
+  // Figma's createNodeFromSvg() returns a FRAME wrapper around vector
+  // geometry. The reader marks only bridge-generated wrappers with an icon
+  // asset, so this exception cannot hide an ordinary path-to-frame change.
+  // Geometry and rendered appearance are still verified below and by the
+  // automatic PNG comparison before a sync baseline is saved.
+  return expected.kind === "path" && actual.kind === "frame" && !!actual.icon;
 }
 
 function verifyDimensions(

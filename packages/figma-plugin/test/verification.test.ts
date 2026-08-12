@@ -142,6 +142,53 @@ describe("Figma write verification", () => {
     ).not.toThrow();
   });
 
+  it("accepts a path represented by its generated Figma SVG wrapper", () => {
+    const source = node({
+      bridgeId: "pen:vector",
+      kind: "path",
+      name: "Vector",
+      bounds: { x: 12, y: 8, width: 20, height: 20 },
+      width: { mode: "fixed", value: 20 },
+      height: { mode: "fixed", value: 20 },
+      path: {
+        data: "M0 0h20v20H0z",
+        windingRule: "nonzero",
+        viewBox: [0, 0, 20, 20],
+      },
+    });
+    const actual = node({
+      bridgeId: "pen:vector",
+      kind: "frame",
+      name: "Vector",
+      bounds: { x: 12, y: 8, width: 20, height: 20 },
+      width: { mode: "fixed", value: 20 },
+      height: { mode: "fixed", value: 20 },
+      icon: { assetId: "figma-svg:1:2" },
+    });
+
+    expect(() =>
+      verifyFigmaWriteFidelity(document(source), document(actual)),
+    ).not.toThrow();
+  });
+
+  it("still rejects an ordinary frame replacing a path", () => {
+    const source = node({
+      bridgeId: "pen:vector",
+      kind: "path",
+      name: "Vector",
+      path: {
+        data: "M0 0h20v20H0z",
+        windingRule: "nonzero",
+        viewBox: [0, 0, 20, 20],
+      },
+    });
+    const actual = node({ bridgeId: "pen:vector", name: "Vector" });
+
+    expect(() =>
+      verifyFigmaWriteFidelity(document(source), document(actual)),
+    ).toThrow("Vector: expected path, received frame");
+  });
+
   it("continues to reject the same width drift for normal layers", () => {
     const source = node({
       bridgeId: "pen:card",
