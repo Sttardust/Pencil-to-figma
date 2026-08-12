@@ -1,5 +1,9 @@
+import type { BridgeNode } from "@pen-fig/bridge-schema";
 import { describe, expect, it } from "vitest";
-import { autoLayoutFillFallback } from "../src/figma/sizing.js";
+import {
+  autoLayoutFillFallback,
+  mustPreserveHugFallback,
+} from "../src/figma/sizing.js";
 
 const verticalPhone = {
   layoutMode: "VERTICAL" as const,
@@ -46,5 +50,62 @@ describe("autoLayoutFillFallback", () => {
         ],
       }),
     ).toBe(249);
+  });
+});
+
+function sizingNode(overrides: Partial<BridgeNode>): BridgeNode {
+  return {
+    bridgeId: "pen:frame",
+    kind: "frame",
+    name: "Frame 40",
+    source: { app: "pen", documentId: "test.pen", nodeId: "frame" },
+    bounds: { x: 0, y: 0, width: 345, height: 100 },
+    width: { mode: "hug", fallback: 345 },
+    height: { mode: "hug", fallback: 100 },
+    rotation: 0,
+    visible: true,
+    opacity: 1,
+    locked: false,
+    children: [],
+    layout: {
+      mode: "vertical",
+      gap: 12,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      primaryAlign: "start",
+      counterAlign: "start",
+    },
+    ...overrides,
+  };
+}
+
+describe("mustPreserveHugFallback", () => {
+  it("preserves a Pencil hug width whose child fills that width", () => {
+    const source = sizingNode({
+      children: [
+        sizingNode({
+          bridgeId: "pen:section",
+          name: "Sect",
+          width: { mode: "fill" },
+          height: { mode: "hug", fallback: 20 },
+        }),
+      ],
+    });
+
+    expect(mustPreserveHugFallback(source, "horizontal")).toBe(true);
+  });
+
+  it("keeps normal content-driven hug sizing dynamic", () => {
+    const source = sizingNode({
+      children: [
+        sizingNode({
+          bridgeId: "pen:label",
+          name: "Label",
+          width: { mode: "fixed", value: 120 },
+          height: { mode: "fixed", value: 20 },
+        }),
+      ],
+    });
+
+    expect(mustPreserveHugFallback(source, "horizontal")).toBe(false);
   });
 });

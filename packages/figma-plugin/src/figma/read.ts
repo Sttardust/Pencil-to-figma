@@ -12,6 +12,7 @@ import {
   BRIDGE_ID_KEY,
   BRIDGE_KIND_KEY,
   INSTANCE_OVERRIDE_MAP_KEY,
+  PRESERVED_HUG_AXES_KEY,
   SVG_ASSET_KEY,
   VARIABLE_ID_KEY,
   VARIABLE_MODE_MAP_KEY,
@@ -1058,6 +1059,10 @@ function mapSizing(
   const property =
     axis === "horizontal" ? "layoutSizingHorizontal" : "layoutSizingVertical";
   const fallback = axis === "horizontal" ? node.width : node.height;
+  const preservedHugAxes = new Set(
+    node.getPluginData(PRESERVED_HUG_AXES_KEY).split(",").filter(Boolean),
+  );
+  if (preservedHugAxes.has(axis)) return { mode: "hug", fallback };
   if (property in node) {
     const value = (node as SceneNode & LayoutMixin)[property];
     if (value === "FILL") return { mode: "fill", fallback };

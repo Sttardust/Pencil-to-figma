@@ -243,4 +243,20 @@ describe("Figma write verification", () => {
       verifyFigmaWriteFidelity(document(source), document(actual)),
     ).toThrow("Card: expected width 16, received 10");
   });
+
+  it("rejects a collapsed computed hug width", () => {
+    const source = node({
+      bridgeId: "pen:goals-section",
+      name: "Frame 40",
+      bounds: { x: 0, y: 0, width: 345, height: 500 },
+      width: { mode: "hug", fallback: 345 },
+      height: { mode: "hug", fallback: 500 },
+    });
+    const actual = structuredClone(source);
+    actual.bounds.width = 83;
+
+    expect(() =>
+      verifyFigmaWriteFidelity(document(source), document(actual)),
+    ).toThrow("Frame 40: expected computed width 345, received 83");
+  });
 });

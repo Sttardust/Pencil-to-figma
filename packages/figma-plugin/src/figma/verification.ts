@@ -74,6 +74,8 @@ function verifyDimensions(
       issues.push(
         `${expected.name}: expected height ${expected.height.value}, received ${actual.bounds.height}`,
       );
+    verifyHugFallback(expected, actual, "horizontal", issues);
+    verifyHugFallback(expected, actual, "vertical", issues);
   }
   if (expected.layoutPosition !== "absolute") return;
   if (!close(expected.bounds.x, actual.bounds.x, GEOMETRY_EPSILON))
@@ -83,6 +85,28 @@ function verifyDimensions(
   if (!close(expected.bounds.y, actual.bounds.y, GEOMETRY_EPSILON))
     issues.push(
       `${expected.name}: expected y ${expected.bounds.y}, received ${actual.bounds.y}`,
+    );
+}
+
+function verifyHugFallback(
+  expected: BridgeNode,
+  actual: BridgeNode,
+  axis: "horizontal" | "vertical",
+  issues: string[],
+): void {
+  const sizing = axis === "horizontal" ? expected.width : expected.height;
+  if (
+    sizing.mode !== "hug" ||
+    sizing.fallback === undefined ||
+    sizing.fallback <= 0
+  )
+    return;
+  const received =
+    axis === "horizontal" ? actual.bounds.width : actual.bounds.height;
+  const tolerance = Math.max(1, sizing.fallback * 0.02);
+  if (!close(sizing.fallback, received, tolerance))
+    issues.push(
+      `${expected.name}: expected computed ${axis === "horizontal" ? "width" : "height"} ${sizing.fallback}, received ${received}`,
     );
 }
 

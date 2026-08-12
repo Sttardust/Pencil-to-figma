@@ -1,3 +1,5 @@
+import type { BridgeNode } from "@pen-fig/bridge-schema";
+
 export type LayoutAxis = "horizontal" | "vertical";
 
 export interface AutoLayoutSiblingBounds {
@@ -43,4 +45,24 @@ export function autoLayoutFillFallback(
   );
   const gaps = context.flowSiblings.length * context.itemSpacing;
   return Math.max(1, innerSize - occupied - gaps);
+}
+
+export function mustPreserveHugFallback(
+  source: BridgeNode,
+  axis: LayoutAxis,
+): boolean {
+  const sizing = axis === "horizontal" ? source.width : source.height;
+  if (
+    sizing.mode !== "hug" ||
+    sizing.fallback === undefined ||
+    sizing.fallback <= 0 ||
+    !source.layout ||
+    source.layout.mode === "none"
+  )
+    return false;
+  return source.children.some((child) => {
+    if (child.layoutPosition === "absolute") return false;
+    const childSizing = axis === "horizontal" ? child.width : child.height;
+    return childSizing.mode === "fill";
+  });
 }

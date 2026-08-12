@@ -2,6 +2,7 @@ export const BRIDGE_ID_KEY = "penFigBridgeId";
 export const AUTHORED_HASH_KEY = "penFigAuthoredHash";
 export const BRIDGE_KIND_KEY = "penFigBridgeKind";
 export const SVG_ASSET_KEY = "penFigSvgAssetId";
+export const PRESERVED_HUG_AXES_KEY = "penFigPreservedHugAxes";
 export const INSTANCE_OVERRIDE_MAP_KEY = "penFigInstanceOverrideMap";
 export const VARIABLE_COLLECTION_SOURCE_KEY = "penFigVariableSource";
 export const VARIABLE_ID_KEY = "penFigVariableId";

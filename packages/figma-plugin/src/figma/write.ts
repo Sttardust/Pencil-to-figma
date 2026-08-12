@@ -14,6 +14,7 @@ import {
   BRIDGE_ID_KEY,
   BRIDGE_KIND_KEY,
   INSTANCE_OVERRIDE_MAP_KEY,
+  PRESERVED_HUG_AXES_KEY,
   SVG_ASSET_KEY,
   VARIABLE_COLLECTION_SOURCE_KEY,
   VARIABLE_ID_KEY,
@@ -26,10 +27,14 @@ import { normalizeGeometryForFigma, uniformValue } from "./geometry.js";
 import { toFigmaLayoutPositioning } from "./layout-position.js";
 import { needsOverlayLayoutRebuild } from "./migration.js";
 import { findCleanRightSidePosition } from "./placement.js";
-import { autoLayoutFillFallback, type LayoutAxis } from "./sizing.js";
+import {
+  autoLayoutFillFallback,
+  mustPreserveHugFallback,
+  type LayoutAxis,
+} from "./sizing.js";
 import { bridgeStackOrder } from "./stacking.js";
 
-const WRITE_SCHEMA_VERSION = "7";
+const WRITE_SCHEMA_VERSION = "8";
 const ROOT_GAP = 120;
 const COMPONENT_GAP = 40;
 
@@ -1001,6 +1006,10 @@ function applyNodeProperties(
   node.setPluginData(BRIDGE_ID_KEY, source.bridgeId);
   node.setPluginData(BRIDGE_KIND_KEY, source.kind);
   node.setPluginData(SVG_ASSET_KEY, source.icon?.assetId ?? "");
+  const preservedHugAxes = (["horizontal", "vertical"] as const).filter(
+    (axis) => mustPreserveHugFallback(source, axis),
+  );
+  node.setPluginData(PRESERVED_HUG_AXES_KEY, preservedHugAxes.join(","));
   node.setPluginData(AUTHORED_HASH_KEY, context.hashes[source.bridgeId] ?? "");
   node.setPluginData("penFigSchema", WRITE_SCHEMA_VERSION);
   applyLayoutPosition(node, source, parent);
@@ -1536,8 +1545,18 @@ function applyLayout(
   const horizontal = layout.mode === "horizontal";
   const primarySizing = horizontal ? source.width : source.height;
   const counterSizing = horizontal ? source.height : source.width;
-  node.primaryAxisSizingMode = primarySizing.mode === "hug" ? "AUTO" : "FIXED";
-  node.counterAxisSizingMode = counterSizing.mode === "hug" ? "AUTO" : "FIXED";
+  const primaryAxis = horizontal ? "horizontal" : "vertical";
+  const counterAxis = horizontal ? "vertical" : "horizontal";
+  node.primaryAxisSizingMode =
+    primarySizing.mode === "hug" &&
+    !mustPreserveHugFallback(source, primaryAxis)
+      ? "AUTO"
+      : "FIXED";
+  node.counterAxisSizingMode =
+    counterSizing.mode === "hug" &&
+    !mustPreserveHugFallback(source, counterAxis)
+      ? "AUTO"
+      : "FIXED";
   node.itemSpacing = layout.gap;
   node.paddingTop = layout.padding.top;
   node.paddingRight = layout.padding.right;
@@ -1574,13 +1593,17 @@ function applySizingMode(
   node.layoutSizingHorizontal =
     source.width.mode === "fill"
       ? "FILL"
-      : source.width.mode === "hug" && canHug
+      : source.width.mode === "hug" &&
+          canHug &&
+          !mustPreserveHugFallback(source, "horizontal")
         ? "HUG"
         : "FIXED";
   node.layoutSizingVertical =
     source.height.mode === "fill"
       ? "FILL"
-      : source.height.mode === "hug" && canHug
+      : source.height.mode === "hug" &&
+          canHug &&
+          !mustPreserveHugFallback(source, "vertical")
         ? "HUG"
         : "FIXED";
 }
