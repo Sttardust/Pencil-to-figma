@@ -99,8 +99,14 @@ function importNode(
   const referencedComponent = node.ref
     ? componentDefinitions.get(node.ref)
     : undefined;
-  const width = mapSizing(node.width ?? referencedComponent?.width);
-  const height = mapSizing(node.height ?? referencedComponent?.height);
+  const width = mapSizing(
+    node.width ?? referencedComponent?.width,
+    node.resolvedBounds?.width,
+  );
+  const height = mapSizing(
+    node.height ?? referencedComponent?.height,
+    node.resolvedBounds?.height,
+  );
   const children =
     node.enabled === false
       ? []
@@ -370,7 +376,16 @@ function mapKind(
   }
 }
 
-function mapSizing(value: PenSize | undefined): BridgeNode["width"] {
+function mapSizing(
+  value: PenSize | undefined,
+  resolvedValue?: number,
+): BridgeNode["width"] {
+  const resolvedFallback =
+    resolvedValue !== undefined &&
+    Number.isFinite(resolvedValue) &&
+    resolvedValue >= 0
+      ? resolvedValue
+      : undefined;
   if (typeof value === "number")
     return { mode: "fixed", value: Math.max(0, value) };
   if (typeof value === "string") {
@@ -378,13 +393,17 @@ function mapSizing(value: PenSize | undefined): BridgeNode["width"] {
     if (value.startsWith("fill_container"))
       return fallback
         ? { mode: "fill", fallback: Number(fallback) }
-        : { mode: "fill" };
+        : resolvedFallback !== undefined
+          ? { mode: "fill", fallback: resolvedFallback }
+          : { mode: "fill" };
     if (value.startsWith("fit_content"))
       return fallback
         ? { mode: "hug", fallback: Number(fallback) }
-        : { mode: "hug" };
+        : resolvedFallback !== undefined
+          ? { mode: "hug", fallback: resolvedFallback }
+          : { mode: "hug" };
   }
-  return { mode: "hug", fallback: 0 };
+  return { mode: "hug", fallback: resolvedFallback ?? 0 };
 }
 
 function fixedValue(sizing: BridgeNode["width"]): number {

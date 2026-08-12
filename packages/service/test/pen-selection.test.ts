@@ -1,10 +1,40 @@
 import { describe, expect, it } from "vitest";
+import type { PenNode } from "@pen-fig/core";
 import {
+  attachResolvedBounds,
+  parseResolvedBounds,
   selectedNodeIdsFromAppState,
   selectedRootFrameLookupScript,
 } from "../src/pen/mcp-client.js";
 
 describe("Pencil selection parsing", () => {
+  it("attaches Pencil's resolved layout geometry to dynamic nodes", () => {
+    const root: PenNode = {
+      id: "screen",
+      type: "frame",
+      children: [{ id: "body", type: "frame" }],
+    };
+    const bounds = parseResolvedBounds(`
+PEN_FIG_BOUNDS | screen | 100 | 200 | 393 | 875
+PEN_FIG_BOUNDS | body | 0 | 110 | 393 | 673
+`);
+
+    attachResolvedBounds(root, bounds);
+
+    expect(root.resolvedBounds).toEqual({
+      x: 100,
+      y: 200,
+      width: 393,
+      height: 875,
+    });
+    expect(root.children[0]?.resolvedBounds).toEqual({
+      x: 0,
+      y: 110,
+      width: 393,
+      height: 673,
+    });
+  });
+
   it("reads multiple selected node ids from app state", () => {
     expect(
       selectedNodeIdsFromAppState(`

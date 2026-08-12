@@ -32,6 +32,59 @@ const signupFixture: PenNode = {
 };
 
 describe("importPenDocument", () => {
+  it("uses Pencil's resolved layout size as the fallback for dynamic nodes", () => {
+    const document = importPenDocument(
+      {
+        id: "screen",
+        type: "frame",
+        width: 393,
+        layout: "vertical",
+        resolvedBounds: { x: 100, y: 200, width: 393, height: 875 },
+        children: [
+          {
+            id: "header",
+            type: "frame",
+            width: "fill_container",
+            resolvedBounds: { x: 0, y: 0, width: 393, height: 110 },
+          },
+          {
+            id: "body",
+            type: "frame",
+            width: "fill_container",
+            height: "fill_container",
+            resolvedBounds: { x: 0, y: 110, width: 393, height: 673 },
+          },
+          {
+            id: "footer",
+            type: "frame",
+            width: "fill_container",
+            resolvedBounds: { x: 0, y: 783, width: 393, height: 92 },
+          },
+        ],
+      },
+      { documentId: "test.pen" },
+    );
+
+    expect(document.root).toMatchObject({
+      height: { mode: "hug", fallback: 875 },
+      bounds: { width: 393, height: 875 },
+    });
+    expect(document.root.children).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          bridgeId: "pen:body",
+          width: { mode: "fill", fallback: 393 },
+          height: { mode: "fill", fallback: 673 },
+          bounds: expect.objectContaining({ width: 393, height: 673 }),
+        }),
+        expect.objectContaining({
+          bridgeId: "pen:footer",
+          height: { mode: "hug", fallback: 92 },
+        }),
+      ]),
+    );
+  });
+
   it("maps the real Signup root and text properties", () => {
     const document = importPenDocument(signupFixture, {
       documentId: "orchid.pen",

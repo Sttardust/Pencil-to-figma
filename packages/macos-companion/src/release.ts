@@ -1,7 +1,7 @@
 import { COMPANION_VERSION } from "@pen-fig/bridge-schema/version";
 
 export { COMPANION_VERSION };
-export const COMPANION_BUILD = "19";
+export const COMPANION_BUILD = "20";
 export const NODE_VERSION = "24.19.0";
 
 export type MacArchitecture = "x64" | "arm64";

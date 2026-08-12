@@ -115,7 +115,9 @@ export class PenMcpClient {
       throw new Error(`Invalid Pen node id '${nodeId}'`);
     const result = await this.#callWithReconnect(
       "execute",
-      { input: `Print(Get("${nodeId}",{includePathGeometry:true}))` },
+      {
+        input: `Print(Get("${nodeId}",{includePathGeometry:true}));Get("${nodeId}",(n,c)=>{Print("PEN_FIG_BOUNDS","|",n.id,"|",c.bounds.x,"|",c.bounds.y,"|",c.bounds.width,"|",c.bounds.height)})`,
+      },
       60_000,
     );
     const text = extractText(result);
@@ -126,6 +128,7 @@ export class PenMcpClient {
     const node = JSON.parse(text.slice(start, end + 1)) as PenNode;
     if (node.id !== nodeId)
       throw new Error(`Pen returned node ${node.id} for requested ${nodeId}`);
+    attachResolvedBounds(node, parseResolvedBounds(text));
     return node;
   }
 
@@ -312,6 +315,44 @@ export function selectedNodeIdsFromAppState(text: string): string[] {
       [...selection.matchAll(/`([A-Za-z0-9]+)`/g)].map((match) => match[1]!),
     ),
   ];
+}
+
+export interface PenResolvedBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export function parseResolvedBounds(
+  text: string,
+): Map<string, PenResolvedBounds> {
+  const bounds = new Map<string, PenResolvedBounds>();
+  const number = "([-+\\d.eE]+)";
+  const pattern = new RegExp(
+    `^PEN_FIG_BOUNDS\\s*\\|\\s*([A-Za-z0-9]+)\\s*\\|\\s*${number}\\s*\\|\\s*${number}\\s*\\|\\s*${number}\\s*\\|\\s*${number}\\s*$`,
+    "gm",
+  );
+  for (const match of text.matchAll(pattern)) {
+    const values = match.slice(2).map(Number);
+    if (values.some((value) => !Number.isFinite(value))) continue;
+    bounds.set(match[1]!, {
+      x: values[0]!,
+      y: values[1]!,
+      width: Math.max(0, values[2]!),
+      height: Math.max(0, values[3]!),
+    });
+  }
+  return bounds;
+}
+
+export function attachResolvedBounds(
+  root: PenNode,
+  bounds: ReadonlyMap<string, PenResolvedBounds>,
+): void {
+  const resolved = bounds.get(root.id);
+  if (resolved) root.resolvedBounds = resolved;
+  for (const child of root.children ?? []) attachResolvedBounds(child, bounds);
 }
 
 function extractText(result: CallToolResult): string {
