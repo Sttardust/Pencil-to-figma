@@ -14,7 +14,7 @@ describe("companion health presentation", () => {
       assessCompanionHealth({
         ok: true,
         protocol: 1,
-        companionVersion: "0.1.13",
+        companionVersion: "0.1.14",
         capabilities: [
           "automatic-reconnect",
           "native-approval",
@@ -24,6 +24,7 @@ describe("companion health presentation", () => {
           "grouped-export-placement",
           "typed-public-errors",
           "pencil-selection",
+          "direct-pencil-selection",
           "large-pencil-selection",
           "operation-recovery",
           "correct-gradient-direction",
@@ -32,7 +33,7 @@ describe("companion health presentation", () => {
           "automatic-transfer-visual-verification",
         ],
       }),
-    ).toEqual({ compatible: true, version: "0.1.13" });
+    ).toEqual({ compatible: true, version: "0.1.14" });
   });
 
   it("requires an update for legacy or incompatible health responses", () => {
@@ -110,6 +111,18 @@ describe("operation error presentation", () => {
       title: "Pencil changed part of the design",
       message:
         "The bridge checked the transferred layers and found a visual or layout difference. No new sync baseline was saved. Open JSON details for the affected layer, then try again after updating the companion.",
+    });
+  });
+
+  it("keeps interrupted Pencil scripts out of the visible alert", () => {
+    expect(
+      presentOperationError(
+        "MCP error -32603: Failure during operation execution: InternalError: interrupted at const selected=new Set(...) ",
+      ),
+    ).toEqual({
+      title: "Pencil paused the page lookup",
+      message:
+        "The selected pages took too long to read. Nothing was changed. Try the selection again; if it repeats, select fewer pages at once.",
     });
   });
 });

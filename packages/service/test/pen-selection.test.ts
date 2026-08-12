@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { selectedNodeIdsFromAppState } from "../src/pen/mcp-client.js";
+import {
+  selectedNodeIdsFromAppState,
+  selectedRootFrameLookupScript,
+} from "../src/pen/mcp-client.js";
 
 describe("Pencil selection parsing", () => {
   it("reads multiple selected node ids from app state", () => {
@@ -24,5 +27,20 @@ describe("Pencil selection parsing", () => {
         "- Top-level nodes: `QMAml` (frame): 01 · Invite",
       ),
     ).toEqual([]);
+  });
+
+  it("reads selected nodes directly without scanning the Pencil document", () => {
+    const script = selectedRootFrameLookupScript(["mpCP3", "gpVUt"]);
+
+    expect(script).toContain('let n0=Get("mpCP3")');
+    expect(script).toContain('let n1=Get("gpVUt")');
+    expect(script).not.toContain("Get((n,c)");
+    expect(script).not.toContain("skipChildren");
+  });
+
+  it("rejects unsafe selected node ids", () => {
+    expect(() => selectedRootFrameLookupScript(['bad"id'])).toThrow(
+      "Invalid Pen node id",
+    );
   });
 });

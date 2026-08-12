@@ -81,11 +81,10 @@ export class PenMcpClient {
     if (!selectedIds.length) return "";
     if (selectedIds.length > 200)
       throw new Error("Select fewer Pencil layers before reading the pages");
-    const selected = JSON.stringify(selectedIds);
     const result = await this.#callWithReconnect(
       "execute",
       {
-        input: `const selected=new Set(${selected});let count=0;Get((n,c)=>{c.skipChildren();if(selected.has(n.id)&&n.type==="frame"&&!n.reusable&&count<${limit + 1}){Print(n.id,"|",n.name||"");count++}})`,
+        input: selectedRootFrameLookupScript(selectedIds),
       },
       30_000,
     );
@@ -292,6 +291,17 @@ export class PenMcpClient {
     }
     throw lastError;
   }
+}
+
+export function selectedRootFrameLookupScript(selectedIds: string[]): string {
+  return selectedIds
+    .map((nodeId, index) => {
+      if (!/^[A-Za-z0-9]+$/.test(nodeId))
+        throw new Error(`Invalid Pen node id '${nodeId}'`);
+      const variable = `n${index}`;
+      return `let ${variable}=Get(${JSON.stringify(nodeId)});if(${variable}.type==="frame"&&!${variable}.reusable){Print(${variable}.id,"|",${variable}.name||"")}`;
+    })
+    .join(";");
 }
 
 export function selectedNodeIdsFromAppState(text: string): string[] {

@@ -15,7 +15,8 @@ On the first connection, macOS displays an Allow/Cancel message. Choosing **Allo
 private saved connection without asking the user to copy or type a code. The older pairing-code
 flow remains collapsed in the plugin as a troubleshooting fallback.
 
-Version 0.1.13 supports multi-screen Figma → Pencil export with grouped placement, corrected
+Version 0.1.14 supports direct selected-page lookup without scanning large Pencil documents,
+multi-screen Figma → Pencil export with grouped placement, corrected
 Pencil/Figma gradient direction conversion, post-write Pencil fidelity verification, and automatic
 2× appearance verification before a new sync link is saved. A Figma batch is sent as individually verified
 screen operations so a failure cannot leave a completed-looking partial screen. Each completed

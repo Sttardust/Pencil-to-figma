@@ -49,7 +49,23 @@ export function presentOperationError(
     return { title: "A font is unavailable", message };
   if (normalized.includes("asset") || normalized.includes("image"))
     return { title: "An image needs attention", message };
-  if (normalized.includes("connection") || normalized.includes("timed out"))
+  if (
+    normalized.includes("mcp error") ||
+    normalized.includes("operation execution") ||
+    normalized.includes("internalerror: interrupted")
+  )
+    return {
+      title: "Pencil paused the page lookup",
+      message:
+        "The selected pages took too long to read. Nothing was changed. Try the selection again; if it repeats, select fewer pages at once.",
+    };
+  if (normalized.includes("timed out"))
+    return {
+      title: "Pencil took too long to respond",
+      message:
+        "Nothing was changed. Try again, or select fewer pages if the request continues to time out.",
+    };
+  if (normalized.includes("connection"))
     return { title: "Pencil could not be reached", message };
   return { title: "The transfer needs attention", message };
 }
@@ -83,6 +99,7 @@ export function assessCompanionHealth(value: unknown): CompanionCompatibility {
       capabilities.includes("grouped-export-placement") &&
       capabilities.includes("typed-public-errors") &&
       capabilities.includes("pencil-selection") &&
+      capabilities.includes("direct-pencil-selection") &&
       capabilities.includes("large-pencil-selection") &&
       capabilities.includes("operation-recovery") &&
       capabilities.includes("correct-gradient-direction") &&
