@@ -66,7 +66,7 @@ describe("importPenDocument", () => {
     );
 
     expect(document.root).toMatchObject({
-      height: { mode: "hug", fallback: 875 },
+      height: { mode: "hug", fallback: 875, resolved: true },
       bounds: { width: 393, height: 875 },
     });
     expect(document.root.children).toEqual(
@@ -79,7 +79,7 @@ describe("importPenDocument", () => {
         }),
         expect.objectContaining({
           bridgeId: "pen:footer",
-          height: { mode: "hug", fallback: 92 },
+          height: { mode: "hug", fallback: 92, resolved: true },
         }),
       ]),
     );

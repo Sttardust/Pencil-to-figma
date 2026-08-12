@@ -1062,7 +1062,8 @@ function mapSizing(
   const preservedHugAxes = new Set(
     node.getPluginData(PRESERVED_HUG_AXES_KEY).split(",").filter(Boolean),
   );
-  if (preservedHugAxes.has(axis)) return { mode: "hug", fallback };
+  if (preservedHugAxes.has(axis))
+    return { mode: "hug", fallback, resolved: true };
   if (property in node) {
     const value = (node as SceneNode & LayoutMixin)[property];
     if (value === "FILL") return { mode: "fill", fallback };

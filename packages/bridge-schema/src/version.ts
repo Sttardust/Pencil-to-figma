@@ -1,5 +1,5 @@
 export const BRIDGE_PROTOCOL_VERSION = 1 as const;
-export const COMPANION_VERSION = "0.1.19";
+export const COMPANION_VERSION = "0.1.20";
 export const COMPANION_CAPABILITIES = [
   "automatic-reconnect",
   "native-approval",
@@ -23,4 +23,5 @@ export const COMPANION_CAPABILITIES = [
   "balanced-appearance-thresholds",
   "overflow-aware-appearance-comparison",
   "resolved-pencil-layout-bounds",
+  "resolved-pencil-descendant-bounds",
 ] as const;

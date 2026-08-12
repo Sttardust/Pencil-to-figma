@@ -3,6 +3,7 @@ import type { PenNode } from "@pen-fig/core";
 import {
   attachResolvedBounds,
   parseResolvedBounds,
+  resolvedBoundsLookupScripts,
   resolvedRootBoundsScript,
   selectedNodeIdsFromAppState,
   selectedRootFrameLookupScript,
@@ -75,6 +76,30 @@ PEN_FIG_BOUNDS | body | 0 | 110 | 393 | 673
     expect(script).toContain('Get("mpCP3",(n,c)');
     expect(script).toContain("c.skipChildren()");
     expect(script).toContain("if(c.bounds)");
+  });
+
+  it("measures dynamic descendants directly in bounded batches", () => {
+    const root: PenNode = {
+      id: "screen",
+      type: "frame",
+      width: 393,
+      children: [
+        { id: "body", type: "frame", width: "fill_container" },
+        { id: "title", type: "text", content: "Preferences" },
+        { id: "photo", type: "rectangle", width: 393, height: 200 },
+      ],
+    };
+
+    const scripts = resolvedBoundsLookupScripts(root, 1);
+
+    expect(scripts).toHaveLength(2);
+    expect(scripts[0]).toContain('Get("body",(n,c)');
+    expect(scripts[1]).toContain('Get("title",(n,c)');
+    expect(scripts.join(";")).not.toContain('Get("photo",(n,c)');
+    expect(scripts.join(";")).not.toContain("Get((n,c)");
+    expect(scripts.every((script) => script.includes("c.skipChildren()"))).toBe(
+      true,
+    );
   });
 
   it("rejects unsafe selected node ids", () => {

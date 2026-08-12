@@ -34,7 +34,7 @@ import {
 } from "./sizing.js";
 import { bridgeStackOrder } from "./stacking.js";
 
-const WRITE_SCHEMA_VERSION = "9";
+const WRITE_SCHEMA_VERSION = "10";
 const ROOT_GAP = 120;
 const COMPONENT_GAP = 40;
 

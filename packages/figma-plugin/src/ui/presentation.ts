@@ -138,7 +138,8 @@ export function assessCompanionHealth(value: unknown): CompanionCompatibility {
       capabilities.includes("appearance-failure-details") &&
       capabilities.includes("balanced-appearance-thresholds") &&
       capabilities.includes("overflow-aware-appearance-comparison") &&
-      capabilities.includes("resolved-pencil-layout-bounds"),
+      capabilities.includes("resolved-pencil-layout-bounds") &&
+      capabilities.includes("resolved-pencil-descendant-bounds"),
     ),
     ...(version ? { version } : {}),
   };

@@ -23,6 +23,7 @@ export const sizingSchema = z.discriminatedUnion("mode", [
     .object({
       mode: z.enum(["hug", "fill"]),
       fallback: finiteNumberSchema.nonnegative().optional(),
+      resolved: z.boolean().optional(),
     })
     .strict(),
 ]);

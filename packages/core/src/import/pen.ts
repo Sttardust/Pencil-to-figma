@@ -397,13 +397,15 @@ function mapSizing(
           ? { mode: "fill", fallback: resolvedFallback }
           : { mode: "fill" };
     if (value.startsWith("fit_content"))
-      return fallback
-        ? { mode: "hug", fallback: Number(fallback) }
-        : resolvedFallback !== undefined
-          ? { mode: "hug", fallback: resolvedFallback }
+      return resolvedFallback !== undefined
+        ? { mode: "hug", fallback: resolvedFallback, resolved: true }
+        : fallback
+          ? { mode: "hug", fallback: Number(fallback) }
           : { mode: "hug" };
   }
-  return { mode: "hug", fallback: resolvedFallback ?? 0 };
+  return resolvedFallback !== undefined
+    ? { mode: "hug", fallback: resolvedFallback, resolved: true }
+    : { mode: "hug", fallback: 0 };
 }
 
 function fixedValue(sizing: BridgeNode["width"]): number {

@@ -128,7 +128,19 @@ export class PenMcpClient {
     const node = JSON.parse(text.slice(start, end + 1)) as PenNode;
     if (node.id !== nodeId)
       throw new Error(`Pen returned node ${node.id} for requested ${nodeId}`);
-    attachResolvedBounds(node, parseResolvedBounds(text));
+    const resolvedBounds = parseResolvedBounds(text);
+    for (const script of resolvedBoundsLookupScripts(node)) {
+      const boundsResult = await this.#callWithReconnect(
+        "execute",
+        { input: script },
+        60_000,
+      );
+      for (const [id, bounds] of parseResolvedBounds(
+        extractText(boundsResult),
+      ))
+        resolvedBounds.set(id, bounds);
+    }
+    attachResolvedBounds(node, resolvedBounds);
     return node;
   }
 
@@ -311,6 +323,35 @@ export function resolvedRootBoundsScript(nodeId: string): string {
   if (!/^[A-Za-z0-9]+$/.test(nodeId))
     throw new Error(`Invalid Pen node id '${nodeId}'`);
   return `Get(${JSON.stringify(nodeId)},(n,c)=>{if(c){c.skipChildren();if(c.bounds)Print("PEN_FIG_BOUNDS","|",n.id,"|",c.bounds.x,"|",c.bounds.y,"|",c.bounds.width,"|",c.bounds.height)}})`;
+}
+
+export function resolvedBoundsLookupScripts(
+  root: PenNode,
+  batchSize = 60,
+): string[] {
+  if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 100)
+    throw new Error("Pencil bounds batch size must be between 1 and 100");
+  const ids: string[] = [];
+  const visit = (node: PenNode): void => {
+    const dynamicWidth = typeof node.width !== "number";
+    const dynamicHeight = typeof node.height !== "number";
+    if ((dynamicWidth || dynamicHeight) && node.id !== root.id) {
+      if (!/^[A-Za-z0-9]+$/.test(node.id))
+        throw new Error(`Invalid Pen node id '${node.id}'`);
+      ids.push(node.id);
+    }
+    for (const child of node.children ?? []) visit(child);
+  };
+  visit(root);
+  const scripts: string[] = [];
+  for (let index = 0; index < ids.length; index += batchSize)
+    scripts.push(
+      ids
+        .slice(index, index + batchSize)
+        .map((id) => resolvedRootBoundsScript(id))
+        .join(";"),
+    );
+  return scripts;
 }
 
 export function selectedNodeIdsFromAppState(text: string): string[] {

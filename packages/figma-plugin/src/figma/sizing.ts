@@ -56,11 +56,11 @@ export function mustPreserveHugFallback(
   if (
     sizing.mode !== "hug" ||
     sizing.fallback === undefined ||
-    sizing.fallback <= 0 ||
-    !source.layout ||
-    source.layout.mode === "none"
+    sizing.fallback <= 0
   )
     return false;
+  if (source.source.app === "pen" && sizing.resolved === true) return true;
+  if (!source.layout || source.layout.mode === "none") return false;
   // A top-level Pencil page can omit its authored height and let Pencil's
   // layout engine resolve the canvas size. The service records that resolved
   // size as the hug fallback. Letting Figma recompute the root as HUG can
