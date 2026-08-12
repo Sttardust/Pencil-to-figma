@@ -38,12 +38,15 @@ export function verifyFigmaWriteFidelity(
 
 function hasEquivalentKind(expected: BridgeNode, actual: BridgeNode): boolean {
   if (actual.kind === expected.kind) return true;
+  if (actual.kind !== "frame" || !actual.icon) return false;
   // Figma's createNodeFromSvg() returns a FRAME wrapper around vector
-  // geometry. The reader marks only bridge-generated wrappers with an icon
-  // asset, so this exception cannot hide an ordinary path-to-frame change.
-  // Geometry and rendered appearance are still verified below and by the
-  // automatic PNG comparison before a sync baseline is saved.
-  return expected.kind === "path" && actual.kind === "frame" && !!actual.icon;
+  // geometry, while the reader deliberately exposes small icon instances as
+  // rasterized FRAME assets for reverse transfer. In both cases the icon
+  // marker distinguishes the intentional representation from an ordinary
+  // path- or instance-to-frame change. Geometry and rendered appearance are
+  // still verified below and by the automatic PNG comparison before a sync
+  // baseline is saved.
+  return expected.kind === "path" || expected.kind === "instance";
 }
 
 function verifyDimensions(

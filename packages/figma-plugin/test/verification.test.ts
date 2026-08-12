@@ -189,6 +189,45 @@ describe("Figma write verification", () => {
     ).toThrow("Vector: expected path, received frame");
   });
 
+  it("accepts an icon instance represented by its reverse-transfer asset", () => {
+    const source = node({
+      bridgeId: "pen:crosshair",
+      kind: "instance",
+      name: "Crosshair",
+      bounds: { x: 4, y: 4, width: 20, height: 20 },
+      width: { mode: "fixed", value: 20 },
+      height: { mode: "fixed", value: 20 },
+      instance: { componentBridgeId: "figma:622:2773", overrides: {} },
+    });
+    const actual = node({
+      bridgeId: "pen:crosshair",
+      kind: "frame",
+      name: "Crosshair",
+      bounds: { x: 4, y: 4, width: 20, height: 20 },
+      width: { mode: "fixed", value: 20 },
+      height: { mode: "fixed", value: 20 },
+      icon: { assetId: "figma-rasterized:622:2774" },
+    });
+
+    expect(() =>
+      verifyFigmaWriteFidelity(document(source), document(actual)),
+    ).not.toThrow();
+  });
+
+  it("still rejects an ordinary frame replacing an instance", () => {
+    const source = node({
+      bridgeId: "pen:crosshair",
+      kind: "instance",
+      name: "Crosshair",
+      instance: { componentBridgeId: "figma:622:2773", overrides: {} },
+    });
+    const actual = node({ bridgeId: "pen:crosshair", name: "Crosshair" });
+
+    expect(() =>
+      verifyFigmaWriteFidelity(document(source), document(actual)),
+    ).toThrow("Crosshair: expected instance, received frame");
+  });
+
   it("continues to reject the same width drift for normal layers", () => {
     const source = node({
       bridgeId: "pen:card",
