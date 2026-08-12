@@ -128,7 +128,8 @@ export function assessCompanionHealth(value: unknown): CompanionCompatibility {
       capabilities.includes("correct-gradient-direction") &&
       capabilities.includes("pencil-write-fidelity-verification") &&
       capabilities.includes("automatic-visual-comparison") &&
-      capabilities.includes("automatic-transfer-visual-verification"),
+      capabilities.includes("automatic-transfer-visual-verification") &&
+      capabilities.includes("appearance-failure-details"),
     ),
     ...(version ? { version } : {}),
   };

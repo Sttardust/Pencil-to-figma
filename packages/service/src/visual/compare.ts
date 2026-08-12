@@ -26,7 +26,10 @@ export interface VisualComparison {
 
 export const DEFAULT_VISUAL_THRESHOLDS: VisualThresholds = {
   pixelThreshold: 0.1,
-  maxMismatchRatio: 0.02,
+  // Pencil and Figma rasterize text and small vectors differently. Keep a
+  // narrow allowance for those edge pixels while the mean-error guard below
+  // continues to catch broad color and layout changes.
+  maxMismatchRatio: 0.025,
   maxMeanError: 0.015,
 };
 

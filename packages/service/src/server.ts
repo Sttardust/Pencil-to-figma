@@ -588,11 +588,9 @@ export class BridgeServer {
             )
           : undefined;
         if (visualComparison && !visualComparison.report.passed)
-          throw new Error(
-            appearanceVerificationMessage(
-              transfer.document.root.name,
-              visualComparison.matchPercent,
-            ),
+          throw new AppearanceVerificationError(
+            transfer.document.root.name,
+            visualComparison,
           );
         const mappings: BridgeManifest["mappings"] = [];
         visitBridgeNodes(transfer.document.root, (node) => {
@@ -703,11 +701,9 @@ export class BridgeServer {
                 )
               : undefined;
             if (visualComparison && !visualComparison.report.passed)
-              throw new Error(
-                appearanceVerificationMessage(
-                  exportRequest.document.root.name,
-                  visualComparison.matchPercent,
-                ),
+              throw new AppearanceVerificationError(
+                exportRequest.document.root.name,
+                visualComparison,
               );
             if (journalId)
               await this.#journal
@@ -1388,6 +1384,9 @@ export class BridgeServer {
         message: failure.message,
         phase: failure.phase,
         retrySafe: failure.retrySafe,
+        ...(error instanceof AppearanceVerificationError
+          ? { visualComparison: error.comparison }
+          : {}),
       });
     }
   }
@@ -1980,11 +1979,36 @@ async function compareTransferredAppearance(
   };
 }
 
+type TransferredAppearanceComparison = Awaited<
+  ReturnType<typeof compareTransferredAppearance>
+>;
+
+class AppearanceVerificationError extends Error {
+  constructor(
+    screenName: string,
+    readonly comparison: TransferredAppearanceComparison,
+  ) {
+    super(appearanceVerificationMessage(screenName, comparison));
+  }
+}
+
 function appearanceVerificationMessage(
   screenName: string,
-  matchPercent: number,
+  comparison: TransferredAppearanceComparison,
 ): string {
-  return `Appearance verification failed for “${screenName}” at ${matchPercent.toFixed(1)}% match. No sync link was saved`;
+  const minimumMatch =
+    (1 - comparison.report.thresholds.maxMismatchRatio) * 100;
+  const details = [
+    `${comparison.matchPercent.toFixed(2)}% match; ${minimumMatch.toFixed(1)}% required`,
+  ];
+  if (
+    comparison.report.meanAbsoluteError >
+    comparison.report.thresholds.maxMeanError
+  )
+    details.push(
+      `average color difference ${(comparison.report.meanAbsoluteError * 100).toFixed(2)}%; ${(comparison.report.thresholds.maxMeanError * 100).toFixed(1)}% allowed`,
+    );
+  return `Appearance verification failed for “${screenName}”: ${details.join("; ")}. No sync link was saved`;
 }
 
 function send(socket: WebSocket, message: ServerMessage): void {

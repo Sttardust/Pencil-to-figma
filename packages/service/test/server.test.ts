@@ -182,6 +182,10 @@ describe("BridgeServer", () => {
       code: "WRITE_VERIFICATION",
       message: expect.stringContaining("Appearance verification failed"),
       phase: "verification",
+      visualComparison: {
+        matchPercent: 0,
+        report: { passed: false },
+      },
     });
     await expect(
       readFile(path.join(directory, "design.pen-fig.json")),

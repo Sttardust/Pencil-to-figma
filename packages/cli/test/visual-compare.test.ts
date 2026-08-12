@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PNG } from "pngjs";
 import {
   comparePngBuffers,
+  DEFAULT_VISUAL_THRESHOLDS,
   ImageDimensionMismatchError,
 } from "@pen-fig/service/visual";
 import { parseVisualCompareArguments } from "../src/commands/visual-compare.js";
@@ -78,6 +79,21 @@ describe("visual PNG comparison", () => {
 
     expect(comparison.report.mismatchRatio).toBeCloseTo(0.12);
     expect(comparison.report.passed).toBe(false);
+  });
+
+  it("allows a small cross-renderer edge difference by default", () => {
+    const reference = PNG.sync.read(png(100, 100, [255, 255, 255, 255]));
+    const candidate = PNG.sync.read(png(100, 100, [255, 255, 255, 255]));
+    for (let pixel = 0; pixel < 220; pixel += 1) candidate.data[pixel * 4] = 0;
+    const comparison = comparePngBuffers(
+      PNG.sync.write(reference),
+      PNG.sync.write(candidate),
+    );
+
+    expect(DEFAULT_VISUAL_THRESHOLDS.maxMismatchRatio).toBe(0.025);
+    expect(comparison.report.mismatchRatio).toBeCloseTo(0.022);
+    expect(comparison.report.meanAbsoluteError).toBeLessThan(0.015);
+    expect(comparison.report.passed).toBe(true);
   });
 
   it("rejects different render dimensions", () => {

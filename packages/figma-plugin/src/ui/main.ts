@@ -702,7 +702,14 @@ async function handleImportResult(message: any): Promise<void> {
           name: String(result.name ?? "Pencil screen"),
           comparison: result.manifest?.visualComparison,
         })),
-        { name: completedImport.name, failed: true },
+        {
+          name: completedImport.name,
+          comparison:
+            error instanceof BridgeRequestError
+              ? error.response?.visualComparison
+              : undefined,
+          failed: true,
+        },
       ]);
     showOperationError(message, completedImport.name);
   }
@@ -922,14 +929,17 @@ function showTransferQuality(
     name.textContent = entry.name;
     const result = document.createElement("strong");
     const percentage = Number(entry.comparison?.matchPercent);
+    const compared = Number.isFinite(percentage);
     const passed = entry.comparison?.report?.passed === true;
     if (passed) matched += 1;
     result.className = `quality-result${passed ? "" : " needs-review"}`;
     result.textContent = passed
       ? `${percentage.toFixed(1)}% match`
-      : entry.failed
-        ? "Needs review"
-        : "Could not compare";
+      : compared
+        ? `${percentage.toFixed(2)}% match`
+        : entry.failed
+          ? "Needs review"
+          : "Could not compare";
     item.append(name, result);
     transferQualityList.append(item);
   }
@@ -1619,6 +1629,7 @@ async function request(
       typeof message.code === "string" ? message.code : undefined,
       typeof message.phase === "string" ? message.phase : undefined,
       message.retrySafe === true,
+      message,
     );
   return message;
 }
@@ -1775,12 +1786,6 @@ function setStatus(
 
 function errorMessage(error: unknown, fallback: string): string {
   if (!(error instanceof Error)) return fallback;
-  if (
-    error instanceof BridgeRequestError &&
-    error.retrySafe &&
-    error.phase !== "connection"
-  )
-    return `${error.message} You can try this action again.`;
   return error.message;
 }
 
@@ -1791,6 +1796,7 @@ class BridgeRequestError extends Error {
     readonly code?: string,
     readonly phase?: string,
     readonly retrySafe = false,
+    readonly response?: Record<string, any>,
   ) {
     super(message);
   }
