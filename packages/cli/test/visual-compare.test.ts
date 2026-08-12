@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PNG } from "pngjs";
 import {
   comparePngBuffers,
+  comparePngBuffersWithDimensionTolerance,
   DEFAULT_VISUAL_THRESHOLDS,
   ImageDimensionMismatchError,
 } from "@pen-fig/service/visual";
@@ -112,6 +113,31 @@ describe("visual PNG comparison", () => {
       comparePngBuffers(
         png(10, 10, [0, 0, 0, 255]),
         png(12, 10, [0, 0, 0, 255]),
+      ),
+    ).toThrow(ImageDimensionMismatchError);
+  });
+
+  it("compares a small renderer height drift using the shared frame area", () => {
+    const reference = png(20, 100, [24, 30, 36, 255]);
+    const candidate = png(20, 102, [24, 30, 36, 255]);
+    const comparison = comparePngBuffersWithDimensionTolerance(
+      reference,
+      candidate,
+    );
+
+    expect(comparison.report.passed).toBe(true);
+    expect(comparison.report.dimensionNormalization).toEqual({
+      reference: { width: 20, height: 100 },
+      candidate: { width: 20, height: 102 },
+      compared: { width: 20, height: 100 },
+    });
+  });
+
+  it("rejects a renderer dimension drift above the tolerance", () => {
+    expect(() =>
+      comparePngBuffersWithDimensionTolerance(
+        png(20, 100, [24, 30, 36, 255]),
+        png(20, 104, [24, 30, 36, 255]),
       ),
     ).toThrow(ImageDimensionMismatchError);
   });

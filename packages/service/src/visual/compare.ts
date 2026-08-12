@@ -17,6 +17,11 @@ export interface VisualComparisonReport {
   meanAbsoluteError: number;
   thresholds: VisualThresholds;
   passed: boolean;
+  dimensionNormalization?: {
+    reference: { width: number; height: number };
+    candidate: { width: number; height: number };
+    compared: { width: number; height: number };
+  };
 }
 
 export interface VisualComparison {
@@ -100,6 +105,69 @@ export function comparePngBuffers(
     },
     diffPng: PNG.sync.write(diff),
   };
+}
+
+export function comparePngBuffersWithDimensionTolerance(
+  referenceBuffer: Buffer,
+  candidateBuffer: Buffer,
+  maxDimensionDriftRatio = 0.025,
+  thresholds: VisualThresholds = DEFAULT_VISUAL_THRESHOLDS,
+): VisualComparison {
+  if (
+    !Number.isFinite(maxDimensionDriftRatio) ||
+    maxDimensionDriftRatio < 0 ||
+    maxDimensionDriftRatio > 1
+  )
+    throw new Error("maxDimensionDriftRatio must be between 0 and 1");
+  const reference = PNG.sync.read(referenceBuffer);
+  const candidate = PNG.sync.read(candidateBuffer);
+  if (
+    reference.width === candidate.width &&
+    reference.height === candidate.height
+  )
+    return comparePngBuffers(referenceBuffer, candidateBuffer, thresholds);
+
+  const widthDrift =
+    Math.abs(reference.width - candidate.width) /
+    Math.max(reference.width, candidate.width);
+  const heightDrift =
+    Math.abs(reference.height - candidate.height) /
+    Math.max(reference.height, candidate.height);
+  if (
+    widthDrift > maxDimensionDriftRatio ||
+    heightDrift > maxDimensionDriftRatio
+  )
+    throw new ImageDimensionMismatchError(
+      { width: reference.width, height: reference.height },
+      { width: candidate.width, height: candidate.height },
+    );
+
+  const width = Math.min(reference.width, candidate.width);
+  const height = Math.min(reference.height, candidate.height);
+  const comparison = comparePngBuffers(
+    cropTopLeft(reference, width, height),
+    cropTopLeft(candidate, width, height),
+    thresholds,
+  );
+  comparison.report.dimensionNormalization = {
+    reference: { width: reference.width, height: reference.height },
+    candidate: { width: candidate.width, height: candidate.height },
+    compared: { width, height },
+  };
+  return comparison;
+}
+
+function cropTopLeft(source: PNG, width: number, height: number): Buffer {
+  const cropped = new PNG({ width, height });
+  for (let y = 0; y < height; y += 1) {
+    const sourceStart = y * source.width * 4;
+    const targetStart = y * width * 4;
+    cropped.data.set(
+      source.data.subarray(sourceStart, sourceStart + width * 4),
+      targetStart,
+    );
+  }
+  return PNG.sync.write(cropped);
 }
 
 function rgbaMeanAbsoluteError(

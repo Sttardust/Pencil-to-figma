@@ -93,6 +93,7 @@ export function toPublicBridgeError(error: unknown): PublicBridgeError {
     return failure("MAPPING_EXPIRED", message, "comparison", true, 409);
   if (
     normalized.includes("verification") ||
+    normalized.includes("rendered screen sizes differ") ||
     normalized.includes("does not match") ||
     normalized.includes("mismatch") ||
     normalized.includes("differs")

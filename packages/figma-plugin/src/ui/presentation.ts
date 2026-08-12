@@ -49,6 +49,12 @@ export function presentOperationError(
       message:
         "The bridge checked the transferred layers and found a visual or layout difference. No new sync baseline was saved. Open JSON details for the affected layer, then try again after updating the companion.",
     });
+  if (normalized.includes("rendered screen sizes differ"))
+    return present({
+      title: "The rendered page height changed",
+      message:
+        "Pencil and Figma rendered this page at meaningfully different sizes. Nothing was linked. Check the page frame and any content extending beyond its bottom edge, then try again.",
+    });
   if (normalized.includes("no top-level pencil pages"))
     return present({
       title: "No complete Pencil pages selected",
@@ -130,7 +136,8 @@ export function assessCompanionHealth(value: unknown): CompanionCompatibility {
       capabilities.includes("automatic-visual-comparison") &&
       capabilities.includes("automatic-transfer-visual-verification") &&
       capabilities.includes("appearance-failure-details") &&
-      capabilities.includes("balanced-appearance-thresholds"),
+      capabilities.includes("balanced-appearance-thresholds") &&
+      capabilities.includes("overflow-aware-appearance-comparison"),
     ),
     ...(version ? { version } : {}),
   };

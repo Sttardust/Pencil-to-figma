@@ -15,7 +15,7 @@ On the first connection, macOS displays an Allow/Cancel message. Choosing **Allo
 private saved connection without asking the user to copy or type a code. The older pairing-code
 flow remains collapsed in the plugin as a troubleshooting fallback.
 
-Version 0.1.17 supports balanced appearance thresholds, detailed appearance-check failures, cross-renderer edge tolerance, correct nested component-instance verification, direct selected-page lookup without scanning large Pencil documents,
+Version 0.1.18 supports overflow-aware appearance comparison, balanced appearance thresholds, detailed appearance-check failures, cross-renderer edge tolerance, correct nested component-instance verification, direct selected-page lookup without scanning large Pencil documents,
 multi-screen Figma → Pencil export with grouped placement, corrected
 Pencil/Figma gradient direction conversion, post-write Pencil fidelity verification, and automatic
 2× appearance verification before a new sync link is saved. A Figma batch is sent as individually verified

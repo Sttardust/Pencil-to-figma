@@ -41,6 +41,20 @@ describe("public bridge errors", () => {
     });
   });
 
+  it("classifies large rendered-size differences as verification failures", () => {
+    expect(
+      toPublicBridgeError(
+        new Error(
+          "Rendered screen sizes differ: Pencil is 786×1750, Figma is 786×1900",
+        ),
+      ),
+    ).toMatchObject({
+      code: "WRITE_VERIFICATION",
+      phase: "verification",
+      retrySafe: true,
+    });
+  });
+
   it("reports selection limits before the write phase", () => {
     expect(
       toPublicBridgeError(

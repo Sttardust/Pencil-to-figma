@@ -14,7 +14,7 @@ describe("companion health presentation", () => {
       assessCompanionHealth({
         ok: true,
         protocol: 1,
-        companionVersion: "0.1.17",
+        companionVersion: "0.1.18",
         capabilities: [
           "automatic-reconnect",
           "native-approval",
@@ -34,9 +34,10 @@ describe("companion health presentation", () => {
           "automatic-transfer-visual-verification",
           "appearance-failure-details",
           "balanced-appearance-thresholds",
+          "overflow-aware-appearance-comparison",
         ],
       }),
-    ).toEqual({ compatible: true, version: "0.1.17" });
+    ).toEqual({ compatible: true, version: "0.1.18" });
   });
 
   it("requires an update for legacy or incompatible health responses", () => {
@@ -159,6 +160,19 @@ describe("operation error presentation", () => {
       title: "“Profile” could not be transferred",
       message:
         "The bridge could not finish this screen. Open JSON details for the technical information, then try again.",
+    });
+  });
+
+  it("explains a large rendered-size difference using the page name", () => {
+    expect(
+      presentOperationError(
+        "Rendered screen sizes differ: Pencil is 786×1750, Figma is 786×1900",
+        "P2 · Preferences",
+      ),
+    ).toEqual({
+      title: "The rendered page height changed in “P2 · Preferences”",
+      message:
+        "Pencil and Figma rendered this page at meaningfully different sizes. Nothing was linked. Check the page frame and any content extending beyond its bottom edge, then try again.",
     });
   });
 });

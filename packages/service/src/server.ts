@@ -47,7 +47,10 @@ import {
 } from "./manifest/figma-export.js";
 import { toPublicBridgeError } from "./public-error.js";
 import type { OperationJournal } from "./operation-journal.js";
-import { comparePngBuffers } from "./visual/compare.js";
+import {
+  comparePngBuffers,
+  comparePngBuffersWithDimensionTolerance,
+} from "./visual/compare.js";
 
 export interface BridgeServerOptions {
   host: string;
@@ -1972,7 +1975,13 @@ async function compareTransferredAppearance(
   if (!figmaPng.length || figmaPng.byteLength > 16 * 1024 * 1024)
     throw new Error("The Figma comparison image must be 16 MB or smaller");
   const pencilPng = await pen.exportNodePng(penPath, penRootId, 2);
-  const comparison = comparePngBuffers(pencilPng, figmaPng);
+  // Structural fidelity is verified before this call. Allow a small crop to
+  // the shared raster area because Pencil and Figma can include different
+  // amounts of auto-layout overflow when exporting the same fixed frame.
+  const comparison = comparePngBuffersWithDimensionTolerance(
+    pencilPng,
+    figmaPng,
+  );
   return {
     matchPercent: (1 - comparison.report.mismatchRatio) * 100,
     report: comparison.report,
