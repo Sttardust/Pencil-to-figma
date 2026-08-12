@@ -34,7 +34,7 @@ import {
 } from "./sizing.js";
 import { bridgeStackOrder } from "./stacking.js";
 
-const WRITE_SCHEMA_VERSION = "8";
+const WRITE_SCHEMA_VERSION = "9";
 const ROOT_GAP = 120;
 const COMPONENT_GAP = 40;
 
@@ -537,6 +537,7 @@ function recordsForWriter(
 }
 
 interface WriteContext {
+  rootBridgeId: string;
   nodes: Map<string, SceneNode>;
   images: Map<string, string>;
   assetData: Record<string, string>;
@@ -549,11 +550,12 @@ interface WriteContext {
 }
 
 function prepareContext(
-  _document: BridgeDocument,
+  document: BridgeDocument,
   assetData: Record<string, string>,
   hashes: Record<string, string>,
 ): WriteContext {
   return {
+    rootBridgeId: document.root.bridgeId,
     nodes: new Map(),
     images: new Map(),
     assetData,
@@ -1007,7 +1009,7 @@ function applyNodeProperties(
   node.setPluginData(BRIDGE_KIND_KEY, source.kind);
   node.setPluginData(SVG_ASSET_KEY, source.icon?.assetId ?? "");
   const preservedHugAxes = (["horizontal", "vertical"] as const).filter(
-    (axis) => mustPreserveHugFallback(source, axis),
+    (axis) => mustPreserveHugFallback(source, axis, context.rootBridgeId),
   );
   node.setPluginData(PRESERVED_HUG_AXES_KEY, preservedHugAxes.join(","));
   node.setPluginData(AUTHORED_HASH_KEY, context.hashes[source.bridgeId] ?? "");
@@ -1021,7 +1023,7 @@ function applyNodeProperties(
   if (node.type === "INSTANCE" && source.kind === "instance")
     applyInstanceOverrides(node, source, context);
   if (node.type === "FRAME" || node.type === "COMPONENT")
-    applyLayout(node, source);
+    applyLayout(node, source, context);
   applySizingMode(node, source, parent);
 }
 
@@ -1535,6 +1537,7 @@ function applyText(node: TextNode, source: BridgeNode): void {
 function applyLayout(
   node: FrameNode | ComponentNode,
   source: BridgeNode,
+  context: WriteContext,
 ): void {
   const layout = source.layout;
   if (!layout || layout.mode === "none") {
@@ -1549,12 +1552,12 @@ function applyLayout(
   const counterAxis = horizontal ? "vertical" : "horizontal";
   node.primaryAxisSizingMode =
     primarySizing.mode === "hug" &&
-    !mustPreserveHugFallback(source, primaryAxis)
+    !mustPreserveHugFallback(source, primaryAxis, context.rootBridgeId)
       ? "AUTO"
       : "FIXED";
   node.counterAxisSizingMode =
     counterSizing.mode === "hug" &&
-    !mustPreserveHugFallback(source, counterAxis)
+    !mustPreserveHugFallback(source, counterAxis, context.rootBridgeId)
       ? "AUTO"
       : "FIXED";
   node.itemSpacing = layout.gap;

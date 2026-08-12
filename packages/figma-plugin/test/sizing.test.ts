@@ -108,4 +108,27 @@ describe("mustPreserveHugFallback", () => {
 
     expect(mustPreserveHugFallback(source, "horizontal")).toBe(false);
   });
+
+  it("preserves a resolved top-level Pencil screen without freezing nested hug frames", () => {
+    const root = sizingNode({
+      bridgeId: "pen:preferences",
+      name: "P2 · Preferences",
+      height: { mode: "hug", fallback: 875 },
+      children: [
+        sizingNode({
+          bridgeId: "pen:content",
+          name: "Content",
+          width: { mode: "fixed", value: 393 },
+          height: { mode: "hug", fallback: 783 },
+        }),
+      ],
+    });
+
+    expect(
+      mustPreserveHugFallback(root, "vertical", "pen:preferences"),
+    ).toBe(true);
+    expect(
+      mustPreserveHugFallback(root.children[0]!, "vertical", "pen:preferences"),
+    ).toBe(false);
+  });
 });

@@ -50,6 +50,7 @@ export function autoLayoutFillFallback(
 export function mustPreserveHugFallback(
   source: BridgeNode,
   axis: LayoutAxis,
+  documentRootBridgeId?: string,
 ): boolean {
   const sizing = axis === "horizontal" ? source.width : source.height;
   if (
@@ -60,6 +61,17 @@ export function mustPreserveHugFallback(
     source.layout.mode === "none"
   )
     return false;
+  // A top-level Pencil page can omit its authored height and let Pencil's
+  // layout engine resolve the canvas size. The service records that resolved
+  // size as the hug fallback. Letting Figma recompute the root as HUG can
+  // produce a different height when fonts or nested layout metrics differ,
+  // so keep the resolved screen bounds fixed while retaining the authored
+  // hug identity in plugin data for round trips.
+  if (
+    source.source.app === "pen" &&
+    source.bridgeId === documentRootBridgeId
+  )
+    return true;
   return source.children.some((child) => {
     if (child.layoutPosition === "absolute") return false;
     const childSizing = axis === "horizontal" ? child.width : child.height;
