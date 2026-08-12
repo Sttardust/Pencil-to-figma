@@ -552,13 +552,20 @@ async function handleImportResult(message: any): Promise<void> {
     cancelImport.textContent = "Cancel";
     const completed = completedImportResults.length;
     if (completed > 0) {
+      const failedPageName =
+        pendingImports[activeImportIndex]?.name ?? "The next page";
+      showOperationError(
+        message.message ?? "The Pencil page could not be sent to Figma.",
+        failedPageName,
+      );
       setStatus("Partly sent", "error");
       setActivity(
-        `${completed} of ${pendingImports.length} pages were created and linked safely. “${pendingImports[activeImportIndex]?.name ?? "The next page"}” could not be sent: ${message.message ?? "Unknown error"}`,
+        `${completed} of ${pendingImports.length} pages were created safely. “${failedPageName}” needs attention.`,
       );
     } else
       showOperationError(
         message.message ?? "The Pencil screen could not be sent to Figma.",
+        pendingImports[activeImportIndex]?.name,
       );
     confirmImport.textContent = "Try this page again";
     return;
@@ -697,7 +704,7 @@ async function handleImportResult(message: any): Promise<void> {
         })),
         { name: completedImport.name, failed: true },
       ]);
-    showOperationError(message);
+    showOperationError(message, completedImport.name);
   }
 }
 
@@ -835,9 +842,16 @@ function handleFigmaExportResult(message: any): void {
             failed: true,
           },
         ]);
+      const failedScreenName = String(
+        message.failedScreenName ?? "The next screen",
+      );
+      showOperationError(
+        message.message ?? "The Figma screen could not be sent to Pencil.",
+        failedScreenName,
+      );
       setStatus("Partly sent", "error");
       setActivity(
-        `${completed} of ${total} screens were created safely. “${message.failedScreenName ?? "The next screen"}” could not be sent: ${message.message ?? "Unknown error"}`,
+        `${completed} of ${total} screens were created safely. “${failedScreenName}” needs attention.`,
       );
       return;
     }
@@ -859,6 +873,11 @@ function handleFigmaExportResult(message: any): void {
     showOperationError(
       message.message ??
         "The selected Figma screens could not be sent to Pencil.",
+      String(
+        message.failedScreenName ??
+          pendingExportPreview?.root?.name ??
+          "Selected screen",
+      ),
     );
     return;
   }
@@ -1717,8 +1736,8 @@ function showCompanionProblem(error: unknown): boolean {
   return true;
 }
 
-function showOperationError(message: string): void {
-  const presented = presentOperationError(message);
+function showOperationError(message: string, frameName?: string): void {
+  const presented = presentOperationError(message, frameName);
   setStatus("Needs attention", "error");
   operationAlertTitle.textContent = presented.title;
   operationAlertMessage.textContent = presented.message;

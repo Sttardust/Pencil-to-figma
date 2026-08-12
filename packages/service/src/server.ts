@@ -1413,7 +1413,7 @@ export class BridgeServer {
     );
     applyPenBridgeMappings(root, bridgeIdByPenNodeId);
     const knownComponentIds = collectReusablePenIds(root);
-    const queued = collectPenRefs(root).filter(
+    const queued = collectPenComponentRefs(root).filter(
       (ref) => !knownComponentIds.has(ref),
     );
     const visited = new Set<string>();
@@ -1430,7 +1430,7 @@ export class BridgeServer {
         throw new Error(`Pencil ref ${ref} is not a reusable frame`);
       components.push(component);
       knownComponentIds.add(component.id);
-      for (const nestedRef of collectPenRefs(component))
+      for (const nestedRef of collectPenComponentRefs(component))
         if (!visited.has(nestedRef) && !knownComponentIds.has(nestedRef))
           queued.push(nestedRef);
     }
@@ -1863,10 +1863,16 @@ function visitBridgeNodes(
   for (const child of node.children) visitBridgeNodes(child, callback);
 }
 
-function collectPenRefs(root: PenNode): string[] {
+export function collectPenComponentRefs(root: PenNode): string[] {
   const refs = new Set<string>();
   const visit = (node: PenNode) => {
-    if (node.type === "ref" && node.ref) refs.add(node.ref);
+    if (node.type === "ref" && node.ref) {
+      refs.add(node.ref);
+      // Pencil includes derived instance descendants as nested ref nodes.
+      // Their targets are children of this component, not reusable component
+      // roots, so they must not be loaded as separate dependencies.
+      return;
+    }
     for (const child of node.children ?? []) visit(child);
   };
   visit(root);

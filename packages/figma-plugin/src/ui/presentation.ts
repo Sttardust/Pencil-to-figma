@@ -12,61 +12,83 @@ export interface OperationErrorPresentation {
 
 export function presentOperationError(
   message: string,
+  frameName?: string,
 ): OperationErrorPresentation {
+  const present = (
+    presentation: OperationErrorPresentation,
+  ): OperationErrorPresentation =>
+    frameName
+      ? {
+          ...presentation,
+          title: `${presentation.title} in “${frameName}”`,
+        }
+      : presentation;
   const pageLimit = /select no more than (\d+) pencil pages/i.exec(
     message,
   )?.[1];
   if (pageLimit)
-    return {
+    return present({
       title: "Too many Pencil pages selected",
       message: `Select up to ${pageLimit} complete Pencil pages, then try again.`,
-    };
+    });
   const normalized = message.toLowerCase();
   if (normalized.includes("appearance verification failed"))
-    return {
+    return present({
       title: "The screen needs a visual review",
       message: `${message}. The transferred copy was not linked, so it cannot overwrite a trusted version. Review the visible differences and try again after correcting the source or bridge.`,
-    };
+    });
   if (normalized.includes("figma verification failed"))
-    return {
+    return present({
       title: "Figma changed part of the design",
       message:
         "The bridge checked the imported layers and found a visual or layout difference. No new sync baseline was saved. Open JSON details for the affected layer, then try again after updating the plugin or companion.",
-    };
+    });
   if (normalized.includes("pencil verification failed"))
-    return {
+    return present({
       title: "Pencil changed part of the design",
       message:
         "The bridge checked the transferred layers and found a visual or layout difference. No new sync baseline was saved. Open JSON details for the affected layer, then try again after updating the companion.",
-    };
+    });
   if (normalized.includes("no top-level pencil pages"))
-    return {
+    return present({
       title: "No complete Pencil pages selected",
       message:
         "Select one or more complete page frames in Pencil, then try again.",
-    };
+    });
+  if (normalized.includes("not a reusable frame"))
+    return present({
+      title: "A component link needs to be refreshed",
+      message:
+        "Pencil found an outdated nested component reference. Nothing was changed. Update the companion, then send the screen again.",
+    });
   if (normalized.includes("font"))
-    return { title: "A font is unavailable", message };
+    return present({ title: "A font is unavailable", message });
   if (normalized.includes("asset") || normalized.includes("image"))
-    return { title: "An image needs attention", message };
+    return present({ title: "An image needs attention", message });
   if (
     normalized.includes("mcp error") ||
     normalized.includes("operation execution") ||
     normalized.includes("internalerror: interrupted")
   )
-    return {
+    return present({
       title: "Pencil paused the page lookup",
       message:
         "The selected pages took too long to read. Nothing was changed. Try the selection again; if it repeats, select fewer pages at once.",
-    };
+    });
   if (normalized.includes("timed out"))
-    return {
+    return present({
       title: "Pencil took too long to respond",
       message:
         "Nothing was changed. Try again, or select fewer pages if the request continues to time out.",
-    };
+    });
   if (normalized.includes("connection"))
-    return { title: "Pencil could not be reached", message };
+    return present({ title: "Pencil could not be reached", message });
+  if (frameName)
+    return {
+      title: `“${frameName}” could not be transferred`,
+      message:
+        "The bridge could not finish this screen. Open JSON details for the technical information, then try again.",
+    };
   return { title: "The transfer needs attention", message };
 }
 
@@ -100,6 +122,7 @@ export function assessCompanionHealth(value: unknown): CompanionCompatibility {
       capabilities.includes("typed-public-errors") &&
       capabilities.includes("pencil-selection") &&
       capabilities.includes("direct-pencil-selection") &&
+      capabilities.includes("instance-descendant-ref-filtering") &&
       capabilities.includes("large-pencil-selection") &&
       capabilities.includes("operation-recovery") &&
       capabilities.includes("correct-gradient-direction") &&

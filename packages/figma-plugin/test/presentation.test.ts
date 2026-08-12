@@ -14,7 +14,7 @@ describe("companion health presentation", () => {
       assessCompanionHealth({
         ok: true,
         protocol: 1,
-        companionVersion: "0.1.14",
+        companionVersion: "0.1.15",
         capabilities: [
           "automatic-reconnect",
           "native-approval",
@@ -25,6 +25,7 @@ describe("companion health presentation", () => {
           "typed-public-errors",
           "pencil-selection",
           "direct-pencil-selection",
+          "instance-descendant-ref-filtering",
           "large-pencil-selection",
           "operation-recovery",
           "correct-gradient-direction",
@@ -33,7 +34,7 @@ describe("companion health presentation", () => {
           "automatic-transfer-visual-verification",
         ],
       }),
-    ).toEqual({ compatible: true, version: "0.1.14" });
+    ).toEqual({ compatible: true, version: "0.1.15" });
   });
 
   it("requires an update for legacy or incompatible health responses", () => {
@@ -123,6 +124,39 @@ describe("operation error presentation", () => {
       title: "Pencil paused the page lookup",
       message:
         "The selected pages took too long to read. Nothing was changed. Try the selection again; if it repeats, select fewer pages at once.",
+    });
+  });
+
+  it("explains stale nested Pencil component references", () => {
+    expect(
+      presentOperationError("Pencil ref lXJi9 is not a reusable frame"),
+    ).toEqual({
+      title: "A component link needs to be refreshed",
+      message:
+        "Pencil found an outdated nested component reference. Nothing was changed. Update the companion, then send the screen again.",
+    });
+  });
+
+  it("names the affected frame while keeping its internal Pencil ID hidden", () => {
+    const presented = presentOperationError(
+      "Pencil ref lXJi9 is not a reusable frame",
+      "Profile",
+    );
+    expect(presented).toEqual({
+      title: "A component link needs to be refreshed in “Profile”",
+      message:
+        "Pencil found an outdated nested component reference. Nothing was changed. Update the companion, then send the screen again.",
+    });
+    expect(JSON.stringify(presented)).not.toContain("lXJi9");
+  });
+
+  it("replaces an unknown technical error with a named screen message", () => {
+    expect(
+      presentOperationError("Internal node 123:456 failed", "Profile"),
+    ).toEqual({
+      title: "“Profile” could not be transferred",
+      message:
+        "The bridge could not finish this screen. Open JSON details for the technical information, then try again.",
     });
   });
 });

@@ -1,5 +1,5 @@
 export const BRIDGE_PROTOCOL_VERSION = 1 as const;
-export const COMPANION_VERSION = "0.1.14";
+export const COMPANION_VERSION = "0.1.15";
 export const COMPANION_CAPABILITIES = [
   "automatic-reconnect",
   "native-approval",
@@ -12,6 +12,7 @@ export const COMPANION_CAPABILITIES = [
   "typed-public-errors",
   "pencil-selection",
   "direct-pencil-selection",
+  "instance-descendant-ref-filtering",
   "large-pencil-selection",
   "operation-recovery",
   "correct-gradient-direction",
