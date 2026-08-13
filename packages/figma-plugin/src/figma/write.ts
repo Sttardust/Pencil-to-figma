@@ -35,7 +35,7 @@ import {
 } from "./sizing.js";
 import { bridgeStackOrder } from "./stacking.js";
 
-const WRITE_SCHEMA_VERSION = "11";
+const WRITE_SCHEMA_VERSION = "12";
 const ROOT_GAP = 120;
 const COMPONENT_GAP = 40;
 
@@ -858,7 +858,9 @@ async function prepareAssets(
   }
 }
 
-async function preflightFonts(document: BridgeDocument): Promise<string[]> {
+export async function preflightFonts(
+  document: BridgeDocument,
+): Promise<string[]> {
   const fonts = new Map<string, { font: FontName; nodes: BridgeNode[] }>();
   visit(document.root, (node) => {
     if (node.text) {
@@ -886,6 +888,13 @@ async function preflightFonts(document: BridgeDocument): Promise<string[]> {
       }
     });
   if (!fonts.size) return [];
+  // Figma creates every new TextNode with Inter Regular. Mutating properties
+  // such as textAutoResize requires the node's current font to be loaded,
+  // even when the bridge will immediately replace it with another face.
+  const defaultTextFont: FontName = { family: "Inter", style: "Regular" };
+  const defaultTextFontKey = fontKey(defaultTextFont);
+  if (!fonts.has(defaultTextFontKey))
+    fonts.set(defaultTextFontKey, { font: defaultTextFont, nodes: [] });
   const warnings: string[] = [];
   const loaded = new Set<string>();
   for (const { font, nodes } of fonts.values()) {
