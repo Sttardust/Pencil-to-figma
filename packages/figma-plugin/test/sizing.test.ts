@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   autoLayoutFillFallback,
   mustPreserveHugFallback,
+  textAutoResizeMode,
 } from "../src/figma/sizing.js";
 
 const verticalPhone = {
@@ -130,5 +131,57 @@ describe("mustPreserveHugFallback", () => {
     expect(
       mustPreserveHugFallback(root.children[0]!, "vertical", "pen:preferences"),
     ).toBe(true);
+  });
+});
+
+describe("textAutoResizeMode", () => {
+  it("keeps Pencil's resolved editable text box dimensions fixed", () => {
+    const source = sizingNode({
+      kind: "text",
+      width: { mode: "hug", fallback: 62, resolved: true },
+      height: { mode: "hug", fallback: 16, resolved: true },
+      text: {
+        characters: "Membership",
+        resize: "auto",
+        style: {
+          family: "Inter",
+          style: "Regular",
+          size: 14,
+          weight: 400,
+          lineHeight: { unit: "auto" },
+          letterSpacing: 0,
+          horizontalAlign: "left",
+          verticalAlign: "top",
+          decoration: "none",
+        },
+      },
+    });
+
+    expect(textAutoResizeMode(source)).toBe("NONE");
+  });
+
+  it("retains normal Figma auto-resize for unmeasured text", () => {
+    const source = sizingNode({
+      kind: "text",
+      width: { mode: "hug" },
+      height: { mode: "hug" },
+      text: {
+        characters: "Editable",
+        resize: "auto",
+        style: {
+          family: "Inter",
+          style: "Regular",
+          size: 14,
+          weight: 400,
+          lineHeight: { unit: "auto" },
+          letterSpacing: 0,
+          horizontalAlign: "left",
+          verticalAlign: "top",
+          decoration: "none",
+        },
+      },
+    });
+
+    expect(textAutoResizeMode(source)).toBe("WIDTH_AND_HEIGHT");
   });
 });

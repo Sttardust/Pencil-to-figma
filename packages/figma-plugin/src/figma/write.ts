@@ -30,11 +30,12 @@ import { findCleanRightSidePosition } from "./placement.js";
 import {
   autoLayoutFillFallback,
   mustPreserveHugFallback,
+  textAutoResizeMode,
   type LayoutAxis,
 } from "./sizing.js";
 import { bridgeStackOrder } from "./stacking.js";
 
-const WRITE_SCHEMA_VERSION = "10";
+const WRITE_SCHEMA_VERSION = "11";
 const ROOT_GAP = 120;
 const COMPONENT_GAP = 40;
 
@@ -1503,6 +1504,10 @@ function applyInstanceOverrides(
 
 function applyText(node: TextNode, source: BridgeNode): void {
   const text = source.text!;
+  // Set the resize behavior before changing font metrics or characters.
+  // Otherwise Figma briefly auto-sizes the text and overwrites the resolved
+  // Pencil dimensions before we can switch the box back to fixed sizing.
+  node.textAutoResize = textAutoResizeMode(source);
   node.fontName = { family: text.style.family, style: text.style.style };
   node.fontSize = text.style.size;
   node.characters = text.characters;
@@ -1525,12 +1530,6 @@ function applyText(node: TextNode, source: BridgeNode): void {
       ? "UNDERLINE"
       : text.style.decoration === "strikethrough"
         ? "STRIKETHROUGH"
-        : "NONE";
-  node.textAutoResize =
-    text.resize === "auto"
-      ? "WIDTH_AND_HEIGHT"
-      : text.resize === "height"
-        ? "HEIGHT"
         : "NONE";
 }
 

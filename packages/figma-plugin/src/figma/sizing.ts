@@ -1,6 +1,7 @@
 import type { BridgeNode } from "@pen-fig/bridge-schema";
 
 export type LayoutAxis = "horizontal" | "vertical";
+export type TextAutoResizeMode = "WIDTH_AND_HEIGHT" | "HEIGHT" | "NONE";
 
 export interface AutoLayoutSiblingBounds {
   width: number;
@@ -77,4 +78,18 @@ export function mustPreserveHugFallback(
     const childSizing = axis === "horizontal" ? child.width : child.height;
     return childSizing.mode === "fill";
   });
+}
+
+export function textAutoResizeMode(source: BridgeNode): TextAutoResizeMode {
+  const text = source.text;
+  if (!text) return "NONE";
+  const hasResolvedSizing =
+    (source.width.mode !== "fixed" && source.width.resolved === true) ||
+    (source.height.mode !== "fixed" && source.height.resolved === true);
+  if (hasResolvedSizing) return "NONE";
+  return text.resize === "auto"
+    ? "WIDTH_AND_HEIGHT"
+    : text.resize === "height"
+      ? "HEIGHT"
+      : "NONE";
 }
